@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Eye outline with integrated checkmark -->
+  <path
+    d="M8 3.5C4.5 3.5 1.5 6 1 8c.5 2 3.5 4.5 7 4.5s6.5-2.5 7-4.5c-.5-2-3.5-4.5-7-4.5z"
+    stroke="#2196F3"
+    fill="none"
+    stroke-width="1.2"
+  />
+  <!-- Pupil/checkmark combination -->
+  <path
+    d="M6 8l1.5 1.5L10 7"
+    stroke="#2196F3"
+    stroke-width="1.2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>

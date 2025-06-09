@@ -1,0 +1,39 @@
+<!--
+  FactCheck Eye Extension Popup
+  Provides status indication and usage instructions for the fact-checking extension
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta content="width=device-width, initial-scale=1.0" name="viewport">
+  <title>FactCheck Eye</title>
+  <link href="popup.css" rel="stylesheet">
+</head>
+<body>
+<!-- Main popup container - provides layout structure for the entire popup interface -->
+<div class="popup-container">
+  <!-- Extension header with title and description -->
+  <header>
+    <h1>FactCheck Eye</h1>
+    <p>Real-time fact-checking for Facebook posts</p>
+  </header>
+  <!-- Main content area with status indicator and usage instructions -->
+  <main>
+    <!-- Status section shows if extension is active on current page -->
+    <div class="status-section">
+      <div class="status-indicator"></div>
+      <p class="status-text">Ready to fact-check</p>
+    </div>
+    <!-- User instructions for using the fact-check feature -->
+    <div class="instructions">
+      <p>Click the eye icon on any Facebook post to check its facts.</p>
+    </div>
+  </main>
+  <!-- Footer with extension tagline -->
+  <footer>
+    <p>Keeping social media truthful</p>
+  </footer>
+</div>
+</body>
+</html>
