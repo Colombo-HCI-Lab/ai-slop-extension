@@ -9,10 +9,10 @@ import '../styles/content.css';
 export class FacebookPostObserver {
   /** MutationObserver instance for monitoring DOM changes */
   private observer: MutationObserver;
-  
+
   /** Set to track processed posts and prevent duplicate processing */
   private processedPosts: Set<string>;
-  
+
   /** Selector for extracting post content */
   private readonly POST_CONTENT_SELECTOR = '[data-ad-comet-preview="message"]';
 
@@ -27,7 +27,7 @@ export class FacebookPostObserver {
     // 1. Article elements (regular feed posts)
     // 2. Divs containing group posts with specific structure
     const isArticle = element.tagName.toLowerCase() === 'article';
-    
+
     // For Facebook groups, posts might be contained in divs with specific structure
     // Look for elements that contain author headings and interaction buttons
     const hasAuthorHeading = element.querySelector('h2, h3, h4') !== null;
@@ -39,34 +39,39 @@ export class FacebookPostObserver {
     let hasLike = false;
     let hasComment = false;
     let hasShare = false;
-    
-    buttons.forEach((button) => {
+
+    buttons.forEach(button => {
       const text = button.textContent?.toLowerCase() || '';
       if (text.includes('like')) hasLike = true;
       if (text.includes('comment')) hasComment = true;
       if (text.includes('share')) hasShare = true;
     });
-    
+
     // Also check for aria-label attributes
-    const hasLikeAria = element.querySelector('button[aria-label*="Like"], [aria-label*="like"]') !== null;
-    const hasCommentAria = element.querySelector('button[aria-label*="Comment"], [aria-label*="comment"]') !== null;
-    const hasShareAria = element.querySelector('button[aria-label*="Share"], [aria-label*="share"]') !== null;
-    
+    const hasLikeAria =
+      element.querySelector('button[aria-label*="Like"], [aria-label*="like"]') !== null;
+    const hasCommentAria =
+      element.querySelector('button[aria-label*="Comment"], [aria-label*="comment"]') !== null;
+    const hasShareAria =
+      element.querySelector('button[aria-label*="Share"], [aria-label*="share"]') !== null;
+
     // Check for post content indicators
     const hasDataAdPreview = element.querySelector('[data-ad-comet-preview="message"]') !== null;
     const hasPostContent = element.textContent && element.textContent.trim().length > 20;
-    
+
     // Enhanced validation for group posts
-    const hasInteractionButtons = hasLike || hasComment || hasShare || hasLikeAria || hasCommentAria || hasShareAria;
-    
+    const hasInteractionButtons =
+      hasLike || hasComment || hasShare || hasLikeAria || hasCommentAria || hasShareAria;
+
     // A valid post should have:
     // 1. Either be an article OR have author heading
-    // 2. Have interaction buttons 
+    // 2. Have interaction buttons
     // 3. Have some meaningful content OR data-ad-comet-preview attribute
-    const isValidPost = (isArticle || hasAuthorHeading) && 
-                       hasInteractionButtons && 
-                       (hasPostContent || hasDataAdPreview);
-    
+    const isValidPost =
+      (isArticle || hasAuthorHeading) &&
+      hasInteractionButtons &&
+      (hasPostContent || hasDataAdPreview);
+
     // Only log when we find a valid post
     if (isValidPost) {
       console.group('[FactCheck] ✅ POST DETECTED!');
@@ -76,13 +81,13 @@ export class FacebookPostObserver {
       console.log('📊 Interactions found:', {
         like: hasLike || hasLikeAria,
         comment: hasComment || hasCommentAria,
-        share: hasShare || hasShareAria
+        share: hasShare || hasShareAria,
       });
       console.log('📝 Has data-ad-comet-preview:', hasDataAdPreview);
       console.log('📄 Content length:', element.textContent?.length || 0);
       console.groupEnd();
     }
-    
+
     return isValidPost;
   }
 
@@ -100,14 +105,14 @@ export class FacebookPostObserver {
     console.log('📅 Timestamp:', new Date().toISOString());
     console.log('🌐 URL:', window.location.href);
     console.log('🏷️ Page title:', document.title);
-    
+
     this.processedPosts = new Set();
     this.boundHandleScroll = this.handleScroll.bind(this);
     this.observer = new MutationObserver(this.handleMutations.bind(this));
-    
+
     console.log('⚙️ Observer setup complete');
     console.groupEnd();
-    
+
     this.initialize();
   }
 
@@ -118,10 +123,10 @@ export class FacebookPostObserver {
   public cleanup(): void {
     this.observer.disconnect();
     this.processedPosts.clear();
-    
+
     // Remove scroll event listener
     window.removeEventListener('scroll', this.boundHandleScroll);
-    
+
     // Clear any existing debounce timer
     if (this.scrollDebounceTimer) {
       window.clearTimeout(this.scrollDebounceTimer);
@@ -138,14 +143,16 @@ export class FacebookPostObserver {
       childList: true,
       subtree: true,
       attributes: true,
-      characterData: true
+      characterData: true,
     });
 
     // Add scroll event listener with debouncing
     window.addEventListener('scroll', this.boundHandleScroll);
 
     // Process any existing posts
-    this.processExistingPosts();
+    this.processExistingPosts().catch(error => {
+      console.error('[FactCheck] Error processing existing posts:', error);
+    });
   }
 
   /**
@@ -161,7 +168,9 @@ export class FacebookPostObserver {
     // Set new timer
     this.scrollDebounceTimer = window.setTimeout(() => {
       console.debug('[FactCheck] Processing posts after scroll');
-      this.processExistingPosts();
+      this.processExistingPosts().catch(error => {
+        console.error('[FactCheck] Error processing posts after scroll:', error);
+      });
     }, this.SCROLL_DEBOUNCE_DELAY);
   }
 
@@ -173,7 +182,10 @@ export class FacebookPostObserver {
     mutations.forEach(mutation => {
       mutation.addedNodes.forEach(node => {
         if (node instanceof HTMLElement) {
-          this.processNode(node);
+          // Process nodes asynchronously without blocking the mutation observer
+          this.processNode(node).catch(error => {
+            console.error('[FactCheck] Error processing node:', error);
+          });
         }
       });
     });
@@ -184,44 +196,47 @@ export class FacebookPostObserver {
    * Ensures posts loaded before observer initialization are processed
    * Updated to handle both article elements and group posts
    */
-  private processExistingPosts(): void {
+  private async processExistingPosts(): Promise<void> {
     let validPostsFound = 0;
-    
+
     // Query articles (regular feed posts)
     const articlePosts = document.querySelectorAll('[role="article"]');
-    articlePosts.forEach((element) => {
+    for (const element of articlePosts) {
       if (element instanceof HTMLElement && this.isFacebookPost(element)) {
         validPostsFound++;
-        this.processPost(element);
+        await this.processPost(element);
       }
-    });
-    
+    }
+
     // For Facebook groups, also check for div elements with specific patterns
     // Look for containers with author headings and interaction buttons
     const groupPostCandidates = document.querySelectorAll('div');
     let groupPostsScanned = 0;
-    
-    groupPostCandidates.forEach((element) => {
-      if (element instanceof HTMLElement && 
-          element.querySelector('h2, h3, h4') && // Has author heading
-          element.querySelectorAll('button').length > 3 && // Has multiple buttons (likely interactions)
-          !element.closest('[role="article"]')) { // Not already inside an article
-        
+
+    for (const element of groupPostCandidates) {
+      if (
+        element instanceof HTMLElement &&
+        element.querySelector('h2, h3, h4') && // Has author heading
+        element.querySelectorAll('button').length > 3 && // Has multiple buttons (likely interactions)
+        !element.closest('[role="article"]')
+      ) {
+        // Not already inside an article
+
         groupPostsScanned++;
         if (this.isFacebookPost(element)) {
           validPostsFound++;
-          this.processPost(element);
+          await this.processPost(element);
         }
       }
-    });
-    
+    }
+
     // Only log if we found valid posts or scanned group posts
     if (validPostsFound > 0 || groupPostsScanned > 0) {
       console.log('[FactCheck] 📈 Scan complete:', {
         totalArticles: articlePosts.length,
         groupPostsScanned: groupPostsScanned,
         validPosts: validPostsFound,
-        totalProcessed: this.processedPosts.size
+        totalProcessed: this.processedPosts.size,
       });
     }
   }
@@ -231,32 +246,34 @@ export class FacebookPostObserver {
    * Updated to handle both articles and group post structures
    * @param node - HTML element to process
    */
-  private processNode(node: HTMLElement): void {
+  private async processNode(node: HTMLElement): Promise<void> {
     // Check if the node itself is a Facebook post
     if (this.isFacebookPost(node)) {
-      this.processPost(node);
+      await this.processPost(node);
       return;
     }
 
     // Check child nodes for article posts
     const potentialArticlePosts = node.querySelectorAll('[role="article"]');
-    potentialArticlePosts.forEach(element => {
+    for (const element of potentialArticlePosts) {
       if (element instanceof HTMLElement && this.isFacebookPost(element)) {
-        this.processPost(element);
+        await this.processPost(element);
       }
-    });
+    }
 
     // For group posts, check for div elements with post characteristics
     const potentialGroupPosts = node.querySelectorAll('div');
-    potentialGroupPosts.forEach(element => {
-      if (element instanceof HTMLElement && 
-          element.querySelector('h2, h3, h4') && // Has author heading
-          element.querySelectorAll('button').length > 3 && // Has multiple buttons
-          !element.closest('[role="article"]') && // Not inside an article
-          this.isFacebookPost(element)) {
-        this.processPost(element);
+    for (const element of potentialGroupPosts) {
+      if (
+        element instanceof HTMLElement &&
+        element.querySelector('h2, h3, h4') && // Has author heading
+        element.querySelectorAll('button').length > 3 && // Has multiple buttons
+        !element.closest('[role="article"]') && // Not inside an article
+        this.isFacebookPost(element)
+      ) {
+        await this.processPost(element);
       }
-    });
+    }
   }
 
   /**
@@ -264,9 +281,9 @@ export class FacebookPostObserver {
    * Adds fact-checking functionality if not already processed
    * @param postElement - The post's HTML element
    */
-  private processPost(postElement: HTMLElement): void {
+  private async processPost(postElement: HTMLElement): Promise<void> {
     // Generate unique ID for the post
-    const postId = this.generatePostId(postElement);
+    const postId = await this.generatePostId(postElement);
 
     if (this.processedPosts.has(postId)) {
       // Check if icon still exists
@@ -290,10 +307,10 @@ export class FacebookPostObserver {
 
     this.processedPosts.add(postId);
     console.log(`[FactCheck] 🔄 Processing new post ${postId}:`, this.processedPosts.size);
-    
-    // Extract and log post content immediately
-    const content = this.extractPostContent(postElement);
-    
+
+    // Extract and log post content immediately for debugging
+    await this.extractPostContent(postElement);
+
     this.injectFactCheckIcon(postElement, postId);
   }
 
@@ -302,27 +319,29 @@ export class FacebookPostObserver {
    * @param postElement - The post's HTML element
    * @returns Base64 encoded string combining multiple unique characteristics
    */
-  private generatePostId(postElement: HTMLElement): string {
-    const content = this.extractPostContent(postElement);
-    
+  private async generatePostId(postElement: HTMLElement): Promise<string> {
+    const content = await this.extractPostContent(postElement);
+
     // Get additional unique characteristics from the DOM
     const authorElement = postElement.querySelector('h2, h3, h4');
     const authorText = authorElement?.textContent?.trim().slice(0, 50) || '';
-    
+
     // Get timestamp or date links
-    const timeElement = postElement.querySelector('a[href*="posts/"], time, [aria-label*="ago"], [aria-label*="hours"], [aria-label*="minutes"]');
+    const timeElement = postElement.querySelector(
+      'a[href*="posts/"], time, [aria-label*="ago"], [aria-label*="hours"], [aria-label*="minutes"]'
+    );
     const timeText = timeElement?.textContent?.trim().slice(0, 30) || '';
     const timeHref = timeElement?.getAttribute('href')?.slice(0, 50) || '';
-    
+
     // Get the element's position in the DOM (as a fallback identifier)
     const position = Array.from(document.querySelectorAll('*')).indexOf(postElement);
-    
+
     // Check if content is generic (Facebook repetition pattern)
-    const isGenericContent = content.length > 200 && 
-                            content.toLowerCase().includes('facebook'.repeat(10));
-    
+    const isGenericContent =
+      content.length > 200 && content.toLowerCase().includes('facebook'.repeat(10));
+
     let uniqueString: string;
-    
+
     if (isGenericContent || content.length < 20) {
       // Use DOM-based identification for posts with poor content extraction
       uniqueString = `${authorText}-${timeText}-${timeHref}-${position}-${postElement.className}-${Date.now()}`;
@@ -331,7 +350,7 @@ export class FacebookPostObserver {
       // Use content-based identification for posts with good content
       uniqueString = `${content.slice(0, 100)}-${authorText}`;
     }
-    
+
     try {
       return btoa(encodeURIComponent(uniqueString));
     } catch (error) {
@@ -345,17 +364,21 @@ export class FacebookPostObserver {
   /**
    * Extracts text content from a Facebook post
    * Enhanced to handle both regular feed posts and Facebook group posts
+   * Automatically expands collapsed posts by clicking "See more" buttons
    * @param postElement - The post's HTML element
    * @returns Post text content or empty string if not found
    */
-  private extractPostContent(postElement: HTMLElement): string {
+  private async extractPostContent(postElement: HTMLElement): Promise<string> {
     let content = '';
     let extractionMethod = '';
-    
+
+    // First, check for and click "See more" buttons to expand collapsed content
+    await this.expandCollapsedContent(postElement);
+
     // Try multiple selectors for content extraction
     // 1. Primary selector for post content
     let contentElement = postElement.querySelector(this.POST_CONTENT_SELECTOR);
-    
+
     if (contentElement) {
       content = contentElement.textContent || '';
       extractionMethod = 'data-ad-comet-preview="message"';
@@ -367,32 +390,43 @@ export class FacebookPostObserver {
         extractionMethod = 'data-ad-preview="message"';
       }
     }
-    
+
     // 3. For group posts, try to find text content that's not in headers or buttons
     if (!content.trim()) {
       // Clone the element to avoid modifying the original
       const clone = postElement.cloneNode(true) as HTMLElement;
-      
+
       // Remove elements that shouldn't be part of the post content
-      const elementsToRemove = clone.querySelectorAll([
-        'h1', 'h2', 'h3', 'h4', 'h5', 'h6', // Headers (author names, etc.)
-        'button', // Interaction buttons
-        'nav', '[role="button"]', // Navigation and button roles
-        '[aria-label*="Like"]', '[aria-label*="Comment"]', '[aria-label*="Share"]', // Interaction elements
-        'img', 'svg', // Images and icons
-        'time', // Timestamps
-        'a[href*="/user/"]', // User profile links
-        '[data-testid]', // Facebook test IDs
-        '.timestamp', // Timestamp classes (if any)
-      ].join(', '));
-      
+      const elementsToRemove = clone.querySelectorAll(
+        [
+          'h1',
+          'h2',
+          'h3',
+          'h4',
+          'h5',
+          'h6', // Headers (author names, etc.)
+          'button', // Interaction buttons
+          'nav',
+          '[role="button"]', // Navigation and button roles
+          '[aria-label*="Like"]',
+          '[aria-label*="Comment"]',
+          '[aria-label*="Share"]', // Interaction elements
+          'img',
+          'svg', // Images and icons
+          'time', // Timestamps
+          'a[href*="/user/"]', // User profile links
+          '[data-testid]', // Facebook test IDs
+          '.timestamp', // Timestamp classes (if any)
+        ].join(', ')
+      );
+
       elementsToRemove.forEach(el => el.remove());
-      
+
       // Get the remaining text content
       content = clone.textContent || '';
       extractionMethod = 'Fallback text extraction';
     }
-    
+
     // 4. Final fallback: get all text content and filter out common non-content patterns
     if (!content.trim()) {
       const allText = postElement.textContent || '';
@@ -403,28 +437,143 @@ export class FacebookPostObserver {
         .replace(/\b\d+[a-z]\b/gi, '') // Remove timestamps like "3w", "2h"
         .replace(/Moderator|Author/gi, '') // Remove role indicators
         .trim();
-        
+
       if (filteredText.length > 20) {
         content = filteredText;
         extractionMethod = 'Text filtering fallback';
       }
     }
-    
+
     // Clean up the content
     content = content.trim().replace(/\s+/g, ' ');
-    
+
     // Log extraction results
     console.log('[FactCheck] 📄 Content extracted:', {
       method: extractionMethod,
       length: content.length,
-      preview: content.substring(0, 150) + (content.length > 150 ? '...' : '')
+      preview: content.substring(0, 150) + (content.length > 150 ? '...' : ''),
     });
-    
+
     if (content.length === 0) {
       console.warn('[FactCheck] ⚠️ No content extracted from post!');
     }
-    
+
     return content;
+  }
+
+  /**
+   * Expands collapsed content by finding and clicking "See more" buttons
+   * Handles various Facebook "See more" button patterns and waits for content expansion
+   * @param postElement - The post's HTML element
+   */
+  private async expandCollapsedContent(postElement: HTMLElement): Promise<void> {
+    // Find "See more" buttons using text content matching
+    const findSeeMoreButton = (): HTMLElement | null => {
+      // Check all potential buttons in the post
+      const buttons = postElement.querySelectorAll(
+        'div[role="button"], span[role="button"], [role="button"]'
+      );
+
+      for (const button of buttons) {
+        const text = button.textContent?.trim().toLowerCase();
+        if (text === 'see more' || text === 'see more.' || text === '... see more') {
+          return button as HTMLElement;
+        }
+      }
+
+      // Also check for span elements that might contain "See more" text
+      const spans = postElement.querySelectorAll('span');
+      for (const span of spans) {
+        const text = span.textContent?.trim().toLowerCase();
+        if (text === 'see more' || text === 'see more.' || text === '... see more') {
+          // Check if the span or its parent is clickable
+          const clickableParent = span.closest(
+            '[role="button"], div[style*="cursor"], span[style*="cursor"]'
+          );
+          if (clickableParent) {
+            return clickableParent as HTMLElement;
+          }
+          return span as HTMLElement;
+        }
+      }
+
+      // Look for ellipsis followed by "See more" pattern
+      const allElements = postElement.querySelectorAll('*');
+      for (const element of allElements) {
+        const text = element.textContent?.trim();
+        if (
+          text &&
+          (text.includes('...See more') ||
+            text.includes('… See more') ||
+            text.endsWith('... See more'))
+        ) {
+          return element as HTMLElement;
+        }
+      }
+
+      return null;
+    };
+
+    let attempts = 0;
+    const maxAttempts = 3;
+
+    while (attempts < maxAttempts) {
+      const seeMoreButton = findSeeMoreButton();
+
+      if (!seeMoreButton) {
+        console.debug('[FactCheck] 📄 No "See more" button found in post');
+        break;
+      }
+
+      console.log('[FactCheck] 🔍 Found "See more" button, expanding content...');
+
+      // Store the current content length to detect if expansion worked
+      const beforeContent = postElement.textContent?.length || 0;
+
+      try {
+        // Click the "See more" button
+        if (seeMoreButton.click) {
+          seeMoreButton.click();
+        } else {
+          // Fallback: dispatch click event
+          const clickEvent = new MouseEvent('click', {
+            bubbles: true,
+            cancelable: true,
+            view: window,
+          });
+          seeMoreButton.dispatchEvent(clickEvent);
+        }
+
+        // Wait for content to expand
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        // Check if content expanded
+        const afterContent = postElement.textContent?.length || 0;
+        const expansionOccurred = afterContent > beforeContent;
+
+        if (expansionOccurred) {
+          console.log('[FactCheck] ✅ Content expanded successfully', {
+            beforeLength: beforeContent,
+            afterLength: afterContent,
+            expanded: afterContent - beforeContent,
+          });
+
+          // Wait a bit more for any additional content loading
+          await new Promise(resolve => setTimeout(resolve, 200));
+          break;
+        } else {
+          console.log('[FactCheck] ⚠️ Content expansion may not have worked, retrying...');
+          attempts++;
+        }
+      } catch (error) {
+        console.warn('[FactCheck] ⚠️ Error clicking "See more" button:', error);
+        attempts++;
+      }
+    }
+
+    if (attempts >= maxAttempts) {
+      console.log('[FactCheck] ⏹️ Reached maximum expansion attempts');
+    }
   }
 
   /**
@@ -450,14 +599,14 @@ export class FacebookPostObserver {
     // Enhanced targeting for Facebook group posts
     let targetElement: HTMLElement | null = null;
     let injectionMethod = '';
-    
+
     // Strategy 1: Find author heading and use its parent
     const authorContainer = postElement.querySelector('h2, h3, h4');
     if (authorContainer && authorContainer.parentElement instanceof HTMLElement) {
       targetElement = authorContainer.parentElement;
       injectionMethod = 'Author parent container';
     }
-    
+
     // Strategy 2: Find any element with author links (profile links)
     if (!targetElement) {
       const authorLink = postElement.querySelector('a[href*="/user/"], a[href*="/profile/"]');
@@ -477,10 +626,12 @@ export class FacebookPostObserver {
         }
       }
     }
-    
+
     // Strategy 3: Find elements containing timestamps or "shared with" text
     if (!targetElement) {
-      const timestampElement = postElement.querySelector('a[href*="posts/"], [aria-label*="ago"], [aria-label*="hours"], [aria-label*="minutes"]');
+      const timestampElement = postElement.querySelector(
+        'a[href*="posts/"], [aria-label*="ago"], [aria-label*="hours"], [aria-label*="minutes"]'
+      );
       if (timestampElement && timestampElement.parentElement instanceof HTMLElement) {
         // Go up to find a container
         let parent: HTMLElement | null = timestampElement.parentElement;
@@ -496,7 +647,7 @@ export class FacebookPostObserver {
         }
       }
     }
-    
+
     // Strategy 4: Look for any relatively positioned containers in the upper part
     if (!targetElement) {
       const containers = postElement.querySelectorAll('div');
@@ -504,7 +655,7 @@ export class FacebookPostObserver {
         if (container instanceof HTMLElement) {
           const rect = container.getBoundingClientRect();
           const postRect = postElement.getBoundingClientRect();
-          
+
           // Check if this container is in the upper part of the post
           if (rect.top <= postRect.top + 80 && rect.width > 200 && rect.height > 30) {
             targetElement = container;
@@ -514,7 +665,7 @@ export class FacebookPostObserver {
         }
       }
     }
-    
+
     // Strategy 5: Use the first substantial child element as last resort
     if (!targetElement) {
       const firstChild = postElement.firstElementChild;
@@ -523,7 +674,7 @@ export class FacebookPostObserver {
         injectionMethod = 'First child container';
       }
     }
-    
+
     // Strategy 6: Ultimate fallback - use the post element itself
     if (!targetElement) {
       targetElement = postElement;
@@ -537,9 +688,9 @@ export class FacebookPostObserver {
         console.warn(`[FactCheck] ⚠️ Icon already exists for post ${postId}, skipping injection`);
         return;
       }
-      
+
       console.log(`[FactCheck] 🎯 Target element found via: ${injectionMethod}`, targetElement);
-      
+
       // Style the icon container with professional styling and maximum visibility
       iconContainer.style.cssText = `
         position: absolute !important;
@@ -570,23 +721,27 @@ export class FacebookPostObserver {
         min-height: 36px !important;
         transition: all 0.2s ease !important;
       `;
-      
+
       // Make parent position relative if needed
       const currentPosition = getComputedStyle(targetElement).position;
       if (currentPosition === 'static') {
         targetElement.style.position = 'relative';
         console.log(`[FactCheck] 📍 Set target element position to relative`);
       }
-      
+
       try {
         targetElement.appendChild(iconContainer);
-        console.log(`[FactCheck] ✅ Icon injected successfully for post ${postId} via ${injectionMethod}`);
+        console.log(
+          `[FactCheck] ✅ Icon injected successfully for post ${postId} via ${injectionMethod}`
+        );
       } catch (error) {
         console.error(`[FactCheck] ❌ Failed to append icon for post ${postId}:`, error);
       }
     } else {
-      console.error(`[FactCheck] ❌ Failed to find suitable element for icon injection for post ${postId}`);
-      
+      console.error(
+        `[FactCheck] ❌ Failed to find suitable element for icon injection for post ${postId}`
+      );
+
       // Add debug information about the post structure
       console.log(`[FactCheck] 🔍 Post element structure for debugging:`, {
         tagName: postElement.tagName,
@@ -596,8 +751,8 @@ export class FacebookPostObserver {
         childrenCount: postElement.children.length,
         offsetDimensions: {
           width: postElement.offsetWidth,
-          height: postElement.offsetHeight
-        }
+          height: postElement.offsetHeight,
+        },
       });
     }
   }
@@ -609,7 +764,7 @@ export class FacebookPostObserver {
    * @param postId - Unique identifier for the post used for logging and debugging
    */
   private async handleFactCheck(postElement: HTMLElement, postId: string): Promise<void> {
-    const content = this.extractPostContent(postElement);
+    const content = await this.extractPostContent(postElement);
 
     // Show loading state
     this.updateIconState(postElement, 'loading');
@@ -654,7 +809,7 @@ export class FacebookPostObserver {
       verdict: string;
       confidence: number;
       explanation: string;
-    },
+    }
   ): void {
     const overlay = document.createElement('div');
     overlay.className = 'fact-check-overlay';

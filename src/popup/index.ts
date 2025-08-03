@@ -9,7 +9,7 @@ import './popup.css';
 class PopupManager {
   /** DOM element for visual status indicator */
   private statusIndicator: HTMLDivElement | null;
-  
+
   /** DOM element for status message text */
   private statusText: HTMLParagraphElement | null;
 
@@ -34,19 +34,22 @@ class PopupManager {
    */
   private checkExtensionStatus(): void {
     // Query the active tab to check if we're on Facebook
-    chrome.tabs.query({
-      active: true,
-      currentWindow: true,
-    }, tabs => {
-      const currentTab = tabs[0];
-      const url = currentTab.url || '';
+    chrome.tabs.query(
+      {
+        active: true,
+        currentWindow: true,
+      },
+      tabs => {
+        const currentTab = tabs[0];
+        const url = currentTab.url || '';
 
-      if (url.includes('facebook.com')) {
-        this.updateStatus('active');
-      } else {
-        this.updateStatus('inactive');
+        if (url.includes('facebook.com')) {
+          this.updateStatus('active');
+        } else {
+          this.updateStatus('inactive');
+        }
       }
-    });
+    );
   }
 
   /**
