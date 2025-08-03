@@ -1,20 +1,3 @@
-# Dependencies
-node_modules/
-
-# Production build
-dist/
-build/
-
-# Testing
-coverage/
-
-# IDE
-.idea/
-.vscode/
-*.sublime-*
-*.swp
-*.swo
-
 # OS generated files
 .DS_Store
 .DS_Store?
@@ -24,18 +7,8 @@ coverage/
 ehthumbs.db
 Thumbs.db
 
-# Logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+# Jetbrains
+.idea
 
-# Environment variables
-.env
-.env.local
-.env.development
-.env.test
-.env.production
-
-# TypeScript
-*.tsbuildinfo
+# Visual Studio Code
+.vscode
