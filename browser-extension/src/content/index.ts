@@ -308,10 +308,68 @@ export class FacebookPostObserver {
     this.processedPosts.add(postId);
     console.log(`[FactCheck] 🔄 Processing new post ${postId}:`, this.processedPosts.size);
 
-    // Extract and log post content immediately for debugging
-    await this.extractPostContent(postElement);
+    // Analyze post content with backend first, then inject icon
+    await this.analyzeAndInjectIcon(postElement, postId);
+  }
 
-    this.injectFactCheckIcon(postElement, postId);
+  /**
+   * Analyzes post content (hardcoded for now) and injects icon with results
+   * @param postElement - The post's HTML element
+   * @param postId - Unique identifier for the post
+   */
+  private async analyzeAndInjectIcon(postElement: HTMLElement, postId: string): Promise<void> {
+    try {
+      // Extract post content
+      const content = await this.extractPostContent(postElement);
+
+      if (!content || content.trim().length < 10) {
+        console.log(`[FactCheck] ⏭️ Post ${postId} has insufficient content, skipping analysis`);
+        return;
+      }
+
+      console.log(`[FactCheck] 🔍 Analyzing post ${postId} with backend API...`);
+
+      // Send analysis request to backend via background service
+      const response = await new Promise<{
+        isAiSlop: boolean;
+        confidence: number;
+        reasoning: string;
+        analysisDetails: Record<string, unknown>;
+        processingTime: number;
+        timestamp: string;
+      }>((resolve, reject) => {
+        chrome.runtime.sendMessage(
+          {
+            type: 'AI_SLOP_REQUEST',
+            content: content,
+            postId: postId,
+          },
+          response => {
+            if (chrome.runtime.lastError) {
+              console.error('[FactCheck] ❌ Runtime error:', chrome.runtime.lastError);
+              reject(chrome.runtime.lastError);
+            } else if (response && response.error) {
+              console.error('[FactCheck] ❌ API error:', response.error);
+              reject(new Error(response.error));
+            } else {
+              console.log('[FactCheck] ✅ Analysis response received:', response);
+              resolve(response);
+            }
+          }
+        );
+      });
+
+      console.log(`[FactCheck] ✅ Hardcoded analysis complete for post ${postId}:`, {
+        isAiSlop: response.isAiSlop,
+        confidence: response.confidence,
+      });
+
+      // Store analysis result and inject icon
+      this.injectFactCheckIcon(postElement, postId, content, response);
+    } catch (error) {
+      console.error(`[FactCheck] ❌ Error analyzing post ${postId}:`, error);
+      // Don't show icon if analysis fails to avoid confusion
+    }
   }
 
   /**
@@ -577,24 +635,63 @@ export class FacebookPostObserver {
   }
 
   /**
-   * Injects the fact-check icon into a Facebook post
+   * Injects the fact-check icon into a Facebook post with analysis results
    * Creates and adds the interactive icon element with enhanced targeting
    * @param postElement - The post's HTML element
    * @param postId - Unique identifier for the post used for logging and debugging
+   * @param content - The extracted post content
+   * @param analysisResult - The AI slop analysis result from backend
    */
-  private injectFactCheckIcon(postElement: HTMLElement, postId: string): void {
+  private injectFactCheckIcon(
+    postElement: HTMLElement,
+    postId: string,
+    content: string,
+    analysisResult: {
+      isAiSlop: boolean;
+      confidence: number;
+      reasoning: string;
+      analysisDetails: Record<string, unknown>;
+      processingTime: number;
+      timestamp: string;
+    }
+  ): void {
     console.log(`[FactCheck] 🎯 Starting icon injection for post: ${postId}`);
+
+    // Create the fact-check icon button
     const iconContainer = document.createElement('div');
     iconContainer.className = 'fact-check-icon';
-    iconContainer.setAttribute('data-post-id', postId); // Store postId for tracking
-    iconContainer.innerHTML = `
-      <svg viewBox="0 0 24 24" width="20" height="20">
-        <path fill="#1877f2" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-14c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6-2.69-6-6-6zm0 10c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4z"/>
-      </svg>
-    `;
+    iconContainer.setAttribute('data-post-id', postId);
+    iconContainer.setAttribute('data-content', content);
+    iconContainer.setAttribute('data-analysis', JSON.stringify(analysisResult));
+    iconContainer.setAttribute('data-state', 'analyzed');
 
-    // Add click handler
-    iconContainer.addEventListener('click', () => this.handleFactCheck(postElement, postId));
+    // Set icon based on analysis result
+    const isAiSlop = analysisResult.isAiSlop;
+
+    if (isAiSlop) {
+      // AI slop detected - yellow warning triangle
+      iconContainer.innerHTML = `
+        <svg viewBox="0 0 24 24" width="20" height="20">
+          <path d="M12 2 L22 20 L2 20 Z" fill="#FFC107" stroke="#F57C00" stroke-width="1"/>
+          <text x="12" y="16" font-family="Arial, sans-serif" font-size="10" font-weight="bold" text-anchor="middle" fill="#5D4037">!</text>
+        </svg>
+      `;
+      iconContainer.setAttribute('title', 'AI-generated content detected - Click to open chat');
+    } else {
+      // Human content - green checkmark
+      iconContainer.innerHTML = `
+        <svg viewBox="0 0 24 24" width="20" height="20">
+          <circle cx="12" cy="12" r="10" fill="#4CAF50" stroke="#388E3C" stroke-width="1"/>
+          <path d="M7 12.5 L10 15.5 L17 8.5" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+      `;
+      iconContainer.setAttribute('title', 'Human-generated content - Click to open chat');
+    }
+
+    // Add click handler to open chat directly
+    iconContainer.addEventListener('click', () =>
+      this.openChatForPost(postElement, postId, content, analysisResult)
+    );
 
     // Enhanced targeting for Facebook group posts
     let targetElement: HTMLElement | null = null;
@@ -758,95 +855,841 @@ export class FacebookPostObserver {
   }
 
   /**
-   * Handles the fact-check process when icon is clicked
-   * Sends content to background script and displays results
+   * Opens the chat overlay for a post with pre-analyzed results
    * @param postElement - The post's HTML element
-   * @param postId - Unique identifier for the post used for logging and debugging
+   * @param postId - Unique identifier for the post
+   * @param content - The extracted post content
+   * @param analysisResult - The AI slop analysis result
    */
-  private async handleFactCheck(postElement: HTMLElement, postId: string): Promise<void> {
-    const content = await this.extractPostContent(postElement);
-
-    // Show loading state
-    this.updateIconState(postElement, 'loading');
-
-    try {
-      const response = await chrome.runtime.sendMessage({
-        type: 'FACT_CHECK_REQUEST',
-        content: content,
-        postId: postId, // Include postId for tracking
-      });
-
-      if (response.error) {
-        throw new Error(response.error);
-      }
-
-      this.showFactCheckResult(postElement, response);
-    } catch (error) {
-      console.error(`Fact check failed for post ${postId}:`, error);
-      this.updateIconState(postElement, 'error');
+  private openChatForPost(
+    postElement: HTMLElement,
+    postId: string,
+    content: string,
+    analysisResult: {
+      isAiSlop: boolean;
+      confidence: number;
+      reasoning: string;
+      analysisDetails: Record<string, unknown>;
+      processingTime: number;
+      timestamp: string;
     }
+  ): void {
+    console.log(`[FactCheck] 💬 Opening chat for post ${postId}`);
+
+    // Check if a chat window for this post already exists
+    const existingChat = document.querySelector(`.detect-chat-window[data-post-id="${postId}"]`);
+    if (existingChat) {
+      // Bring existing chat to front
+      (existingChat as HTMLElement).style.zIndex = String(2147483647 + (Date.now() % 100));
+      // Flash the header to indicate it's already open
+      const header = existingChat.querySelector('.chat-window-header') as HTMLElement;
+      if (header) {
+        header.style.backgroundColor = '#e3f2fd !important';
+        setTimeout(() => {
+          header.style.backgroundColor = '#f9fafb !important';
+        }, 300);
+      }
+      return;
+    }
+
+    this.showChatOverlay(postElement, postId, content, analysisResult);
   }
 
   /**
-   * Updates the fact-check icon's visual state
+   * Updates the AI slop detection icon's visual state
    * @param postElement - The post's HTML element
-   * @param state - Current state of the fact-check process
+   * @param state - Current state of the analysis process
+   * @param isAiSlop - Whether the content is AI slop (for analyzed state)
    */
-  private updateIconState(postElement: HTMLElement, state: 'loading' | 'error'): void {
+  private updateIconState(
+    postElement: HTMLElement,
+    state: 'loading' | 'error' | 'analyzed',
+    isAiSlop?: boolean
+  ): void {
     const icon = postElement.querySelector('.fact-check-icon');
     if (icon) {
       icon.setAttribute('data-state', state);
+
+      // Update icon appearance based on state
+      const iconElement = icon as HTMLElement;
+      if (state === 'loading') {
+        iconElement.innerHTML = `
+          <svg viewBox="0 0 24 24" width="20" height="20">
+            <circle cx="12" cy="12" r="10" fill="none" stroke="#1877f2" stroke-width="2" opacity="0.3"/>
+            <path fill="#1877f2" d="M12 2a10 10 0 0 1 10 10h-2a8 8 0 0 0-8-8V2z">
+              <animateTransform attributeName="transform" type="rotate" values="0 12 12;360 12 12" dur="1s" repeatCount="indefinite"/>
+            </path>
+          </svg>`;
+        iconElement.setAttribute('title', 'Analyzing content...');
+      } else if (state === 'error') {
+        iconElement.innerHTML = `
+          <svg viewBox="0 0 24 24" width="20" height="20">
+            <circle cx="12" cy="12" r="10" fill="#e74c3c" stroke="#c0392b" stroke-width="1"/>
+            <text x="12" y="17" font-family="Arial, sans-serif" font-size="14" font-weight="bold" text-anchor="middle" fill="white">!</text>
+          </svg>`;
+        iconElement.setAttribute('title', 'Error analyzing content');
+      } else if (state === 'analyzed' && isAiSlop !== undefined) {
+        if (isAiSlop) {
+          // AI slop detected - yellow warning triangle
+          iconElement.innerHTML = `
+            <svg viewBox="0 0 24 24" width="20" height="20">
+              <path d="M12 2 L22 20 L2 20 Z" fill="#FFC107" stroke="#F57C00" stroke-width="1"/>
+              <text x="12" y="16" font-family="Arial, sans-serif" font-size="10" font-weight="bold" text-anchor="middle" fill="#5D4037">!</text>
+            </svg>`;
+          iconElement.setAttribute('title', 'AI-generated content detected');
+        } else {
+          // Human content - green checkmark
+          iconElement.innerHTML = `
+            <svg viewBox="0 0 24 24" width="20" height="20">
+              <circle cx="12" cy="12" r="10" fill="#4CAF50" stroke="#388E3C" stroke-width="1"/>
+              <path d="M7 12.5 L10 15.5 L17 8.5" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+            </svg>`;
+          iconElement.setAttribute('title', 'Human-generated content');
+        }
+      }
     }
   }
 
   /**
-   * Displays fact-check results in an overlay
-   * Creates and shows an overlay with verdict, confidence, and explanation
+   * Creates and displays the chat window for AI slop analysis (non-blocking)
+   * @param postElement - The post's HTML element
+   * @param postId - Unique identifier for the post
+   * @param postContent - The extracted post content
+   * @param analysisResult - The AI slop analysis result
    */
-  private showFactCheckResult(
+  private showChatOverlay(
     postElement: HTMLElement,
-    result: {
-      verdict: string;
+    postId: string,
+    postContent: string,
+    analysisResult: {
+      isAiSlop: boolean;
       confidence: number;
-      explanation: string;
+      reasoning: string;
+      analysisDetails: Record<string, unknown>;
+      processingTime: number;
+      timestamp: string;
     }
   ): void {
-    const overlay = document.createElement('div');
-    overlay.className = 'fact-check-overlay';
-    overlay.innerHTML = `
-      <div class="fact-check-result ${result.verdict}">
-        <h3>${this.formatVerdict(result.verdict)}</h3>
-        <div class="confidence">
-          Confidence: ${Math.round(result.confidence * 100)}%
+    // Count existing chat windows to position new ones appropriately
+    const existingWindows = document.querySelectorAll('.detect-chat-window');
+    const windowCount = existingWindows.length;
+    const offset = windowCount * 30; // Cascade windows
+
+    const chatWindow = document.createElement('div');
+    chatWindow.className = 'detect-chat-window';
+    chatWindow.setAttribute('data-post-id', postId);
+
+    // Position the new window with cascade effect
+    chatWindow.style.top = `${20 + offset}px`;
+    chatWindow.style.right = `${20 + offset}px`;
+
+    // Extract a preview of the post content for the header
+    const postPreview = postContent.substring(0, 50) + (postContent.length > 50 ? '...' : '');
+
+    chatWindow.innerHTML = `
+      <div class="chat-window-header">
+        <div class="chat-window-title">
+          <div class="chat-window-icon">
+            <svg viewBox="0 0 24 24" width="20" height="20">
+              <path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+            </svg>
+          </div>
+          <div class="title-text">
+            <span class="title-main">AI Content Analysis</span>
+            <span class="title-preview" title="${postContent}">${postPreview}</span>
+          </div>
         </div>
-        <p>${result.explanation}</p>
-        <button class="close-overlay">Close</button>
+        <div class="chat-window-controls">
+          <button class="minimize-chat" title="Minimize">−</button>
+          <button class="close-chat" title="Close">&times;</button>
+        </div>
+      </div>
+      
+      <div class="analysis-result ${analysisResult.isAiSlop ? 'ai-detected' : 'human-content'}">
+        <div class="verdict">
+          <strong>${analysisResult.isAiSlop ? '🤖 AI-Generated Content Detected' : '👤 Human-Generated Content'}</strong>
+        </div>
+        <div class="confidence">
+          Confidence: ${Math.round(analysisResult.confidence * 100)}%
+        </div>
+        <div class="reasoning">
+          ${analysisResult.reasoning}
+        </div>
+        <button class="ignore-analysis" ${analysisResult.isAiSlop ? '' : 'style="display: none;"'}>
+          Ignore This Analysis
+        </button>
+      </div>
+
+      <div class="chat-messages">
+        <div class="system-message">
+          Ask me anything about this analysis or the post content!
+        </div>
+      </div>
+
+      <div class="chat-input-container">
+        <input type="text" class="chat-input" placeholder="Ask about this analysis..." />
+        <button class="send-chat">Send</button>
       </div>
     `;
 
-    // Add close handler
-    const closeButton = overlay.querySelector('.close-overlay');
-    if (closeButton) {
-      closeButton.addEventListener('click', () => overlay.remove());
-    }
+    // Store analysis data for chat context
+    chatWindow.setAttribute('data-post-content', postContent);
+    chatWindow.setAttribute('data-analysis', JSON.stringify(analysisResult));
 
-    document.body.appendChild(overlay);
+    // Add event listeners
+    this.setupChatWindowEventListeners(chatWindow);
+
+    document.body.appendChild(chatWindow);
   }
 
   /**
-   * Formats the fact-check verdict for display
-   * @param verdict - Raw verdict from the fact-check API
-   * @returns Human-readable verdict text
+   * Sets up event listeners for the chat window
+   * @param chatWindow - The chat window element
    */
-  private formatVerdict(verdict: string): string {
-    const verdicts: Record<string, string> = {
-      misinformation: 'Misinformation Detected',
-      verified: 'Information Verified',
-      unknown: 'Verification Inconclusive',
+  private setupChatWindowEventListeners(chatWindow: HTMLElement): void {
+    const closeButton = chatWindow.querySelector('.close-chat');
+    const minimizeButton = chatWindow.querySelector('.minimize-chat');
+    const chatInput = chatWindow.querySelector('.chat-input') as HTMLInputElement;
+    const sendButton = chatWindow.querySelector('.send-chat');
+    const ignoreButton = chatWindow.querySelector('.ignore-analysis');
+
+    // Close chat window
+    closeButton?.addEventListener('click', () => chatWindow.remove());
+
+    // Minimize chat window
+    minimizeButton?.addEventListener('click', () => {
+      if (chatWindow.classList.contains('minimized')) {
+        chatWindow.classList.remove('minimized');
+      } else {
+        chatWindow.classList.add('minimized');
+      }
+    });
+
+    // Send chat message
+    const sendMessage = () => {
+      if (chatInput.value.trim()) {
+        this.sendChatMessage(chatWindow, chatInput.value.trim());
+        chatInput.value = '';
+      }
     };
-    return verdicts[verdict] || 'Verification Error';
+
+    sendButton?.addEventListener('click', sendMessage);
+    chatInput?.addEventListener('keypress', e => {
+      if (e.key === 'Enter') {
+        sendMessage();
+      }
+    });
+
+    // Ignore analysis
+    ignoreButton?.addEventListener('click', () => {
+      const analysisResult = chatWindow.querySelector('.analysis-result');
+      if (analysisResult) {
+        analysisResult.innerHTML = `
+          <div class="ignored-analysis">
+            <strong>✅ Analysis Ignored</strong>
+            <p>You've chosen to ignore this AI detection analysis.</p>
+          </div>
+        `;
+      }
+    });
+
+    // Make window draggable by header
+    this.makeChatWindowDraggable(chatWindow);
+  }
+
+  /**
+   * Sends a chat message and displays the response
+   * @param chatWindow - The chat window element
+   * @param message - The user's message
+   */
+  private async sendChatMessage(chatWindow: HTMLElement, message: string): Promise<void> {
+    const messagesContainer = chatWindow.querySelector('.chat-messages');
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const _postId = chatWindow.getAttribute('data-post-id') || '';
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const _postContent = chatWindow.getAttribute('data-post-content') || '';
+    const analysisData = chatWindow.getAttribute('data-analysis') || '{}';
+
+    let _previousAnalysis;
+    try {
+       
+      _previousAnalysis = JSON.parse(analysisData);
+    } catch {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      _previousAnalysis = null;
+    }
+
+    // Add user message
+    const userMessageDiv = document.createElement('div');
+    userMessageDiv.className = 'user-message';
+    userMessageDiv.textContent = message;
+    messagesContainer?.appendChild(userMessageDiv);
+
+    // Add loading message
+    const loadingDiv = document.createElement('div');
+    loadingDiv.className = 'assistant-message loading';
+    loadingDiv.textContent = '🤔 Thinking...';
+    messagesContainer?.appendChild(loadingDiv);
+
+    // Scroll to bottom
+    messagesContainer?.scrollTo(0, messagesContainer.scrollHeight);
+
+    try {
+      // Get conversation history
+      const conversationHistory: Array<{ role: string; content: string }> = [];
+      const existingMessages = messagesContainer?.querySelectorAll(
+        '.user-message, .assistant-message:not(.loading)'
+      );
+      existingMessages?.forEach((msg) => {
+        if (msg.classList.contains('user-message')) {
+          conversationHistory.push({ role: 'user', content: msg.textContent || '' });
+        } else if (!msg.classList.contains('system-message')) {
+          conversationHistory.push({ role: 'assistant', content: msg.textContent || '' });
+        }
+      });
+
+      // Hardcoded chat response for testing
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate thinking time
+
+      // Remove loading message
+      loadingDiv.remove();
+
+      // Generate hardcoded response based on message
+      let response;
+      if (message.toLowerCase().includes('why') || message.toLowerCase().includes('how')) {
+        response = {
+          response:
+            'This post was identified as AI-generated because it shows typical patterns like generic language, repetitive phrases, and lacks genuine personal experiences. AI-generated content often follows predictable patterns and uses common phrases that sound natural but lack authenticity.',
+          suggestedQuestions: [
+            'What specific patterns indicate AI generation?',
+            'Could this be a false positive?',
+            'How confident are you in this analysis?',
+          ],
+        };
+      } else if (
+        message.toLowerCase().includes('confident') ||
+        message.toLowerCase().includes('sure')
+      ) {
+        response = {
+          response:
+            "The confidence level for this analysis is 85%. This is based on multiple factors including language patterns, content structure, and stylistic elements. While our detection is quite accurate, there's always a small chance of false positives.",
+          suggestedQuestions: [
+            'What makes this different from human writing?',
+            'How can I verify this myself?',
+            'What should I do with this information?',
+          ],
+        };
+      } else {
+        response = {
+          response:
+            'I can help you understand why this content was flagged as AI-generated. The analysis looks at writing patterns, language use, and content structure to make this determination. Feel free to ask specific questions about the analysis!',
+          suggestedQuestions: [
+            'Why do you think this is AI-generated?',
+            'How confident are you in this analysis?',
+            'What are the key indicators of AI content?',
+          ],
+        };
+      }
+
+      // Add assistant response
+      const assistantMessageDiv = document.createElement('div');
+      assistantMessageDiv.className = 'assistant-message';
+      assistantMessageDiv.textContent = response.response;
+      messagesContainer?.appendChild(assistantMessageDiv);
+
+      // Add suggested questions
+      if (response.suggestedQuestions && response.suggestedQuestions.length > 0) {
+        const suggestionsDiv = document.createElement('div');
+        suggestionsDiv.className = 'suggested-questions';
+        suggestionsDiv.innerHTML = '<div class="suggestions-label">Suggested questions:</div>';
+
+        response.suggestedQuestions.forEach((question: string) => {
+          const questionButton = document.createElement('button');
+          questionButton.className = 'suggested-question';
+          questionButton.textContent = question;
+          questionButton.addEventListener('click', () => {
+            const chatInput = chatWindow.querySelector('.chat-input') as HTMLInputElement;
+            if (chatInput) {
+              chatInput.value = question;
+              chatInput.focus();
+            }
+          });
+          suggestionsDiv.appendChild(questionButton);
+        });
+
+        messagesContainer?.appendChild(suggestionsDiv);
+      }
+    } catch (error) {
+      console.error('Chat request failed:', error);
+      loadingDiv.textContent = '❌ Sorry, I encountered an error. Please try again.';
+      loadingDiv.classList.remove('loading');
+    }
+
+    // Scroll to bottom
+    messagesContainer?.scrollTo(0, messagesContainer.scrollHeight);
+  }
+
+  /**
+   * Makes the chat window draggable by its header
+   * @param chatWindow - The chat window element
+   */
+  private makeChatWindowDraggable(chatWindow: HTMLElement): void {
+    const header = chatWindow.querySelector('.chat-window-header') as HTMLElement;
+    if (!header) return;
+
+    let isDragging = false;
+    let startX = 0;
+    let startY = 0;
+    let xOffset = 0;
+    let yOffset = 0;
+
+    // Optimize performance by using requestAnimationFrame
+    let animationId: number | null = null;
+    let pendingUpdate = false;
+
+    const updatePosition = (x: number, y: number) => {
+      if (!pendingUpdate) {
+        pendingUpdate = true;
+        animationId = requestAnimationFrame(() => {
+          // Keep window within viewport bounds (simplified calculation)
+          const viewportWidth = window.innerWidth;
+          const viewportHeight = window.innerHeight;
+          const windowWidth = chatWindow.offsetWidth;
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const _windowHeight = chatWindow.offsetHeight;
+
+          const minX = -windowWidth + 100; // Allow slight off-screen
+          const maxX = viewportWidth - 100;
+          const minY = 0;
+          const maxY = viewportHeight - 50;
+
+          const clampedX = Math.max(minX, Math.min(maxX, x));
+          const clampedY = Math.max(minY, Math.min(maxY, y));
+
+          // Use translate3d for better performance (hardware acceleration)
+          chatWindow.style.transform = `translate3d(${clampedX}px, ${clampedY}px, 0)`;
+
+          xOffset = clampedX;
+          yOffset = clampedY;
+          pendingUpdate = false;
+        });
+      }
+    };
+
+    const handleMouseDown = (e: MouseEvent) => {
+      // Don't drag when clicking buttons
+      if (
+        e.target instanceof Element &&
+        (e.target.closest('.close-chat') || e.target.closest('.minimize-chat'))
+      ) {
+        return;
+      }
+
+      if (e.target === header || header.contains(e.target as Node)) {
+        isDragging = true;
+        startX = e.clientX - xOffset;
+        startY = e.clientY - yOffset;
+
+        header.style.cursor = 'grabbing';
+        chatWindow.style.userSelect = 'none'; // Prevent text selection during drag
+
+        // Add class for potential drag-specific styles
+        chatWindow.classList.add('dragging');
+
+        e.preventDefault(); // Prevent default browser drag behavior
+      }
+    };
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDragging) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      const currentX = e.clientX - startX;
+      const currentY = e.clientY - startY;
+
+      updatePosition(currentX, currentY);
+    };
+
+    const handleMouseUp = () => {
+      if (isDragging) {
+        isDragging = false;
+        header.style.cursor = 'grab';
+        chatWindow.style.userSelect = '';
+        chatWindow.classList.remove('dragging');
+
+        // Cancel any pending animation frame
+        if (animationId) {
+          cancelAnimationFrame(animationId);
+          animationId = null;
+          pendingUpdate = false;
+        }
+      }
+    };
+
+    // Use passive listeners where possible for better performance
+    header.addEventListener('mousedown', handleMouseDown);
+    document.addEventListener('mousemove', handleMouseMove, { passive: false });
+    document.addEventListener('mouseup', handleMouseUp);
+
+    // Handle mouse leave to stop dragging if mouse leaves window
+    document.addEventListener('mouseleave', handleMouseUp);
+
+    // Set initial cursor style
+    header.style.cursor = 'grab';
+
+    // Clean up function (store reference if needed later)
+    (chatWindow as HTMLElement & { _dragCleanup?: () => void })._dragCleanup = () => {
+      header.removeEventListener('mousedown', handleMouseDown);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.removeEventListener('mouseleave', handleMouseUp);
+      if (animationId) {
+        cancelAnimationFrame(animationId);
+      }
+    };
   }
 }
 
-// Initialize the Facebook post observer when the content script loads
+/**
+ * Manages the floating Messenger-style chat window on Facebook pages
+ * - Creates and controls the floating chat window
+ * - Handles minimize/maximize functionality
+ * - Provides Facebook Messenger-like experience
+ */
+class FloatingChatWindow {
+  /** Chat window container */
+  private chatWindow: HTMLDivElement | null = null;
+
+  /** Minimized chat container */
+  private minimizedChat: HTMLDivElement | null = null;
+
+  /** Current state of the chat window */
+  private isVisible: boolean = false;
+  private isMinimized: boolean = false;
+
+  /** Status elements */
+  private statusIndicator: HTMLDivElement | null = null;
+  private statusMessage: HTMLSpanElement | null = null;
+  private profileStatus: HTMLParagraphElement | null = null;
+
+  constructor() {
+    this.setupMessageListener();
+  }
+
+  /**
+   * Sets up message listener for extension icon clicks
+   */
+  private setupMessageListener(): void {
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      if (message.type === 'TOGGLE_CHAT_WINDOW') {
+        this.toggleChatWindow();
+        sendResponse({ success: true });
+      }
+    });
+  }
+
+  /**
+   * Toggles the chat window visibility
+   */
+  private toggleChatWindow(): void {
+    if (this.isVisible) {
+      this.hideChatWindow();
+    } else {
+      this.showChatWindow();
+    }
+  }
+
+  /**
+   * Shows the chat window
+   */
+  private showChatWindow(): void {
+    if (!this.chatWindow) {
+      this.createChatWindow();
+    }
+
+    this.isVisible = true;
+
+    if (this.isMinimized) {
+      if (this.minimizedChat) {
+        this.minimizedChat.style.display = 'block';
+      }
+    } else {
+      if (this.chatWindow) {
+        this.chatWindow.style.display = 'flex';
+      }
+    }
+  }
+
+  /**
+   * Hides the chat window
+   */
+  private hideChatWindow(): void {
+    this.isVisible = false;
+
+    if (this.chatWindow) {
+      this.chatWindow.style.display = 'none';
+    }
+
+    if (this.minimizedChat) {
+      this.minimizedChat.style.display = 'none';
+    }
+  }
+
+  /**
+   * Creates the floating chat window with Messenger-style UI
+   */
+  private createChatWindow(): void {
+    // Create messenger window
+    this.chatWindow = document.createElement('div');
+    this.chatWindow.className = 'factcheck-messenger-window';
+    this.chatWindow.id = 'factcheck-messenger-window';
+    this.chatWindow.innerHTML = `
+      <div class="factcheck-messenger-header">
+        <div class="factcheck-profile-info">
+          <div class="factcheck-profile-avatar">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
+            </svg>
+          </div>
+          <div class="factcheck-profile-details">
+            <h3 class="factcheck-profile-name">FactCheck Eye</h3>
+            <p class="factcheck-profile-status">Active <span class="factcheck-active-time">now</span></p>
+          </div>
+        </div>
+        <div class="factcheck-header-actions">
+          <button class="factcheck-header-btn" id="factcheck-call-btn" title="Call">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M6.62 10.79c1.44 2.83 3.76 5.15 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/>
+            </svg>
+          </button>
+          <button class="factcheck-header-btn" id="factcheck-video-btn" title="Video call">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/>
+            </svg>
+          </button>
+          <button class="factcheck-header-btn" id="factcheck-minimize-btn" title="Minimize">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M19 13H5v-2h14v2z"/>
+            </svg>
+          </button>
+          <button class="factcheck-header-btn factcheck-close-btn" id="factcheck-close-btn" title="Close">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="factcheck-messages-container">
+        <div class="factcheck-messages-list">
+          <div class="factcheck-message-group left">
+            <div class="factcheck-message-avatar">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
+              </svg>
+            </div>
+            <div class="factcheck-message-bubbles">
+              <div class="factcheck-message-bubble factcheck-bot-bubble">
+                Hello! I'm here to help you fact-check Facebook posts.
+              </div>
+              <div class="factcheck-message-bubble factcheck-bot-bubble">
+                Click the eye icon on any post to verify its content 👁️
+              </div>
+            </div>
+          </div>
+
+          <div class="factcheck-message-group right">
+            <div class="factcheck-message-bubbles">
+              <div class="factcheck-message-bubble factcheck-user-bubble">
+                <div class="factcheck-status-info">
+                  <div class="factcheck-status-indicator"></div>
+                  <span class="factcheck-status-message">Ready to fact-check Facebook posts! 🎉</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="factcheck-message-group left">
+            <div class="factcheck-message-avatar">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
+              </svg>
+            </div>
+            <div class="factcheck-message-bubbles">
+              <div class="factcheck-message-bubble factcheck-bot-bubble">
+                💡 <strong>Pro tip:</strong> Look for the eye icon next to post reactions for instant fact-checking!
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="factcheck-message-input-container">
+        <div class="factcheck-input-actions left">
+          <button class="factcheck-input-btn" title="Attach file">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z"/>
+            </svg>
+          </button>
+          <button class="factcheck-input-btn" title="Add photo">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/>
+            </svg>
+          </button>
+        </div>
+        <div class="factcheck-message-input">
+          <input type="text" placeholder="Type a message..." readonly>
+        </div>
+        <div class="factcheck-input-actions right">
+          <button class="factcheck-input-btn factcheck-emoji-btn" title="Add emoji">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z"/>
+            </svg>
+          </button>
+          <button class="factcheck-input-btn factcheck-like-btn" title="Send like">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-1.91l-.01-.01L23 10z"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    `;
+
+    // Create minimized chat
+    this.minimizedChat = document.createElement('div');
+    this.minimizedChat.className = 'factcheck-minimized-chat';
+    this.minimizedChat.id = 'factcheck-minimized-chat';
+    this.minimizedChat.style.display = 'none';
+    this.minimizedChat.innerHTML = `
+      <div class="factcheck-minimized-content">
+        <div class="factcheck-minimized-avatar">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
+          </svg>
+        </div>
+        <span class="factcheck-minimized-name">FactCheck Eye</span>
+        <button class="factcheck-expand-btn" id="factcheck-expand-btn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 8l-6 6 1.41 1.41L12 10.83l4.59 4.58L18 14z"/>
+          </svg>
+        </button>
+      </div>
+    `;
+
+    // Add to page
+    document.body.appendChild(this.chatWindow);
+    document.body.appendChild(this.minimizedChat);
+
+    // Set up event listeners
+    this.setupChatEventListeners();
+
+    // Get reference to status elements
+    this.statusIndicator = this.chatWindow.querySelector('.factcheck-status-indicator');
+    this.statusMessage = this.chatWindow.querySelector('.factcheck-status-message');
+    this.profileStatus = this.chatWindow.querySelector('.factcheck-profile-status');
+  }
+
+  /**
+   * Sets up event listeners for the chat window
+   */
+  private setupChatEventListeners(): void {
+    if (!this.chatWindow || !this.minimizedChat) return;
+
+    // Minimize button
+    const minimizeBtn = this.chatWindow.querySelector('#factcheck-minimize-btn');
+    minimizeBtn?.addEventListener('click', () => {
+      this.minimizeChat();
+    });
+
+    // Expand button
+    const expandBtn = this.minimizedChat.querySelector('#factcheck-expand-btn');
+    expandBtn?.addEventListener('click', () => {
+      this.expandChat();
+    });
+
+    // Close button
+    const closeBtn = this.chatWindow.querySelector('#factcheck-close-btn');
+    closeBtn?.addEventListener('click', () => {
+      this.hideChatWindow();
+    });
+
+    // Click minimized chat to expand
+    this.minimizedChat.addEventListener('click', e => {
+      if (e.target !== expandBtn) {
+        this.expandChat();
+      }
+    });
+
+    // Decorative buttons (show coming soon message)
+    const decorativeButtons = this.chatWindow.querySelectorAll(
+      '#factcheck-call-btn, #factcheck-video-btn, .factcheck-input-btn, .factcheck-message-input input'
+    );
+    decorativeButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.showNotImplementedMessage();
+      });
+    });
+  }
+
+  /**
+   * Minimizes the chat window
+   */
+  private minimizeChat(): void {
+    this.isMinimized = true;
+    if (this.chatWindow) {
+      this.chatWindow.style.display = 'none';
+    }
+    if (this.minimizedChat) {
+      this.minimizedChat.style.display = 'block';
+    }
+  }
+
+  /**
+   * Expands the chat window
+   */
+  private expandChat(): void {
+    this.isMinimized = false;
+    if (this.minimizedChat) {
+      this.minimizedChat.style.display = 'none';
+    }
+    if (this.chatWindow) {
+      this.chatWindow.style.display = 'flex';
+    }
+  }
+
+  /**
+   * Shows a temporary notification
+   */
+  private showNotImplementedMessage(): void {
+    const notification = document.createElement('div');
+    notification.style.cssText = `
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: #3a3a3a;
+      color: white;
+      padding: 12px 20px;
+      border-radius: 20px;
+      font-size: 14px;
+      z-index: 10001;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    `;
+    notification.textContent = 'Feature coming soon!';
+    document.body.appendChild(notification);
+
+    setTimeout(() => (notification.style.opacity = '1'), 10);
+    setTimeout(() => {
+      notification.style.opacity = '0';
+      setTimeout(() => document.body.removeChild(notification), 300);
+    }, 2000);
+  }
+}
+
+// Initialize both components when the content script loads
 new FacebookPostObserver();
+new FloatingChatWindow();

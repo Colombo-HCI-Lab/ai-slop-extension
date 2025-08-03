@@ -11,7 +11,8 @@
     "webRequest"
   ],
   "host_permissions": [
-    "*://*.facebook.com/*"
+    "*://*.facebook.com/*",
+    "http://localhost:4000/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -24,7 +25,6 @@
     }
   ],
   "action": {
-    "default_popup": "popup.html",
     "default_icon": {
       "16": "assets/icon16.png",
       "32": "assets/icon32.png",

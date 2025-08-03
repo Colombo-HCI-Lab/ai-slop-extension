@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
+  <!-- AI Slop Detection Icon - Shield with AI symbol -->
+  <!-- Shield base (larger) -->
+  <path d="M64 8 L16 28 L16 62 C16 95 38 116 64 124 C90 116 112 95 112 62 L112 28 Z" fill="#4A90E2" stroke="#2E5C8A" stroke-width="2"/>
+  
+  <!-- AI symbol (larger) -->
+  <text x="64" y="72" font-family="Arial, sans-serif" font-size="38" font-weight="bold" text-anchor="middle" fill="white">AI</text>
+  
+  <!-- Detection eye (smaller white circle) -->
+  <ellipse cx="64" cy="88" rx="16" ry="8" fill="white" opacity="0.9"/>
+  <circle cx="64" cy="88" r="5" fill="#2E5C8A"/>
+</svg>

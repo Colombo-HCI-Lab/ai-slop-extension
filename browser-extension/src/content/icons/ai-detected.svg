@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
+  <!-- Yellow warning triangle for AI slop -->
+  <path d="M12 2 L22 20 L2 20 Z" fill="#FFC107" stroke="#F57C00" stroke-width="1"/>
+  <text x="12" y="16" font-family="Arial, sans-serif" font-size="10" font-weight="bold" text-anchor="middle" fill="#5D4037">!</text>
+</svg>
