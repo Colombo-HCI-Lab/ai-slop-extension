@@ -1,15 +1,19 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DetectDto } from './dto/detect.dto';
 import { LogContext, LoggerService } from '../logger/logger.service';
+import { DatabaseService } from '../database/database.service';
 
 @Injectable()
 export class DetectService {
   private readonly logger = new Logger(DetectService.name);
   private requestCounter = 0;
 
-  constructor(private readonly loggerService: LoggerService) {}
+  constructor(
+    private readonly loggerService: LoggerService,
+    private readonly databaseService: DatabaseService,
+  ) {}
 
-  detect(
+  async detect(
     detectDto: DetectDto,
     context?: LogContext,
   ): Promise<{
@@ -120,7 +124,43 @@ export class DetectService {
         },
       );
 
-      return Promise.resolve(response);
+      // Save analysis to database
+      try {
+        await this.databaseService.post.upsert({
+          where: { postId },
+          update: {
+            verdict,
+            confidence,
+            explanation,
+            updatedAt: new Date(),
+          },
+          create: {
+            postId,
+            content,
+            author: detectDto.author,
+            verdict,
+            confidence,
+            explanation,
+            metadata: detectDto.metadata,
+          },
+        });
+        this.loggerService.debug(
+          `[Request #${this.requestCounter}] Post analysis saved to database`,
+          serviceContext,
+        );
+      } catch (error) {
+        this.loggerService.logError(
+          `Save post analysis (Request #${this.requestCounter})`,
+          error as Error,
+          {
+            ...serviceContext,
+            requestId: serviceContext?.requestId || 'detect-service',
+            action: 'save-post-analysis',
+          },
+        );
+      }
+
+      return response;
     }
 
     // Real AI detection logic (preserved for production use)
@@ -219,6 +259,42 @@ export class DetectService {
       },
     );
 
-    return Promise.resolve(response);
+    // Save analysis to database
+    try {
+      await this.databaseService.post.upsert({
+        where: { postId },
+        update: {
+          verdict,
+          confidence,
+          explanation,
+          updatedAt: new Date(),
+        },
+        create: {
+          postId,
+          content,
+          author: detectDto.author,
+          verdict,
+          confidence,
+          explanation,
+          metadata: detectDto.metadata,
+        },
+      });
+      this.loggerService.debug(
+        `[Request #${this.requestCounter}] Post analysis saved to database`,
+        serviceContext,
+      );
+    } catch (error) {
+      this.loggerService.logError(
+        `Save post analysis (Request #${this.requestCounter})`,
+        error as Error,
+        {
+          ...serviceContext,
+          requestId: serviceContext?.requestId || 'detect-service',
+          action: 'save-post-analysis',
+        },
+      );
+    }
+
+    return response;
   }
 }

@@ -1112,7 +1112,6 @@ export class FacebookPostObserver {
 
     let _previousAnalysis;
     try {
-       
       _previousAnalysis = JSON.parse(analysisData);
     } catch {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -1140,7 +1139,7 @@ export class FacebookPostObserver {
       const existingMessages = messagesContainer?.querySelectorAll(
         '.user-message, .assistant-message:not(.loading)'
       );
-      existingMessages?.forEach((msg) => {
+      existingMessages?.forEach(msg => {
         if (msg.classList.contains('user-message')) {
           conversationHistory.push({ role: 'user', content: msg.textContent || '' });
         } else if (!msg.classList.contains('system-message')) {

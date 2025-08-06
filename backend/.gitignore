@@ -114,3 +114,5 @@ Thumbs.db
 # Project
 .env.*
 !.env.example
+
+/generated/prisma

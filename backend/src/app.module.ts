@@ -4,11 +4,17 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ChatModule } from './chat/chat.module';
 import { DetectModule } from './detect/detect.module';
+import { DatabaseModule } from './database/database.module';
 import { LoggerService } from './logger/logger.service';
 import { winstonConfig } from './logger/logger.config';
 
 @Module({
-  imports: [WinstonModule.forRoot(winstonConfig), ChatModule, DetectModule],
+  imports: [
+    WinstonModule.forRoot(winstonConfig),
+    DatabaseModule,
+    ChatModule,
+    DetectModule,
+  ],
   controllers: [AppController],
   providers: [AppService, LoggerService],
   exports: [LoggerService],

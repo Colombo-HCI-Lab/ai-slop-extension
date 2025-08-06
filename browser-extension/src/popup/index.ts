@@ -8,7 +8,7 @@ interface Stats {
 }
 
 /** Message types */
-type PopupMessage = 
+type PopupMessage =
   | { type: 'UPDATE_STATS'; stats: Partial<Stats> }
   | { type: 'STATUS_UPDATE'; status: 'active' | 'inactive'; text: string };
 

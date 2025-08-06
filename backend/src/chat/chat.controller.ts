@@ -5,6 +5,8 @@ import {
   HttpStatus,
   Logger,
   Post,
+  Get,
+  Param,
   Req,
   UsePipes,
   ValidationPipe,
@@ -32,9 +34,76 @@ export class ChatController {
     private readonly loggerService: LoggerService,
   ) {}
 
+  @Post('message')
+  @ApiOperation({
+    summary: 'Send a chat message about a post',
+    description:
+      'Send a message and get a response using Gemini AI about the analyzed post',
+  })
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  async sendMessage(
+    @Body() body: { postId: string; message: string },
+    @Req() req: Request,
+  ) {
+    const requestId =
+      (req as Request & { requestId?: string }).requestId || 'unknown';
+    const context = {
+      requestId,
+      postId: body.postId,
+      action: 'send_message',
+    };
+
+    this.loggerService.log(`Sending message for post: ${body.postId}`, {
+      ...context,
+      metadata: { messageLength: body.message.length },
+    });
+
+    try {
+      const response = await this.chatService.sendMessage(
+        body.postId,
+        body.message,
+      );
+      return response;
+    } catch (error) {
+      this.loggerService.logError('Send message', error as Error, context);
+      throw new HttpException(
+        'Failed to send message',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Get('history/:postId')
+  @ApiOperation({
+    summary: 'Get chat history for a post',
+    description: 'Retrieve all chat messages for a specific analyzed post',
+  })
+  async getChatHistory(@Param('postId') postId: string, @Req() req: Request) {
+    const requestId =
+      (req as Request & { requestId?: string }).requestId || 'unknown';
+    const context = {
+      requestId,
+      postId,
+      action: 'get_chat_history',
+    };
+
+    this.loggerService.log(`Getting chat history for post: ${postId}`, context);
+
+    try {
+      const history = await this.chatService.getChatHistory(postId);
+      return { messages: history };
+    } catch (error) {
+      this.loggerService.logError('Get chat history', error as Error, context);
+      throw new HttpException(
+        'Failed to get chat history',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
   @Post()
   @ApiOperation({
-    summary: 'Chat about a Facebook post',
+    summary: 'Chat about a Facebook post (legacy)',
     description:
       'Allows users to have a conversation about a specific Facebook post and its AI slop analysis',
   })

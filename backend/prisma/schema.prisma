@@ -1,0 +1,42 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model post {
+  id          String   @id @default(cuid())
+  postId      String   @unique // Unique identifier from the browser extension
+  content     String
+  author      String?
+  verdict     String   // 'ai_slop', 'human_content', 'uncertain'
+  confidence  Float
+  explanation String?
+  metadata    Json?    // Additional post metadata
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relation to chat conversations about this post
+  chat chat[]
+  
+  @@map("post")
+}
+
+model chat {
+  id        String   @id @default(cuid())
+  postId    String   // Reference to the analyzed post
+  role      String   // 'user' or 'assistant'
+  message   String
+  createdAt DateTime @default(now())
+  
+  // Relation to post
+  post post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  
+  @@map("chat")
+}
