@@ -17,7 +17,7 @@ CREATE TABLE "post" (
 -- CreateTable
 CREATE TABLE "chat" (
     "id" TEXT NOT NULL,
-    "postId" TEXT NOT NULL,
+    "postDbId" TEXT NOT NULL,
     "role" TEXT NOT NULL,
     "message" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -29,4 +29,4 @@ CREATE TABLE "chat" (
 CREATE UNIQUE INDEX "post_postId_key" ON "post"("postId");
 
 -- AddForeignKey
-ALTER TABLE "chat" ADD CONSTRAINT "chat_postId_fkey" FOREIGN KEY ("postId") REFERENCES "post"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "chat" ADD CONSTRAINT "chat_postDbId_fkey" FOREIGN KEY ("postDbId") REFERENCES "post"("id") ON DELETE CASCADE ON UPDATE CASCADE;

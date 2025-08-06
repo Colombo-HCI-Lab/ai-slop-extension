@@ -22,30 +22,30 @@ export class ChatService {
   }
 
   async sendMessage(
-    postId: string,
+    facebookPostId: string,
     message: string,
   ): Promise<{ id: string; message: string }> {
-    // Save user message to database
+    // Find the post by Facebook post ID
+    const post = await this.databaseService.post.findUnique({
+      where: { postId: facebookPostId },
+    });
+
+    if (!post) {
+      throw new Error(`Post with Facebook ID ${facebookPostId} not found`);
+    }
+
+    // Save user message to database using the internal database ID
     const userChat = await this.databaseService.chat.create({
       data: {
-        postId,
+        postDbId: post.id, // Use internal database ID for foreign key
         role: 'user',
         message,
       },
     });
 
-    // Get post analysis data for context
-    const post = await this.databaseService.post.findUnique({
-      where: { id: postId },
-    });
-
-    if (!post) {
-      throw new Error(`Post with ID ${postId} not found`);
-    }
-
-    // Get chat history for context
+    // Get chat history for context using the internal database ID
     const chatHistory = await this.databaseService.chat.findMany({
-      where: { postId },
+      where: { postDbId: post.id },
       orderBy: { createdAt: 'asc' },
       take: 20, // Limit to last 20 messages for context
     });
@@ -92,18 +92,21 @@ Please provide a helpful response about the AI detection analysis.`;
       // Save AI response to database
       const assistantChat = await this.databaseService.chat.create({
         data: {
-          postId,
+          postDbId: post.id, // Use internal database ID for foreign key
           role: 'assistant',
           message: responseText,
         },
       });
 
-      this.loggerService.debug(`Generated chat response for post ${postId}`, {
-        metadata: {
-          userMessageLength: message.length,
-          responseLength: responseText.length,
+      this.loggerService.debug(
+        `Generated chat response for post ${facebookPostId}`,
+        {
+          metadata: {
+            userMessageLength: message.length,
+            responseLength: responseText.length,
+          },
         },
-      });
+      );
 
       return {
         id: assistantChat.id,
@@ -111,7 +114,7 @@ Please provide a helpful response about the AI detection analysis.`;
       };
     } catch (error) {
       this.loggerService.logError('Generate chat response', error as Error, {
-        metadata: { postId, userMessage: message },
+        metadata: { facebookPostId, userMessage: message },
         requestId: 'chat-service',
         action: 'generate-response',
       });
@@ -120,12 +123,21 @@ Please provide a helpful response about the AI detection analysis.`;
   }
 
   async getChatHistory(
-    postId: string,
+    facebookPostId: string,
   ): Promise<
     Array<{ id: string; role: string; message: string; createdAt: Date }>
   > {
+    // Find the post by Facebook post ID
+    const post = await this.databaseService.post.findUnique({
+      where: { postId: facebookPostId },
+    });
+
+    if (!post) {
+      throw new Error(`Post with Facebook ID ${facebookPostId} not found`);
+    }
+
     const chats = await this.databaseService.chat.findMany({
-      where: { postId },
+      where: { postDbId: post.id },
       orderBy: { createdAt: 'asc' },
     });
 

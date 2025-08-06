@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { DetectDto } from './dto/detect.dto';
 import { LogContext, LoggerService } from '../logger/logger.service';
 import { DatabaseService } from '../database/database.service';
+import { CacheService } from './cache.service';
 
 @Injectable()
 export class DetectService {
@@ -11,6 +12,7 @@ export class DetectService {
   constructor(
     private readonly loggerService: LoggerService,
     private readonly databaseService: DatabaseService,
+    private readonly cacheService: CacheService,
   ) {}
 
   async detect(
@@ -27,6 +29,7 @@ export class DetectService {
       requestNumber: number;
       randomValue?: string;
       indicatorCount?: number;
+      fromCache?: boolean;
     };
   }> {
     const { content, postId } = detectDto;
@@ -45,6 +48,43 @@ export class DetectService {
       `[Request #${this.requestCounter}] Analyzing post ${postId}`,
       serviceContext,
     );
+
+    // Check cache first
+    const cachedResult = await this.cacheService.getCachedResult(
+      detectDto,
+      serviceContext,
+    );
+
+    if (cachedResult) {
+      // Return cached result with updated debug info
+      const response = {
+        postId: cachedResult.postId,
+        verdict: cachedResult.verdict,
+        confidence: cachedResult.confidence,
+        explanation: cachedResult.explanation,
+        timestamp: cachedResult.timestamp,
+        debugInfo: {
+          mode: 'cached_result',
+          requestNumber: this.requestCounter,
+          fromCache: true,
+        },
+      };
+
+      this.loggerService.log(
+        `[Request #${this.requestCounter}] Returning cached result for post ${postId}`,
+        {
+          ...serviceContext,
+          metadata: {
+            ...serviceContext.metadata,
+            cached: true,
+            verdict: cachedResult.verdict,
+            confidence: Math.round(cachedResult.confidence * 100),
+          },
+        },
+      );
+
+      return response;
+    }
 
     this.loggerService.debug(
       `Content preview: ${content.substring(0, 100)}...`,
@@ -124,38 +164,21 @@ export class DetectService {
         },
       );
 
-      // Save analysis to database
+      // Save analysis to cache
       try {
-        await this.databaseService.post.upsert({
-          where: { postId },
-          update: {
-            verdict,
-            confidence,
-            explanation,
-            updatedAt: new Date(),
-          },
-          create: {
-            postId,
-            content,
-            author: detectDto.author,
-            verdict,
-            confidence,
-            explanation,
-            metadata: detectDto.metadata,
-          },
-        });
-        this.loggerService.debug(
-          `[Request #${this.requestCounter}] Post analysis saved to database`,
+        await this.cacheService.saveResult(
+          detectDto,
+          { verdict, confidence, explanation },
           serviceContext,
         );
       } catch (error) {
         this.loggerService.logError(
-          `Save post analysis (Request #${this.requestCounter})`,
+          `Cache save failed (Request #${this.requestCounter})`,
           error as Error,
           {
             ...serviceContext,
             requestId: serviceContext?.requestId || 'detect-service',
-            action: 'save-post-analysis',
+            action: 'cache-save',
           },
         );
       }
@@ -259,38 +282,21 @@ export class DetectService {
       },
     );
 
-    // Save analysis to database
+    // Save analysis to cache
     try {
-      await this.databaseService.post.upsert({
-        where: { postId },
-        update: {
-          verdict,
-          confidence,
-          explanation,
-          updatedAt: new Date(),
-        },
-        create: {
-          postId,
-          content,
-          author: detectDto.author,
-          verdict,
-          confidence,
-          explanation,
-          metadata: detectDto.metadata,
-        },
-      });
-      this.loggerService.debug(
-        `[Request #${this.requestCounter}] Post analysis saved to database`,
+      await this.cacheService.saveResult(
+        detectDto,
+        { verdict, confidence, explanation },
         serviceContext,
       );
     } catch (error) {
       this.loggerService.logError(
-        `Save post analysis (Request #${this.requestCounter})`,
+        `Cache save failed (Request #${this.requestCounter})`,
         error as Error,
         {
           ...serviceContext,
           requestId: serviceContext?.requestId || 'detect-service',
-          action: 'save-post-analysis',
+          action: 'cache-save',
         },
       );
     }

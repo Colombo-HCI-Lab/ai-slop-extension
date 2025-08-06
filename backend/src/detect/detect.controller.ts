@@ -1,6 +1,7 @@
-import { Controller, Post, Body, Logger, Req } from '@nestjs/common';
+import { Controller, Post, Get, Body, Logger, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import { DetectService } from './detect.service';
+import { CacheService } from './cache.service';
 import { DetectDto } from './dto/detect.dto';
 import { LoggerService } from '../logger/logger.service';
 
@@ -10,6 +11,7 @@ export class DetectController {
 
   constructor(
     private readonly detectService: DetectService,
+    private readonly cacheService: CacheService,
     private readonly loggerService: LoggerService,
   ) {}
 
@@ -55,6 +57,28 @@ export class DetectController {
       return result;
     } catch (error: unknown) {
       this.loggerService.logError('Detection', error as Error, context);
+      throw error;
+    }
+  }
+
+  @Get('cache/stats')
+  async getCacheStats() {
+    this.loggerService.log('Cache statistics requested', {
+      requestId: 'cache-stats',
+      action: 'get_cache_stats',
+    });
+
+    try {
+      const stats = await this.cacheService.getCacheStats();
+      return {
+        success: true,
+        data: stats,
+      };
+    } catch (error: unknown) {
+      this.loggerService.logError('Cache stats', error as Error, {
+        requestId: 'cache-stats',
+        action: 'get_cache_stats',
+      });
       throw error;
     }
   }

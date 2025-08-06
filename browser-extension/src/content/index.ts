@@ -16,6 +16,89 @@ export class FacebookPostObserver {
   /** Selector for extracting post content */
   private readonly POST_CONTENT_SELECTOR = '[data-ad-comet-preview="message"]';
 
+  /** List of allowed Facebook group names where the extension should work */
+  private readonly ALLOWED_GROUP_NAMES = [
+    'Artificial Intelligence & Deep Learning Memes For Back-propagated Poets',
+    'Social Media for People'
+  ];
+
+  /**
+   * Checks if the current page is in an allowed Facebook group
+   * @returns boolean indicating if the extension should be active
+   */
+  private isInAllowedGroup(): boolean {
+    const currentGroupName = this.getCurrentGroupName();
+    
+    if (!currentGroupName) {
+      // Not in a group, extension should work
+      return true;
+    }
+
+    const isAllowed = this.ALLOWED_GROUP_NAMES.some(allowedName => 
+      currentGroupName.toLowerCase().includes(allowedName.toLowerCase()) ||
+      allowedName.toLowerCase().includes(currentGroupName.toLowerCase())
+    );
+
+    console.log(`[FactCheck] Group filtering - Current group: "${currentGroupName}", Allowed: ${isAllowed}`);
+    return isAllowed;
+  }
+
+  /**
+   * Extracts the current Facebook group name from the page
+   * @returns string group name or null if not in a group
+   */
+  private getCurrentGroupName(): string | null {
+    // Method 1: Check URL pattern for groups
+    const url = window.location.href;
+    if (!url.includes('/groups/')) {
+      return null; // Not in a group
+    }
+
+    // Method 2: Look for group name in page title
+    const pageTitle = document.title;
+    if (pageTitle && pageTitle.includes('|')) {
+      // Facebook group titles often have format "Group Name | Facebook"
+      const groupName = pageTitle.split('|')[0].trim();
+      if (groupName && groupName !== 'Facebook') {
+        return groupName;
+      }
+    }
+
+    // Method 3: Look for group name in DOM elements
+    const selectors = [
+      'h1[dir="auto"]', // Main group title
+      '[data-pagelet="GroupsRHCHeader"] h1',
+      '[role="main"] h1',
+      'a[href*="/groups/"] h1', // Group header link
+      '[data-testid="group_name"] h1',
+    ];
+
+    for (const selector of selectors) {
+      const element = document.querySelector(selector);
+      if (element && element.textContent && element.textContent.trim().length > 0) {
+        const groupName = element.textContent.trim();
+        // Filter out generic Facebook elements
+        if (groupName && !['Facebook', 'Home', 'Groups'].includes(groupName)) {
+          return groupName;
+        }
+      }
+    }
+
+    // Method 4: Look for breadcrumb navigation
+    const breadcrumbLinks = document.querySelectorAll('nav a[href*="/groups/"]');
+    for (const link of breadcrumbLinks) {
+      if (link.textContent && link.textContent.trim().length > 3) {
+        const groupName = link.textContent.trim();
+        if (!['Groups', 'Facebook'].includes(groupName)) {
+          return groupName;
+        }
+      }
+    }
+
+    console.log(`[FactCheck] Could not determine group name from URL: ${url}`);
+    return 'Unknown Group';
+  }
+
   /**
    * Determines if an element is a Facebook post by checking multiple characteristics
    * Works for both regular feed posts and Facebook group posts
@@ -282,6 +365,12 @@ export class FacebookPostObserver {
    * @param postElement - The post's HTML element
    */
   private async processPost(postElement: HTMLElement): Promise<void> {
+    // Check if we're in an allowed group before processing
+    if (!this.isInAllowedGroup()) {
+      console.log(`[FactCheck] ⏭️ Skipping post - not in allowed group`);
+      return;
+    }
+
     // Generate unique ID for the post
     const postId = await this.generatePostId(postElement);
 
@@ -373,11 +462,22 @@ export class FacebookPostObserver {
   }
 
   /**
-   * Generates a unique ID for a post based on its content and DOM characteristics
+   * Generates a unique ID for a post based on Facebook's URL structure
+   * Priority: URL-based ID > content-based fallback > DOM-based fallback
    * @param postElement - The post's HTML element
-   * @returns Base64 encoded string combining multiple unique characteristics
+   * @returns Facebook post ID (numeric string) or fallback Base64 encoded string
    */
   private async generatePostId(postElement: HTMLElement): Promise<string> {
+    // Primary method: Extract post ID from Facebook URLs
+    const postId = this.extractPostIdFromUrls(postElement);
+    if (postId) {
+      console.log(`[FactCheck] 🆔 Using URL-based post ID: ${postId}`);
+      return postId;
+    }
+
+    console.log(`[FactCheck] ⚠️ No URL-based ID found, falling back to legacy method`);
+
+    // Fallback to legacy content/DOM-based ID generation
     const content = await this.extractPostContent(postElement);
 
     // Get additional unique characteristics from the DOM
@@ -417,6 +517,36 @@ export class FacebookPostObserver {
       console.warn(`[FactCheck] ⚠️ Using fallback ID generation:`, error);
       return btoa(fallbackId);
     }
+  }
+
+  /**
+   * Extracts Facebook post ID from URLs within the post element
+   * Looks for patterns like /posts/{numeric_id} or /posts/{numeric_id}/
+   * @param postElement - The post's HTML element
+   * @returns Facebook post ID (numeric string) or null if not found
+   */
+  private extractPostIdFromUrls(postElement: HTMLElement): string | null {
+    // Look for all links within the post that contain 'posts/' in their href
+    const postLinks = postElement.querySelectorAll('a[href*="posts/"]');
+
+    for (const link of postLinks) {
+      const href = link.getAttribute('href') || '';
+
+      // Match Facebook post URL pattern: /posts/{numeric_id}
+      // Supports both full URLs and relative paths
+      const match = href.match(/\/posts\/(\d+)/);
+
+      if (match && match[1]) {
+        const postId = match[1];
+        console.log(
+          `[FactCheck] 🔗 Extracted post ID from URL: ${postId} (from: ${href.slice(0, 100)}...)`
+        );
+        return postId;
+      }
+    }
+
+    console.log(`[FactCheck] 🔍 No post URLs found in element, checked ${postLinks.length} links`);
+    return null;
   }
 
   /**
