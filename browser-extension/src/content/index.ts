@@ -30,8 +30,8 @@ export class FacebookPostObserver {
     const currentGroupName = this.getCurrentGroupName();
     
     if (!currentGroupName) {
-      // Not in a group, extension should work
-      return true;
+      // Not in a group, extension should NOT work
+      return false;
     }
 
     const isAllowed = this.ALLOWED_GROUP_NAMES.some(allowedName => 
@@ -280,6 +280,11 @@ export class FacebookPostObserver {
    * Updated to handle both article elements and group posts
    */
   private async processExistingPosts(): Promise<void> {
+    // Early exit if not in an allowed group
+    if (!this.isInAllowedGroup()) {
+      return;
+    }
+
     let validPostsFound = 0;
 
     // Query articles (regular feed posts)
@@ -330,6 +335,11 @@ export class FacebookPostObserver {
    * @param node - HTML element to process
    */
   private async processNode(node: HTMLElement): Promise<void> {
+    // Early exit if not in an allowed group
+    if (!this.isInAllowedGroup()) {
+      return;
+    }
+
     // Check if the node itself is a Facebook post
     if (this.isFacebookPost(node)) {
       await this.processPost(node);
@@ -367,7 +377,6 @@ export class FacebookPostObserver {
   private async processPost(postElement: HTMLElement): Promise<void> {
     // Check if we're in an allowed group before processing
     if (!this.isInAllowedGroup()) {
-      console.log(`[AI-Slop] ⏭️ Skipping post - not in allowed group`);
       return;
     }
 
