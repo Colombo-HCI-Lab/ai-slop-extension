@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "FactCheck Eye",
+  "name": "AI Slop Detector",
   "version": "1.0.0",
-  "description": "Real-time fact-checking for Facebook posts",
+  "description": "Real-time AI slop detection for Facebook posts",
   "permissions": [
     "activeTab",
     "scripting",

@@ -1,6 +1,6 @@
-# FactCheck Eye 👁️
+# AI Slop Detector 🤖
 
-A Chrome extension for real-time fact-checking of Facebook posts.
+A Chrome extension for real-time AI slop detection in Facebook posts.
 
 ## Development Setup
 
@@ -14,8 +14,8 @@ A Chrome extension for real-time fact-checking of Facebook posts.
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/fact-check-extension.git
-   cd fact-check-extension
+   git clone https://github.com/yourusername/ai-slop-extension.git
+   cd ai-slop-extension
    ```
 
 2. Install dependencies:

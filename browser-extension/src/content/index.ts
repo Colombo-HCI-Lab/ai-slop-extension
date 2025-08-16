@@ -1,10 +1,10 @@
 import '../styles/content.css';
 
 /**
- * Observes and processes Facebook posts to add fact-checking functionality
+ * Observes and processes Facebook posts to add AI slop detection functionality
  * - Monitors DOM for new posts
- * - Injects fact-check icons into posts
- * - Handles fact-checking requests and result display
+ * - Injects AI slop detection icons into posts
+ * - Handles AI detection requests and result display
  */
 export class FacebookPostObserver {
   /** MutationObserver instance for monitoring DOM changes */
@@ -39,7 +39,7 @@ export class FacebookPostObserver {
       allowedName.toLowerCase().includes(currentGroupName.toLowerCase())
     );
 
-    console.log(`[FactCheck] Group filtering - Current group: "${currentGroupName}", Allowed: ${isAllowed}`);
+    console.log(`[AI-Slop] Group filtering - Current group: "${currentGroupName}", Allowed: ${isAllowed}`);
     return isAllowed;
   }
 
@@ -95,7 +95,7 @@ export class FacebookPostObserver {
       }
     }
 
-    console.log(`[FactCheck] Could not determine group name from URL: ${url}`);
+    console.log(`[AI-Slop] Could not determine group name from URL: ${url}`);
     return 'Unknown Group';
   }
 
@@ -157,7 +157,7 @@ export class FacebookPostObserver {
 
     // Only log when we find a valid post
     if (isValidPost) {
-      console.group('[FactCheck] ✅ POST DETECTED!');
+      console.group('[AI-Slop] ✅ POST DETECTED!');
       console.log('👤 Author:', authorText);
       console.log('📊 Post type:', isArticle ? 'Article' : 'Group Post');
       console.log('🔍 Found buttons:', buttons.length);
@@ -184,7 +184,7 @@ export class FacebookPostObserver {
   private readonly boundHandleScroll: () => void;
 
   constructor() {
-    console.group('[FactCheck] 🚀 Initializing Facebook Post Observer');
+    console.group('[AI-Slop] 🚀 Initializing Facebook Post Observer');
     console.log('📅 Timestamp:', new Date().toISOString());
     console.log('🌐 URL:', window.location.href);
     console.log('🏷️ Page title:', document.title);
@@ -234,7 +234,7 @@ export class FacebookPostObserver {
 
     // Process any existing posts
     this.processExistingPosts().catch(error => {
-      console.error('[FactCheck] Error processing existing posts:', error);
+      console.error('[AI-Slop] Error processing existing posts:', error);
     });
   }
 
@@ -250,9 +250,9 @@ export class FacebookPostObserver {
 
     // Set new timer
     this.scrollDebounceTimer = window.setTimeout(() => {
-      console.debug('[FactCheck] Processing posts after scroll');
+      console.debug('[AI-Slop] Processing posts after scroll');
       this.processExistingPosts().catch(error => {
-        console.error('[FactCheck] Error processing posts after scroll:', error);
+        console.error('[AI-Slop] Error processing posts after scroll:', error);
       });
     }, this.SCROLL_DEBOUNCE_DELAY);
   }
@@ -267,7 +267,7 @@ export class FacebookPostObserver {
         if (node instanceof HTMLElement) {
           // Process nodes asynchronously without blocking the mutation observer
           this.processNode(node).catch(error => {
-            console.error('[FactCheck] Error processing node:', error);
+            console.error('[AI-Slop] Error processing node:', error);
           });
         }
       });
@@ -315,7 +315,7 @@ export class FacebookPostObserver {
 
     // Only log if we found valid posts or scanned group posts
     if (validPostsFound > 0 || groupPostsScanned > 0) {
-      console.log('[FactCheck] 📈 Scan complete:', {
+      console.log('[AI-Slop] 📈 Scan complete:', {
         totalArticles: articlePosts.length,
         groupPostsScanned: groupPostsScanned,
         validPosts: validPostsFound,
@@ -361,13 +361,13 @@ export class FacebookPostObserver {
 
   /**
    * Processes an individual Facebook post element
-   * Adds fact-checking functionality if not already processed
+   * Adds AI slop detection functionality if not already processed
    * @param postElement - The post's HTML element
    */
   private async processPost(postElement: HTMLElement): Promise<void> {
     // Check if we're in an allowed group before processing
     if (!this.isInAllowedGroup()) {
-      console.log(`[FactCheck] ⏭️ Skipping post - not in allowed group`);
+      console.log(`[AI-Slop] ⏭️ Skipping post - not in allowed group`);
       return;
     }
 
@@ -376,26 +376,26 @@ export class FacebookPostObserver {
 
     if (this.processedPosts.has(postId)) {
       // Check if icon still exists
-      const existingIcon = postElement.querySelector('.fact-check-icon');
+      const existingIcon = postElement.querySelector('.ai-slop-icon');
       if (existingIcon) {
-        console.debug(`[FactCheck] ⏭️ Post ${postId} already processed and icon exists, skipping`);
+        console.debug(`[AI-Slop] ⏭️ Post ${postId} already processed and icon exists, skipping`);
         return;
       } else {
-        console.log(`[FactCheck] 🔄 Post ${postId} was processed but icon missing, re-injecting`);
+        console.log(`[AI-Slop] 🔄 Post ${postId} was processed but icon missing, re-injecting`);
         // Remove from processed set to allow re-injection
         this.processedPosts.delete(postId);
       }
     }
 
-    // Also check if the post already has a fact-check icon
-    if (postElement.querySelector('.fact-check-icon')) {
-      console.debug(`[FactCheck] ⏭️ Post already has icon, adding to processed set`);
+    // Also check if the post already has a AI slop detection icon
+    if (postElement.querySelector('.ai-slop-icon')) {
+      console.debug(`[AI-Slop] ⏭️ Post already has icon, adding to processed set`);
       this.processedPosts.add(postId);
       return;
     }
 
     this.processedPosts.add(postId);
-    console.log(`[FactCheck] 🔄 Processing new post ${postId}:`, this.processedPosts.size);
+    console.log(`[AI-Slop] 🔄 Processing new post ${postId}:`, this.processedPosts.size);
 
     // Analyze post content with backend first, then inject icon
     await this.analyzeAndInjectIcon(postElement, postId);
@@ -412,11 +412,11 @@ export class FacebookPostObserver {
       const content = await this.extractPostContent(postElement);
 
       if (!content || content.trim().length < 10) {
-        console.log(`[FactCheck] ⏭️ Post ${postId} has insufficient content, skipping analysis`);
+        console.log(`[AI-Slop] ⏭️ Post ${postId} has insufficient content, skipping analysis`);
         return;
       }
 
-      console.log(`[FactCheck] 🔍 Analyzing post ${postId} with backend API...`);
+      console.log(`[AI-Slop] 🔍 Analyzing post ${postId} with backend API...`);
 
       // Send analysis request to backend via background service
       const response = await new Promise<{
@@ -435,20 +435,20 @@ export class FacebookPostObserver {
           },
           response => {
             if (chrome.runtime.lastError) {
-              console.error('[FactCheck] ❌ Runtime error:', chrome.runtime.lastError);
+              console.error('[AI-Slop] ❌ Runtime error:', chrome.runtime.lastError);
               reject(chrome.runtime.lastError);
             } else if (response && response.error) {
-              console.error('[FactCheck] ❌ API error:', response.error);
+              console.error('[AI-Slop] ❌ API error:', response.error);
               reject(new Error(response.error));
             } else {
-              console.log('[FactCheck] ✅ Analysis response received:', response);
+              console.log('[AI-Slop] ✅ Analysis response received:', response);
               resolve(response);
             }
           }
         );
       });
 
-      console.log(`[FactCheck] ✅ Hardcoded analysis complete for post ${postId}:`, {
+      console.log(`[AI-Slop] ✅ Hardcoded analysis complete for post ${postId}:`, {
         isAiSlop: response.isAiSlop,
         confidence: response.confidence,
       });
@@ -456,7 +456,7 @@ export class FacebookPostObserver {
       // Store analysis result and inject icon
       this.injectFactCheckIcon(postElement, postId, content, response);
     } catch (error) {
-      console.error(`[FactCheck] ❌ Error analyzing post ${postId}:`, error);
+      console.error(`[AI-Slop] ❌ Error analyzing post ${postId}:`, error);
       // Don't show icon if analysis fails to avoid confusion
     }
   }
@@ -471,11 +471,11 @@ export class FacebookPostObserver {
     // Primary method: Extract post ID from Facebook URLs
     const postId = this.extractPostIdFromUrls(postElement);
     if (postId) {
-      console.log(`[FactCheck] 🆔 Using URL-based post ID: ${postId}`);
+      console.log(`[AI-Slop] 🆔 Using URL-based post ID: ${postId}`);
       return postId;
     }
 
-    console.log(`[FactCheck] ⚠️ No URL-based ID found, falling back to legacy method`);
+    console.log(`[AI-Slop] ⚠️ No URL-based ID found, falling back to legacy method`);
 
     // Fallback to legacy content/DOM-based ID generation
     const content = await this.extractPostContent(postElement);
@@ -503,7 +503,7 @@ export class FacebookPostObserver {
     if (isGenericContent || content.length < 20) {
       // Use DOM-based identification for posts with poor content extraction
       uniqueString = `${authorText}-${timeText}-${timeHref}-${position}-${postElement.className}-${Date.now()}`;
-      console.log(`[FactCheck] 🆔 Using DOM-based ID for post with generic content`);
+      console.log(`[AI-Slop] 🆔 Using DOM-based ID for post with generic content`);
     } else {
       // Use content-based identification for posts with good content
       uniqueString = `${content.slice(0, 100)}-${authorText}`;
@@ -514,7 +514,7 @@ export class FacebookPostObserver {
     } catch (error) {
       // Ultimate fallback
       const fallbackId = `${Date.now()}-${Math.random()}-${position}`;
-      console.warn(`[FactCheck] ⚠️ Using fallback ID generation:`, error);
+      console.warn(`[AI-Slop] ⚠️ Using fallback ID generation:`, error);
       return btoa(fallbackId);
     }
   }
@@ -539,13 +539,13 @@ export class FacebookPostObserver {
       if (match && match[1]) {
         const postId = match[1];
         console.log(
-          `[FactCheck] 🔗 Extracted post ID from URL: ${postId} (from: ${href.slice(0, 100)}...)`
+          `[AI-Slop] 🔗 Extracted post ID from URL: ${postId} (from: ${href.slice(0, 100)}...)`
         );
         return postId;
       }
     }
 
-    console.log(`[FactCheck] 🔍 No post URLs found in element, checked ${postLinks.length} links`);
+    console.log(`[AI-Slop] 🔍 No post URLs found in element, checked ${postLinks.length} links`);
     return null;
   }
 
@@ -636,14 +636,14 @@ export class FacebookPostObserver {
     content = content.trim().replace(/\s+/g, ' ');
 
     // Log extraction results
-    console.log('[FactCheck] 📄 Content extracted:', {
+    console.log('[AI-Slop] 📄 Content extracted:', {
       method: extractionMethod,
       length: content.length,
       preview: content.substring(0, 150) + (content.length > 150 ? '...' : ''),
     });
 
     if (content.length === 0) {
-      console.warn('[FactCheck] ⚠️ No content extracted from post!');
+      console.warn('[AI-Slop] ⚠️ No content extracted from post!');
     }
 
     return content;
@@ -709,11 +709,11 @@ export class FacebookPostObserver {
       const seeMoreButton = findSeeMoreButton();
 
       if (!seeMoreButton) {
-        console.debug('[FactCheck] 📄 No "See more" button found in post');
+        console.debug('[AI-Slop] 📄 No "See more" button found in post');
         break;
       }
 
-      console.log('[FactCheck] 🔍 Found "See more" button, expanding content...');
+      console.log('[AI-Slop] 🔍 Found "See more" button, expanding content...');
 
       // Store the current content length to detect if expansion worked
       const beforeContent = postElement.textContent?.length || 0;
@@ -740,7 +740,7 @@ export class FacebookPostObserver {
         const expansionOccurred = afterContent > beforeContent;
 
         if (expansionOccurred) {
-          console.log('[FactCheck] ✅ Content expanded successfully', {
+          console.log('[AI-Slop] ✅ Content expanded successfully', {
             beforeLength: beforeContent,
             afterLength: afterContent,
             expanded: afterContent - beforeContent,
@@ -750,22 +750,22 @@ export class FacebookPostObserver {
           await new Promise(resolve => setTimeout(resolve, 200));
           break;
         } else {
-          console.log('[FactCheck] ⚠️ Content expansion may not have worked, retrying...');
+          console.log('[AI-Slop] ⚠️ Content expansion may not have worked, retrying...');
           attempts++;
         }
       } catch (error) {
-        console.warn('[FactCheck] ⚠️ Error clicking "See more" button:', error);
+        console.warn('[AI-Slop] ⚠️ Error clicking "See more" button:', error);
         attempts++;
       }
     }
 
     if (attempts >= maxAttempts) {
-      console.log('[FactCheck] ⏹️ Reached maximum expansion attempts');
+      console.log('[AI-Slop] ⏹️ Reached maximum expansion attempts');
     }
   }
 
   /**
-   * Injects the fact-check icon into a Facebook post with analysis results
+   * Injects the AI slop detection icon into a Facebook post with analysis results
    * Creates and adds the interactive icon element with enhanced targeting
    * @param postElement - The post's HTML element
    * @param postId - Unique identifier for the post used for logging and debugging
@@ -785,11 +785,11 @@ export class FacebookPostObserver {
       timestamp: string;
     }
   ): void {
-    console.log(`[FactCheck] 🎯 Starting icon injection for post: ${postId}`);
+    console.log(`[AI-Slop] 🎯 Starting icon injection for post: ${postId}`);
 
-    // Create the fact-check icon button
+    // Create the AI slop detection icon button
     const iconContainer = document.createElement('div');
-    iconContainer.className = 'fact-check-icon';
+    iconContainer.className = 'ai-slop-icon';
     iconContainer.setAttribute('data-post-id', postId);
     iconContainer.setAttribute('data-content', content);
     iconContainer.setAttribute('data-analysis', JSON.stringify(analysisResult));
@@ -910,13 +910,13 @@ export class FacebookPostObserver {
 
     if (targetElement) {
       // Check if icon already exists anywhere in the post
-      const existingIcon = postElement.querySelector('.fact-check-icon');
+      const existingIcon = postElement.querySelector('.ai-slop-icon');
       if (existingIcon) {
-        console.warn(`[FactCheck] ⚠️ Icon already exists for post ${postId}, skipping injection`);
+        console.warn(`[AI-Slop] ⚠️ Icon already exists for post ${postId}, skipping injection`);
         return;
       }
 
-      console.log(`[FactCheck] 🎯 Target element found via: ${injectionMethod}`, targetElement);
+      console.log(`[AI-Slop] 🎯 Target element found via: ${injectionMethod}`, targetElement);
 
       // Style the icon container with professional styling and maximum visibility
       iconContainer.style.cssText = `
@@ -953,24 +953,24 @@ export class FacebookPostObserver {
       const currentPosition = getComputedStyle(targetElement).position;
       if (currentPosition === 'static') {
         targetElement.style.position = 'relative';
-        console.log(`[FactCheck] 📍 Set target element position to relative`);
+        console.log(`[AI-Slop] 📍 Set target element position to relative`);
       }
 
       try {
         targetElement.appendChild(iconContainer);
         console.log(
-          `[FactCheck] ✅ Icon injected successfully for post ${postId} via ${injectionMethod}`
+          `[AI-Slop] ✅ Icon injected successfully for post ${postId} via ${injectionMethod}`
         );
       } catch (error) {
-        console.error(`[FactCheck] ❌ Failed to append icon for post ${postId}:`, error);
+        console.error(`[AI-Slop] ❌ Failed to append icon for post ${postId}:`, error);
       }
     } else {
       console.error(
-        `[FactCheck] ❌ Failed to find suitable element for icon injection for post ${postId}`
+        `[AI-Slop] ❌ Failed to find suitable element for icon injection for post ${postId}`
       );
 
       // Add debug information about the post structure
-      console.log(`[FactCheck] 🔍 Post element structure for debugging:`, {
+      console.log(`[AI-Slop] 🔍 Post element structure for debugging:`, {
         tagName: postElement.tagName,
         className: postElement.className,
         hasAuthorHeading: !!postElement.querySelector('h2, h3, h4'),
@@ -1004,7 +1004,7 @@ export class FacebookPostObserver {
       timestamp: string;
     }
   ): void {
-    console.log(`[FactCheck] 💬 Opening chat for post ${postId}`);
+    console.log(`[AI-Slop] 💬 Opening chat for post ${postId}`);
 
     // Check if a chat window for this post already exists
     const existingChat = document.querySelector(`.detect-chat-window[data-post-id="${postId}"]`);
@@ -1036,7 +1036,7 @@ export class FacebookPostObserver {
     state: 'loading' | 'error' | 'analyzed',
     isAiSlop?: boolean
   ): void {
-    const icon = postElement.querySelector('.fact-check-icon');
+    const icon = postElement.querySelector('.ai-slop-icon');
     if (icon) {
       icon.setAttribute('data-state', state);
 
@@ -1572,38 +1572,38 @@ class FloatingChatWindow {
   private createChatWindow(): void {
     // Create messenger window
     this.chatWindow = document.createElement('div');
-    this.chatWindow.className = 'factcheck-messenger-window';
-    this.chatWindow.id = 'factcheck-messenger-window';
+    this.chatWindow.className = 'ai-slop-messenger-window';
+    this.chatWindow.id = 'ai-slop-messenger-window';
     this.chatWindow.innerHTML = `
-      <div class="factcheck-messenger-header">
-        <div class="factcheck-profile-info">
-          <div class="factcheck-profile-avatar">
+      <div class="ai-slop-messenger-header">
+        <div class="ai-slop-profile-info">
+          <div class="ai-slop-profile-avatar">
             <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor">
               <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
             </svg>
           </div>
-          <div class="factcheck-profile-details">
-            <h3 class="factcheck-profile-name">FactCheck Eye</h3>
-            <p class="factcheck-profile-status">Active <span class="factcheck-active-time">now</span></p>
+          <div class="ai-slop-profile-details">
+            <h3 class="ai-slop-profile-name">AI Slop Detector</h3>
+            <p class="ai-slop-profile-status">Active <span class="ai-slop-active-time">now</span></p>
           </div>
         </div>
-        <div class="factcheck-header-actions">
-          <button class="factcheck-header-btn" id="factcheck-call-btn" title="Call">
+        <div class="ai-slop-header-actions">
+          <button class="ai-slop-header-btn" id="ai-slop-call-btn" title="Call">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
               <path d="M6.62 10.79c1.44 2.83 3.76 5.15 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/>
             </svg>
           </button>
-          <button class="factcheck-header-btn" id="factcheck-video-btn" title="Video call">
+          <button class="ai-slop-header-btn" id="ai-slop-video-btn" title="Video call">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
               <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/>
             </svg>
           </button>
-          <button class="factcheck-header-btn" id="factcheck-minimize-btn" title="Minimize">
+          <button class="ai-slop-header-btn" id="ai-slop-minimize-btn" title="Minimize">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
               <path d="M19 13H5v-2h14v2z"/>
             </svg>
           </button>
-          <button class="factcheck-header-btn factcheck-close-btn" id="factcheck-close-btn" title="Close">
+          <button class="ai-slop-header-btn ai-slop-close-btn" id="ai-slop-close-btn" title="Close">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
               <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
             </svg>
@@ -1611,73 +1611,73 @@ class FloatingChatWindow {
         </div>
       </div>
 
-      <div class="factcheck-messages-container">
-        <div class="factcheck-messages-list">
-          <div class="factcheck-message-group left">
-            <div class="factcheck-message-avatar">
+      <div class="ai-slop-messages-container">
+        <div class="ai-slop-messages-list">
+          <div class="ai-slop-message-group left">
+            <div class="ai-slop-message-avatar">
               <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
               </svg>
             </div>
-            <div class="factcheck-message-bubbles">
-              <div class="factcheck-message-bubble factcheck-bot-bubble">
-                Hello! I'm here to help you fact-check Facebook posts.
+            <div class="ai-slop-message-bubbles">
+              <div class="ai-slop-message-bubble ai-slop-bot-bubble">
+                Hello! I'm here to help you AI slop detection Facebook posts.
               </div>
-              <div class="factcheck-message-bubble factcheck-bot-bubble">
+              <div class="ai-slop-message-bubble ai-slop-bot-bubble">
                 Click the eye icon on any post to verify its content 👁️
               </div>
             </div>
           </div>
 
-          <div class="factcheck-message-group right">
-            <div class="factcheck-message-bubbles">
-              <div class="factcheck-message-bubble factcheck-user-bubble">
-                <div class="factcheck-status-info">
-                  <div class="factcheck-status-indicator"></div>
-                  <span class="factcheck-status-message">Ready to fact-check Facebook posts! 🎉</span>
+          <div class="ai-slop-message-group right">
+            <div class="ai-slop-message-bubbles">
+              <div class="ai-slop-message-bubble ai-slop-user-bubble">
+                <div class="ai-slop-status-info">
+                  <div class="ai-slop-status-indicator"></div>
+                  <span class="ai-slop-status-message">Ready to AI slop detection Facebook posts! 🎉</span>
                 </div>
               </div>
             </div>
           </div>
 
-          <div class="factcheck-message-group left">
-            <div class="factcheck-message-avatar">
+          <div class="ai-slop-message-group left">
+            <div class="ai-slop-message-avatar">
               <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
               </svg>
             </div>
-            <div class="factcheck-message-bubbles">
-              <div class="factcheck-message-bubble factcheck-bot-bubble">
-                💡 <strong>Pro tip:</strong> Look for the eye icon next to post reactions for instant fact-checking!
+            <div class="ai-slop-message-bubbles">
+              <div class="ai-slop-message-bubble ai-slop-bot-bubble">
+                💡 <strong>Pro tip:</strong> Look for the eye icon next to post reactions for instant AI slop detection!
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      <div class="factcheck-message-input-container">
-        <div class="factcheck-input-actions left">
-          <button class="factcheck-input-btn" title="Attach file">
+      <div class="ai-slop-message-input-container">
+        <div class="ai-slop-input-actions left">
+          <button class="ai-slop-input-btn" title="Attach file">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
               <path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z"/>
             </svg>
           </button>
-          <button class="factcheck-input-btn" title="Add photo">
+          <button class="ai-slop-input-btn" title="Add photo">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
               <path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/>
             </svg>
           </button>
         </div>
-        <div class="factcheck-message-input">
+        <div class="ai-slop-message-input">
           <input type="text" placeholder="Type a message..." readonly>
         </div>
-        <div class="factcheck-input-actions right">
-          <button class="factcheck-input-btn factcheck-emoji-btn" title="Add emoji">
+        <div class="ai-slop-input-actions right">
+          <button class="ai-slop-input-btn ai-slop-emoji-btn" title="Add emoji">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
               <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z"/>
             </svg>
           </button>
-          <button class="factcheck-input-btn factcheck-like-btn" title="Send like">
+          <button class="ai-slop-input-btn ai-slop-like-btn" title="Send like">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
               <path d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-1.91l-.01-.01L23 10z"/>
             </svg>
@@ -1688,18 +1688,18 @@ class FloatingChatWindow {
 
     // Create minimized chat
     this.minimizedChat = document.createElement('div');
-    this.minimizedChat.className = 'factcheck-minimized-chat';
-    this.minimizedChat.id = 'factcheck-minimized-chat';
+    this.minimizedChat.className = 'ai-slop-minimized-chat';
+    this.minimizedChat.id = 'ai-slop-minimized-chat';
     this.minimizedChat.style.display = 'none';
     this.minimizedChat.innerHTML = `
-      <div class="factcheck-minimized-content">
-        <div class="factcheck-minimized-avatar">
+      <div class="ai-slop-minimized-content">
+        <div class="ai-slop-minimized-avatar">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
             <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
           </svg>
         </div>
-        <span class="factcheck-minimized-name">FactCheck Eye</span>
-        <button class="factcheck-expand-btn" id="factcheck-expand-btn">
+        <span class="ai-slop-minimized-name">AI Slop Detector</span>
+        <button class="ai-slop-expand-btn" id="ai-slop-expand-btn">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
             <path d="M12 8l-6 6 1.41 1.41L12 10.83l4.59 4.58L18 14z"/>
           </svg>
@@ -1715,9 +1715,9 @@ class FloatingChatWindow {
     this.setupChatEventListeners();
 
     // Get reference to status elements
-    this.statusIndicator = this.chatWindow.querySelector('.factcheck-status-indicator');
-    this.statusMessage = this.chatWindow.querySelector('.factcheck-status-message');
-    this.profileStatus = this.chatWindow.querySelector('.factcheck-profile-status');
+    this.statusIndicator = this.chatWindow.querySelector('.ai-slop-status-indicator');
+    this.statusMessage = this.chatWindow.querySelector('.ai-slop-status-message');
+    this.profileStatus = this.chatWindow.querySelector('.ai-slop-profile-status');
   }
 
   /**
@@ -1727,19 +1727,19 @@ class FloatingChatWindow {
     if (!this.chatWindow || !this.minimizedChat) return;
 
     // Minimize button
-    const minimizeBtn = this.chatWindow.querySelector('#factcheck-minimize-btn');
+    const minimizeBtn = this.chatWindow.querySelector('#ai-slop-minimize-btn');
     minimizeBtn?.addEventListener('click', () => {
       this.minimizeChat();
     });
 
     // Expand button
-    const expandBtn = this.minimizedChat.querySelector('#factcheck-expand-btn');
+    const expandBtn = this.minimizedChat.querySelector('#ai-slop-expand-btn');
     expandBtn?.addEventListener('click', () => {
       this.expandChat();
     });
 
     // Close button
-    const closeBtn = this.chatWindow.querySelector('#factcheck-close-btn');
+    const closeBtn = this.chatWindow.querySelector('#ai-slop-close-btn');
     closeBtn?.addEventListener('click', () => {
       this.hideChatWindow();
     });
@@ -1753,7 +1753,7 @@ class FloatingChatWindow {
 
     // Decorative buttons (show coming soon message)
     const decorativeButtons = this.chatWindow.querySelectorAll(
-      '#factcheck-call-btn, #factcheck-video-btn, .factcheck-input-btn, .factcheck-message-input input'
+      '#ai-slop-call-btn, #ai-slop-video-btn, .ai-slop-input-btn, .ai-slop-message-input input'
     );
     decorativeButtons.forEach(btn => {
       btn.addEventListener('click', () => {

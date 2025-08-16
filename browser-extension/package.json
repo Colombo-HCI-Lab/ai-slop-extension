@@ -1,7 +1,7 @@
 {
-  "name": "fact-check-extension",
+  "name": "ai-slop-extension",
   "version": "1.0.0",
-  "description": "Chrome extension for real-time fact-checking of Facebook posts",
+  "description": "Chrome extension for real-time AI slop detection in Facebook posts",
   "main": "dist/background.js",
   "scripts": {
     "start": "webpack --watch --config webpack.dev.js",
@@ -9,7 +9,8 @@
     "test": "jest",
     "lint": "eslint src/**/*.ts",
     "format": "prettier --write src/**/*.{ts,css}",
-    "generate-icons": "node scripts/generate-icons.js"
+    "generate-icons": "node scripts/generate-icons.js",
+    "publish": "./publish.sh"
   },
   "repository": {
     "type": "git",
@@ -17,7 +18,8 @@
   },
   "keywords": [
     "chrome-extension",
-    "fact-check",
+    "ai-detection",
+    "slop-detection",
     "facebook"
   ],
   "author": "O.I. Mudannayake <oshan.ivantha@gmail.com>",
@@ -51,5 +53,8 @@
     "webpack": "^5.99.9",
     "webpack-cli": "^6.0.1",
     "webpack-merge": "^6.0.1"
+  },
+  "dependencies": {
+    "chrome-webstore-upload-cli": "^3.3.2"
   }
 }

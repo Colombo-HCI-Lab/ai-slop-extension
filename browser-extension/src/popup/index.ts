@@ -142,7 +142,7 @@ class PopupManager {
    */
   private openHelpPage(): void {
     chrome.tabs.create({
-      url: 'https://github.com/your-repo/fact-check-extension#help',
+      url: 'https://github.com/your-repo/ai-slop-extension#help',
     });
   }
 

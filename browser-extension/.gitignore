@@ -23,3 +23,7 @@ yarn-error.log*
 
 # TypeScript
 *.tsbuildinfo
+
+# Project
+extension.zip
+.refresh_token

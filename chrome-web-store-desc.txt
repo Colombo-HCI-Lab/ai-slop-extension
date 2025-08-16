@@ -1,0 +1,196 @@
+CHROME WEB STORE PUBLICATION COMPLETE GUIDE
+AI Slop Detector Extension
+==========================================
+
+PRODUCT DESCRIPTION FOR STORE LISTING:
+======================================
+
+🤖 AI Slop Detector - Research Extension for Facebook Content Analysis
+
+Automatically detect AI-generated "slop" content in Facebook posts as you scroll
+
+This research-focused browser extension helps identify potentially artificial content on Facebook by analyzing posts in real-time using advanced machine learning algorithms.
+
+🎯 Key Features:
+• Real-time Detection: Automatically analyzes Facebook posts as you scroll
+• Visual Indicators: Clear icons show detection results (AI-generated vs. Human-created)
+• Non-intrusive: Seamlessly integrates with Facebook's interface
+• Privacy-First: No personal data collection, posts analyzed temporarily only
+• Research Purpose: Developed for academic study of AI content prevalence
+
+🔬 Research Context:
+This extension is developed by the Colombo HCI Lab for academic research purposes to study the prevalence and characteristics of AI-generated content on social media platforms. It's designed to help researchers and users understand how artificial content spreads online.
+
+⚙️ How It Works:
+1. Install the extension and visit Facebook
+2. Browse your feed normally - the extension works automatically
+3. Look for detection icons next to posts showing analysis results
+4. Post content is analyzed via secure API and results displayed instantly
+5. No data is stored permanently - analysis happens in real-time only
+
+🛡️ Privacy & Security:
+• Zero PII Collection: We don't collect names, emails, or personal information
+• Temporary Analysis: Post content analyzed immediately, not stored
+• Secure Communication: All data transmission uses HTTPS encryption
+• Local Settings: Your preferences stored only in your browser
+• No Tracking: No user profiles, accounts, or behavioral tracking
+
+🎓 Perfect For:
+• Researchers studying AI content on social media
+• Social media users curious about content authenticity
+• Digital literacy educators and students
+• Anyone interested in understanding AI's impact on social platforms
+
+📊 Technical Details:
+• Works exclusively on Facebook.com domains
+• Uses advanced natural language processing for detection
+• Minimal performance impact on browsing experience
+• Compatible with modern Chrome browsers
+• Open-source development approach
+
+⚠️ Important Notes:
+• This is a research tool, not a commercial product
+• Detection results are probabilistic, not definitive
+• Designed for educational and research purposes
+• No data monetization or third-party sharing
+
+🤝 Contributing to Research:
+By using this extension, you're contributing to important research about AI content detection and social media authenticity. All data usage follows strict research ethics guidelines.
+
+Contact: oshan.ivantha@gmail.com
+Institution: Colombo HCI Lab
+Privacy Policy: Available on our GitHub repository
+Open Source: https://github.com/Colombo-HCI-Lab/ai-slop-extension
+
+This extension complies with Chrome Web Store policies and academic research ethics guidelines. No personal data is collected or shared.
+
+REQUIRED FORM FIELDS:
+====================
+
+Single Purpose Description (0/1,000 characters):
+This extension automatically detects AI-generated "slop" content in Facebook posts as users scroll, helping users identify potentially artificial content through real-time analysis and visual indicators.
+
+PERMISSION JUSTIFICATIONS (0/1,000 characters each):
+
+activeTab justification:
+Required to inject content scripts and analyze Facebook posts on the currently active tab when user visits Facebook pages.
+
+scripting justification:
+Needed to inject content analysis scripts into Facebook pages to detect and analyze post content for AI-generated patterns.
+
+storage justification:
+Used to store user preferences, analysis results cache, and extension configuration settings locally for improved performance.
+
+tabs justification:
+Required to monitor tab changes and ensure content analysis only runs on Facebook domains as specified in the manifest.
+
+webRequest justification:
+Needed to intercept and analyze network requests to the backend API for AI content detection without interfering with Facebook's functionality.
+
+Host permission justification (for *://*.facebook.com/*):
+Required to access and analyze Facebook post content in real-time as users scroll. The extension needs to inject content scripts, detect new posts, extract text content, and display AI detection results directly on Facebook pages.
+
+REMOTE CODE USAGE:
+Are you using remote code? YES, I am using remote code
+
+Remote code justification:
+The extension communicates with a backend API server to perform AI content analysis. Post content is sent to the remote server for machine learning-based detection of AI-generated text, and results are returned to display detection status to users.
+
+DATA USAGE DISCLOSURES:
+What user data do you plan to collect? (Check applicable boxes)
+
+Personally identifiable information - NO
+Health information - NO  
+Financial and payment information - NO
+Authentication information - NO
+Personal communications - NO
+Location - NO
+Web history - NO
+User activity - NO
+Website content - YES (Facebook post text content for AI analysis)
+
+REQUIRED CERTIFICATIONS:
+I do not sell or transfer user data to third parties, apart from approved use cases
+I do not use or transfer user data for purposes that are unrelated to my item's single purpose  
+I do not use or transfer user data to determine creditworthiness or for lending purposes
+
+CURRENT EXTENSION DETAILS:
+=========================
+Name: AI Slop Detector
+Version: 1.0.0
+Description: Real-time AI slop detection for Facebook posts
+Author: O.I. Mudannayake <oshan.ivantha@gmail.com>
+License: MIT
+
+MANIFEST PERMISSIONS CURRENTLY REQUESTED:
+- activeTab
+- scripting
+- storage
+- tabs
+- webRequest
+
+HOST PERMISSIONS:
+- *://*.facebook.com/*
+- http://localhost:4000/* (REMOVE BEFORE SUBMISSION)
+
+ASSETS STATUS:
+Icons: Available (16px, 32px, 48px, 128px)
+Screenshots: Need to create 1-5 screenshots (1280x800 or 640x400 pixels)
+Privacy Policy: Created as PRIVACY_POLICY.md - needs to be committed and pushed to GitHub
+
+PRIVACY POLICY URL:
+After committing PRIVACY_POLICY.md to GitHub, use this URL:
+https://github.com/ivantha/fact-check-extension/blob/main/PRIVACY_POLICY.md
+
+Optional: Add to manifest.json:
+"homepage_url": "https://github.com/ivantha/fact-check-extension",
+"privacy_policy": "https://github.com/ivantha/fact-check-extension/blob/main/PRIVACY_POLICY.md"
+
+CRITICAL PRE-SUBMISSION TASKS:
+
+1. REMOVE LOCALHOST PERMISSION (MANDATORY):
+   - Edit browser-extension/public/manifest.json
+   - Remove "http://localhost:4000/*" from host_permissions
+   - This will cause automatic rejection if left in
+
+2. CREATE STORE SCREENSHOTS:
+   - Take 1-5 screenshots showing extension in action
+   - Recommended size: 1280x800 pixels
+   - Show AI detection features working on Facebook
+   - Highlight visual indicators and user interface
+
+3. PUBLISH PRIVACY POLICY ONLINE:
+   - Upload privacy policy to a public URL
+   - Add privacy policy URL to manifest.json (optional but recommended)
+
+4. BUILD PRODUCTION VERSION:
+   - Run: npm run build
+   - Test extension functionality on Facebook
+   - Create extension package (.zip file)
+
+SUBMISSION CHECKLIST:
+Remove localhost permission from manifest.json
+Create and upload 1-5 store screenshots
+Ensure privacy policy is accessible via public URL
+Fill out all permission justifications in dashboard
+Complete single purpose description
+Test extension functionality on Facebook
+Build production version: npm run build
+Create extension package (.zip file)
+
+EXPECTED REVIEW PROCESS:
+IN-DEPTH REVIEW EXPECTED due to host permissions for Facebook
+- Review time may be longer than standard extensions
+- Ensure all justifications clearly explain necessity
+- Be prepared for potential rejection if permissions seem excessive
+
+CONTACT INFORMATION:
+Publisher: oshan.ivantha
+Extension ID: chdgpmgghhjegpdipjoffjhmhemmbafg
+Repository: https://github.com/ivantha/fact-check-extension
+
+NOTES:
+- All character limits are enforced by Chrome Web Store
+- Permission justifications must clearly demonstrate necessity
+- Host permissions for social media sites trigger enhanced review
+- Privacy policy compliance is mandatory for extensions with permissions

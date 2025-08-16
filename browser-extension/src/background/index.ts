@@ -211,9 +211,9 @@ class BackgroundService {
   }
 
   /**
-   * Validates if a URL is eligible for fact-checking
+   * Validates if a URL is eligible for AI slop detection
    * @param url - The URL to validate
-   * @returns boolean indicating if URL is valid for fact-checking
+   * @returns boolean indicating if URL is valid for AI slop detection
    */
   private isValidUrl(url: string): boolean {
     return url.includes('facebook.com');

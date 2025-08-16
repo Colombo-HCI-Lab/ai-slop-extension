@@ -1,5 +1,5 @@
 /* Eye Icon Styles - Light Theme */
-.fact-check-icon {
+.ai-slop-icon {
   display: flex !important;
   align-items: center;
   justify-content: center;
@@ -22,7 +22,7 @@
   pointer-events: auto !important;
 }
 
-.fact-check-icon:hover {
+.ai-slop-icon:hover {
   background-color: #f9fafb !important;
   transform: scale(1.1) !important;
   box-shadow:
@@ -31,7 +31,7 @@
   border-color: #4f46e5 !important;
 }
 
-.fact-check-icon svg {
+.ai-slop-icon svg {
   width: 24px !important;
   height: 24px !important;
   color: #4f46e5 !important;
@@ -39,11 +39,11 @@
 }
 
 /* Loading State */
-.fact-check-icon[data-state='loading'] {
+.ai-slop-icon[data-state='loading'] {
   animation: gentlePulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-.fact-check-icon[data-state='loading'] svg {
+.ai-slop-icon[data-state='loading'] svg {
   animation: rotate 1s linear infinite;
 }
 
@@ -69,18 +69,18 @@
 }
 
 /* Error State */
-.fact-check-icon[data-state='error'] {
+.ai-slop-icon[data-state='error'] {
   background-color: #fef2f2 !important;
   border-color: #fca5a5 !important;
 }
 
-.fact-check-icon[data-state='error'] svg {
+.ai-slop-icon[data-state='error'] svg {
   color: #ef4444 !important;
   fill: #ef4444 !important;
 }
 
 /* Analyzed State - will show different colors based on analysis result */
-.fact-check-icon[data-state='analyzed'] {
+.ai-slop-icon[data-state='analyzed'] {
   background-color: #ffffff !important;
   border-width: 2px !important;
   animation: successBounce 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
@@ -101,7 +101,7 @@
 /* The SVG color is set dynamically in JavaScript based on analysis result */
 
 /* Overlay Styles - Light Theme */
-.fact-check-overlay {
+.ai-slop-overlay {
   position: fixed;
   top: 0;
   left: 0;
@@ -116,7 +116,7 @@
   animation: fadeIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.fact-check-result {
+.ai-slop-result {
   background-color: white;
   border-radius: 8px;
   padding: 32px;
@@ -130,22 +130,22 @@
 }
 
 /* Verdict-specific styles */
-.fact-check-result.misinformation {
+.ai-slop-result.misinformation {
   border-top: 3px solid #ef4444;
   background: linear-gradient(to bottom, #fef2f2 0%, #ffffff 100%);
 }
 
-.fact-check-result.verified {
+.ai-slop-result.verified {
   border-top: 3px solid #10b981;
   background: linear-gradient(to bottom, #f0fdf4 0%, #ffffff 100%);
 }
 
-.fact-check-result.unknown {
+.ai-slop-result.unknown {
   border-top: 3px solid #f59e0b;
   background: linear-gradient(to bottom, #fffbeb 0%, #ffffff 100%);
 }
 
-.fact-check-result h3 {
+.ai-slop-result h3 {
   margin: 0 0 20px 0;
   font-size: 24px;
   font-weight: 600;
@@ -153,7 +153,7 @@
   letter-spacing: -0.5px;
 }
 
-.fact-check-result .confidence {
+.ai-slop-result .confidence {
   margin-bottom: 20px;
   padding: 12px 16px;
   background-color: #f9fafb;
@@ -164,14 +164,14 @@
   display: inline-block;
 }
 
-.fact-check-result p {
+.ai-slop-result p {
   margin: 0 0 24px 0;
   line-height: 1.6;
   color: #4b5563;
   font-size: 15px;
 }
 
-.fact-check-result .close-overlay {
+.ai-slop-result .close-overlay {
   display: block;
   width: 100%;
   padding: 12px 16px;
@@ -185,7 +185,7 @@
   transition: all 0.2s ease;
 }
 
-.fact-check-result .close-overlay:hover {
+.ai-slop-result .close-overlay:hover {
   background-color: #4f46e5;
   color: white;
   border-color: #4f46e5;
