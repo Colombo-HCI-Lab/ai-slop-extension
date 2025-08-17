@@ -19,7 +19,7 @@ export class FacebookPostObserver {
   /** List of allowed Facebook group names where the extension should work */
   private readonly ALLOWED_GROUP_NAMES = [
     'Artificial Intelligence & Deep Learning Memes For Back-propagated Poets',
-    'Social Media for People'
+    'Social Media for People',
   ];
 
   /**
@@ -28,18 +28,21 @@ export class FacebookPostObserver {
    */
   private isInAllowedGroup(): boolean {
     const currentGroupName = this.getCurrentGroupName();
-    
+
     if (!currentGroupName) {
       // Not in a group, extension should NOT work
       return false;
     }
 
-    const isAllowed = this.ALLOWED_GROUP_NAMES.some(allowedName => 
-      currentGroupName.toLowerCase().includes(allowedName.toLowerCase()) ||
-      allowedName.toLowerCase().includes(currentGroupName.toLowerCase())
+    const isAllowed = this.ALLOWED_GROUP_NAMES.some(
+      allowedName =>
+        currentGroupName.toLowerCase().includes(allowedName.toLowerCase()) ||
+        allowedName.toLowerCase().includes(currentGroupName.toLowerCase())
     );
 
-    console.log(`[AI-Slop] Group filtering - Current group: "${currentGroupName}", Allowed: ${isAllowed}`);
+    console.log(
+      `[AI-Slop] Group filtering - Current group: "${currentGroupName}", Allowed: ${isAllowed}`
+    );
     return isAllowed;
   }
 
