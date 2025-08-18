@@ -1,27 +1,80 @@
 #!/bin/bash
 
-# Schema reset script for completely updating the database schema from scratch
-# WARNING: This will delete all data in the database
+# Reset database schema script for FastAPI backend
+# This script drops and recreates the database, then runs migrations
 
-set -e
+set -e  # Exit on error
 
-echo "⚠️  WARNING: This will completely reset the database and delete all data!"
-read -p "Are you sure you want to continue? (y/N): " confirm
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
 
-if [[ $confirm != [yY] && $confirm != [yY][eE][sS] ]]; then
-    echo "❌ Operation cancelled"
-    exit 0
+echo -e "${YELLOW}🔄 Resetting database schema...${NC}"
+
+# Database configuration
+DB_NAME="ai_slop_extension"
+DB_USER="postgres"
+DB_PASSWORD="cats"
+DB_HOST="localhost"
+DB_PORT="5432"
+
+# Function to execute PostgreSQL commands
+execute_psql() {
+    PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -c "$1" 2>&1
+}
+
+# Function to execute PostgreSQL commands on specific database
+execute_psql_db() {
+    PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d "$1" -c "$2" 2>&1
+}
+
+echo -e "${YELLOW}Step 1: Terminating active connections...${NC}"
+execute_psql "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$DB_NAME' AND pid <> pg_backend_pid();" > /dev/null 2>&1 || true
+
+echo -e "${YELLOW}Step 2: Dropping existing database...${NC}"
+execute_psql "DROP DATABASE IF EXISTS $DB_NAME;" > /dev/null || {
+    echo -e "${RED}Failed to drop database. It might not exist.${NC}"
+}
+
+echo -e "${YELLOW}Step 3: Creating new database...${NC}"
+execute_psql "CREATE DATABASE $DB_NAME;" || {
+    echo -e "${RED}Failed to create database!${NC}"
+    exit 1
+}
+
+echo -e "${GREEN}✅ Database recreated successfully${NC}"
+
+echo -e "${YELLOW}Step 4: Running Alembic migrations...${NC}"
+
+# Check if we're in the backend directory
+if [ ! -f "alembic.ini" ]; then
+    echo -e "${RED}Error: alembic.ini not found. Please run this script from the backend directory.${NC}"
+    exit 1
 fi
 
-echo "🔥 Resetting database schema..."
+# Run migrations
+uv run alembic upgrade head || {
+    echo -e "${RED}Failed to run migrations!${NC}"
+    exit 1
+}
 
-# Reset the database (this will delete all data and recreate from schema)
-echo "🗑️  Resetting database..."
-npx prisma migrate reset --force
+echo -e "${GREEN}✅ Migrations applied successfully${NC}"
 
-# Generate Prisma client
-echo "📦 Generating Prisma client..."
-npx prisma generate
+# Optional: Show current database tables
+echo -e "${YELLOW}Step 5: Verifying database structure...${NC}"
+TABLES=$(execute_psql_db "$DB_NAME" "\dt" | grep -E '^\s+public\s+\|' | awk '{print $3}' | tr '\n' ', ' | sed 's/,$//')
 
-echo "✅ Database schema reset completed successfully!"
-echo "🚀 Database is now ready with a fresh schema"
+if [ -n "$TABLES" ]; then
+    echo -e "${GREEN}✅ Tables created: $TABLES${NC}"
+else
+    echo -e "${RED}Warning: No tables found in database${NC}"
+fi
+
+# Show migration status
+echo -e "${YELLOW}Step 6: Current migration status:${NC}"
+uv run alembic current
+
+echo -e "${GREEN}✨ Database schema reset complete!${NC}"
+echo -e "${GREEN}You can now start the server with: uv run python -m uvicorn main:app --reload --port 4000${NC}"

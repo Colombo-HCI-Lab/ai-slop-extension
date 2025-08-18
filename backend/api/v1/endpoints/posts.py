@@ -1,0 +1,231 @@
+"""Post management endpoints."""
+
+import logging
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, Field
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from db.session import get_db
+from models import Post
+
+
+class PostResponse(BaseModel):
+    """Response for a single post."""
+
+    id: str = Field(..., description="Internal database ID")
+    post_id: str = Field(..., description="Facebook post ID")
+    content: str = Field(..., description="Post content")
+    author: Optional[str] = Field(None, description="Post author")
+    verdict: str = Field(..., description="AI detection verdict")
+    confidence: float = Field(..., description="Confidence score")
+    explanation: Optional[str] = Field(None, description="Verdict explanation")
+    post_metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata")
+    created_at: datetime = Field(..., description="Creation timestamp")
+    updated_at: datetime = Field(..., description="Last update timestamp")
+
+    class Config:
+        orm_mode = True
+        from_attributes = True
+
+
+class PostsListResponse(BaseModel):
+    """Response for listing posts."""
+
+    posts: List[PostResponse] = Field(..., description="List of posts")
+    total: int = Field(..., description="Total number of posts matching filters")
+    limit: int = Field(..., description="Number of posts per page")
+    offset: int = Field(..., description="Number of posts skipped")
+
+
+class PostUpdate(BaseModel):
+    """Request for updating a post."""
+
+    verdict: Optional[str] = Field(None, description="New verdict")
+    confidence: Optional[float] = Field(None, ge=0.0, le=1.0, description="New confidence score")
+    explanation: Optional[str] = Field(None, description="New explanation")
+    author: Optional[str] = Field(None, description="Post author")
+    metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata")
+
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(tags=["posts"])
+
+
+@router.get("/{post_id}", response_model=PostResponse)
+async def get_post(
+    post_id: str,
+    include_chats: bool = Query(False, description="Include chat history"),
+    db: AsyncSession = Depends(get_db),
+) -> PostResponse:
+    """
+    Get a specific post by Facebook post ID.
+
+    Returns the post details including AI detection analysis results.
+    Optionally includes chat history if requested.
+    """
+    try:
+        query = select(Post).where(Post.post_id == post_id)
+
+        if include_chats:
+            query = query.options(selectinload(Post.chats))
+
+        result = await db.execute(query)
+        post = result.scalar_one_or_none()
+
+        if not post:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Post with ID {post_id} not found")
+
+        return PostResponse.from_orm(post)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting post {post_id}: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to get post: {str(e)}")
+
+
+@router.get("", response_model=PostsListResponse)
+async def list_posts(
+    verdict: Optional[str] = Query(None, description="Filter by verdict (ai_slop, human_content, uncertain)"),
+    author: Optional[str] = Query(None, description="Filter by author"),
+    min_confidence: Optional[float] = Query(None, ge=0.0, le=1.0, description="Minimum confidence"),
+    max_confidence: Optional[float] = Query(None, ge=0.0, le=1.0, description="Maximum confidence"),
+    limit: int = Query(10, ge=1, le=100, description="Number of posts to return"),
+    offset: int = Query(0, ge=0, description="Number of posts to skip"),
+    db: AsyncSession = Depends(get_db),
+) -> PostsListResponse:
+    """
+    List posts with optional filters.
+
+    Returns a paginated list of posts with their AI detection analysis results.
+    Supports filtering by verdict, author, and confidence levels.
+    """
+    try:
+        query = select(Post)
+
+        # Apply filters
+        if verdict:
+            query = query.where(Post.verdict == verdict)
+        if author:
+            query = query.where(Post.author == author)
+        if min_confidence is not None:
+            query = query.where(Post.confidence >= min_confidence)
+        if max_confidence is not None:
+            query = query.where(Post.confidence <= max_confidence)
+
+        # Order by creation date (newest first)
+        query = query.order_by(Post.created_at.desc())
+
+        # Apply pagination
+        query = query.limit(limit).offset(offset)
+
+        result = await db.execute(query)
+        posts = result.scalars().all()
+
+        # Get total count for pagination
+        count_query = select(Post)
+        if verdict:
+            count_query = count_query.where(Post.verdict == verdict)
+        if author:
+            count_query = count_query.where(Post.author == author)
+        if min_confidence is not None:
+            count_query = count_query.where(Post.confidence >= min_confidence)
+        if max_confidence is not None:
+            count_query = count_query.where(Post.confidence <= max_confidence)
+
+        count_result = await db.execute(count_query)
+        total = len(count_result.scalars().all())
+
+        return PostsListResponse(
+            posts=[PostResponse.from_orm(post) for post in posts],
+            total=total,
+            limit=limit,
+            offset=offset,
+        )
+
+    except Exception as e:
+        logger.error(f"Error listing posts: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to list posts: {str(e)}")
+
+
+@router.put("/{post_id}", response_model=PostResponse)
+async def update_post(
+    post_id: str,
+    update: PostUpdate,
+    db: AsyncSession = Depends(get_db),
+) -> PostResponse:
+    """
+    Update a post's analysis results.
+
+    Allows updating the verdict, confidence, and explanation for a post.
+    This can be useful for manual corrections or re-analysis.
+    """
+    try:
+        result = await db.execute(select(Post).where(Post.post_id == post_id))
+        post = result.scalar_one_or_none()
+
+        if not post:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Post with ID {post_id} not found")
+
+        # Update fields if provided
+        if update.verdict is not None:
+            post.verdict = update.verdict
+        if update.confidence is not None:
+            post.confidence = update.confidence
+        if update.explanation is not None:
+            post.explanation = update.explanation
+        if update.author is not None:
+            post.author = update.author
+        if update.metadata is not None:
+            post.post_metadata = update.metadata
+
+        await db.commit()
+        await db.refresh(post)
+
+        logger.info(f"Updated post {post_id}")
+
+        return PostResponse.from_orm(post)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating post {post_id}: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to update post: {str(e)}")
+
+
+@router.delete("/{post_id}")
+async def delete_post(
+    post_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """
+    Delete a post and its associated data.
+
+    Removes the post and all associated chat messages from the database.
+    This action cannot be undone.
+    """
+    try:
+        result = await db.execute(select(Post).where(Post.post_id == post_id))
+        post = result.scalar_one_or_none()
+
+        if not post:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Post with ID {post_id} not found")
+
+        await db.delete(post)
+        await db.commit()
+
+        logger.info(f"Deleted post {post_id}")
+
+        return {"message": f"Post {post_id} deleted successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting post {post_id}: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to delete post: {str(e)}")

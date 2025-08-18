@@ -1,55 +1,31 @@
-# AI Slop Detector 🤖
+# Browser Extension
 
-A Chrome extension for real-time AI slop detection in Facebook posts.
+Chrome extension for real-time AI content detection on Facebook.
 
-## Development Setup
+## Quick Setup
 
-### Prerequisites
-
-- Node.js (v14 or higher)
-- npm (v6 or higher)
-- Google Chrome browser
-
-### Installation
-
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/yourusername/ai-slop-extension.git
-   cd ai-slop-extension
-   ```
-
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-
-3. Start development build with watch mode:
-   ```bash
-   npm start
-   ```
-
-4. Load the extension in Chrome:
-   - Open Chrome and navigate to `chrome://extensions/`
-   - Enable "Developer mode"
-   - Click "Load unpacked" and select the `dist` directory
-
-### Development Commands
-
-- `npm start` - Start development build with watch mode
-- `npm run build` - Create production build
-- `npm test` - Run tests
-- `npm run lint` - Run linting
-- `npm run format` - Format code
-
-## Building for Production
-
-Create a production build:
 ```bash
-npm run build
+# Install dependencies
+npm install
+
+# Start development build
+npm start
+
+# Load extension in Chrome
+# Go to chrome://extensions/
+# Enable "Developer mode"
+# Click "Load unpacked" and select the 'dist' directory
 ```
 
-The build output will be in the `dist` directory, ready for submission to the Chrome Web Store.
+## Development
 
-## License
+```bash
+npm start        # Development build with watch mode
+npm run build    # Production build
+npm test         # Run tests
+```
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+## Documentation
+
+- **[Extension Guide](../docs/extension-guide.md)** - Complete development guide, architecture, and features
+- **[Post ID Flow](../docs/post-id-flow.md)** - How Facebook post IDs are tracked throughout the system
