@@ -14,6 +14,6 @@ api_router.include_router(image_detection.router, tags=["image-detection"])
 api_router.include_router(video_detection.router, tags=["video-detection"])
 
 # New migrated endpoints
-api_router.include_router(detect.router, prefix="/detect", tags=["text-detection"])
+api_router.include_router(detect.router, prefix="/detect", tags=["content-detection"])
 api_router.include_router(chat.router, prefix="/chat", tags=["chat"])
 api_router.include_router(posts.router, prefix="/posts", tags=["posts"])

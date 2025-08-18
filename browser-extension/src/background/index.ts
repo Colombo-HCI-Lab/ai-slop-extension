@@ -4,10 +4,25 @@
 type AiSlopResponse = {
   /** Whether the content is AI-generated slop */
   isAiSlop: boolean;
-  /** Confidence score of the analysis (0-1) */
+  /** Confidence score of the analysis (0-1) - legacy */
   confidence: number;
   /** Human-readable explanation of the analysis result */
   reasoning: string;
+
+  // Separate AI probability and confidence for each modality
+  /** Text AI probability (0.0 = human, 1.0 = AI) */
+  textAiProbability?: number;
+  /** Text analysis confidence */
+  textConfidence?: number;
+  /** Image AI probability (0.0 = human, 1.0 = AI) */
+  imageAiProbability?: number;
+  /** Image analysis confidence */
+  imageConfidence?: number;
+  /** Video AI probability (0.0 = human, 1.0 = AI) */
+  videoAiProbability?: number;
+  /** Video analysis confidence */
+  videoConfidence?: number;
+
   /** Detailed analysis features */
   analysisDetails: Record<string, unknown>;
   /** Processing time in milliseconds */
@@ -40,7 +55,7 @@ class BackgroundService {
   /** Endpoint for content detection */
   private readonly DETECT_ENDPOINT = `${this.API_BASE_URL}/detect/analyze`;
   /** Endpoint for chat functionality */
-  private readonly CHAT_ENDPOINT = `${this.API_BASE_URL}/chat`;
+  private readonly CHAT_ENDPOINT = `${this.API_BASE_URL}/chat/send`;
 
   constructor() {
     this.initialize();
@@ -63,7 +78,12 @@ class BackgroundService {
     // Listen for messages from content scripts
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (message.type === 'AI_SLOP_REQUEST') {
-        this.handleAiSlopRequest(message.content, message.postId)
+        this.handleAiSlopRequest(
+          message.content,
+          message.postId,
+          message.imageUrls,
+          message.videoUrls
+        )
           .then(sendResponse)
           .catch(error => {
             console.error('AI slop detection error:', error);
@@ -107,20 +127,32 @@ class BackgroundService {
    * Handles AI slop detection requests by communicating with the backend API
    * @param content - The text content of the Facebook post to analyze
    * @param postId - Unique identifier for the post
+   * @param imageUrls - Array of image URLs from the post
+   * @param videoUrls - Array of video URLs from the post
    * @returns Promise resolving to AI slop analysis results
    * @throws Error if API request fails
    */
-  private async handleAiSlopRequest(content: string, postId: string): Promise<AiSlopResponse> {
+  private async handleAiSlopRequest(
+    content: string,
+    postId: string,
+    imageUrls?: string[],
+    videoUrls?: string[]
+  ): Promise<AiSlopResponse> {
     console.log(`[Background] 🔍 Analyzing content for post ${postId}:`, {
       contentLength: content.length,
       contentPreview: content.substring(0, 100) + '...',
+      imageCount: imageUrls?.length || 0,
+      videoCount: videoUrls?.length || 0,
       endpoint: this.DETECT_ENDPOINT,
     });
 
     try {
       const requestBody = {
         content,
-        postId,
+        post_id: postId, // Backend expects post_id not postId
+        author: null, // Default to null for now - could be extracted in future
+        image_urls: imageUrls || [],
+        video_urls: videoUrls || [],
       };
 
       console.log('[Background] 📤 Sending request:', requestBody);
@@ -149,9 +181,16 @@ class BackgroundService {
         isAiSlop: data.verdict === 'ai_slop',
         confidence: data.confidence,
         reasoning: data.explanation,
+        // Include separate probability and confidence values
+        textAiProbability: data.text_ai_probability,
+        textConfidence: data.text_confidence,
+        imageAiProbability: data.image_ai_probability,
+        imageConfidence: data.image_confidence,
+        videoAiProbability: data.video_ai_probability,
+        videoConfidence: data.video_confidence,
         analysisDetails: {
           verdict: data.verdict,
-          postId: data.postId,
+          postId: data.post_id || postId, // Use response post_id or fallback
         },
         processingTime: 0,
         timestamp: data.timestamp,

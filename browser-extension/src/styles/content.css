@@ -364,6 +364,20 @@
   font-weight: 500 !important;
 }
 
+.modality-analysis {
+  margin-bottom: 8px !important;
+  padding: 8px 12px !important;
+  background-color: #f9fafb !important;
+  border-left: 3px solid #3b82f6 !important;
+  border-radius: 4px !important;
+  font-size: 13px !important;
+}
+
+.modality-analysis strong {
+  color: #374151 !important;
+  margin-right: 8px !important;
+}
+
 .reasoning {
   margin-bottom: 16px !important;
   line-height: 1.6 !important;

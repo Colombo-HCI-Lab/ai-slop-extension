@@ -423,6 +423,9 @@ export class FacebookPostObserver {
       // Extract post content
       const content = await this.extractPostContent(postElement);
 
+      // Extract media URLs (images and videos)
+      const mediaUrls = this.extractMediaUrls(postElement);
+
       if (!content || content.trim().length < 10) {
         console.log(`[AI-Slop] ⏭️ Post ${postId} has insufficient content, skipping analysis`);
         return;
@@ -435,6 +438,12 @@ export class FacebookPostObserver {
         isAiSlop: boolean;
         confidence: number;
         reasoning: string;
+        textAiProbability?: number;
+        textConfidence?: number;
+        imageAiProbability?: number;
+        imageConfidence?: number;
+        videoAiProbability?: number;
+        videoConfidence?: number;
         analysisDetails: Record<string, unknown>;
         processingTime: number;
         timestamp: string;
@@ -444,6 +453,8 @@ export class FacebookPostObserver {
             type: 'AI_SLOP_REQUEST',
             content: content,
             postId: postId,
+            imageUrls: mediaUrls.images,
+            videoUrls: mediaUrls.videos,
           },
           response => {
             if (chrome.runtime.lastError) {
@@ -662,6 +673,129 @@ export class FacebookPostObserver {
   }
 
   /**
+   * Extracts image and video URLs from a Facebook post
+   * @param postElement - The post's HTML element
+   * @returns Object containing arrays of image and video URLs
+   */
+  private extractMediaUrls(postElement: HTMLElement): { images: string[]; videos: string[] } {
+    const images: string[] = [];
+    const videos: string[] = [];
+
+    // Extract image URLs
+    // Facebook images are typically in img tags with data-src or src attributes
+    const imageElements = postElement.querySelectorAll('img');
+    imageElements.forEach(img => {
+      // Skip small images (likely icons or avatars)
+      if (img.width > 100 || img.height > 100 || (!img.width && !img.height)) {
+        const src = img.getAttribute('src') || img.getAttribute('data-src');
+        if (src && !src.includes('emoji') && !src.includes('icon') && !src.includes('avatar')) {
+          // Clean up Facebook image URLs
+          const cleanUrl = this.cleanFacebookImageUrl(src);
+          if (cleanUrl && !images.includes(cleanUrl)) {
+            images.push(cleanUrl);
+          }
+        }
+      }
+    });
+
+    // Also check for background images in divs (Facebook sometimes uses these)
+    const divElements = postElement.querySelectorAll('div[style*="background-image"]');
+    divElements.forEach(div => {
+      const style = div.getAttribute('style') || '';
+      const match = style.match(/url\(["']?([^"')]+)["']?\)/);
+      if (match && match[1]) {
+        const cleanUrl = this.cleanFacebookImageUrl(match[1]);
+        if (cleanUrl && !images.includes(cleanUrl)) {
+          images.push(cleanUrl);
+        }
+      }
+    });
+
+    // Extract video URLs
+    // Facebook videos can be in video tags or embedded in iframes
+    const videoElements = postElement.querySelectorAll('video');
+    videoElements.forEach(video => {
+      const src = video.getAttribute('src') || video.querySelector('source')?.getAttribute('src');
+      if (src) {
+        videos.push(src);
+      }
+    });
+
+    // Check for video links in data attributes
+    const videoLinks = postElement.querySelectorAll('[data-video-url], [data-video-src]');
+    videoLinks.forEach(element => {
+      const videoUrl =
+        element.getAttribute('data-video-url') || element.getAttribute('data-video-src');
+      if (videoUrl && !videos.includes(videoUrl)) {
+        videos.push(videoUrl);
+      }
+    });
+
+    // Look for Facebook video player divs
+    const fbVideoPlayers = postElement.querySelectorAll(
+      '[data-testid*="video"], [aria-label*="video"], [role="img"][aria-label*="Video"]'
+    );
+    fbVideoPlayers.forEach(player => {
+      // Try to find associated video URL
+      const links = player.querySelectorAll('a[href*="/videos/"], a[href*="/watch/"]');
+      links.forEach(link => {
+        const href = link.getAttribute('href');
+        if (href && !videos.includes(href)) {
+          videos.push(href);
+        }
+      });
+    });
+
+    console.log('[AI-Slop] 📸 Extracted media:', {
+      images: images.length,
+      videos: videos.length,
+      imageUrls: images,
+      videoUrls: videos,
+    });
+
+    return { images, videos };
+  }
+
+  /**
+   * Cleans Facebook image URLs to get the highest quality version
+   * @param url - The image URL to clean
+   * @returns Cleaned URL or null if invalid
+   */
+  private cleanFacebookImageUrl(url: string): string | null {
+    if (!url) return null;
+
+    try {
+      // Remove Facebook's image resizing parameters
+      let cleanUrl = url;
+
+      // Handle scontent URLs (Facebook's CDN)
+      if (url.includes('scontent')) {
+        // Remove size parameters like _s.jpg, _n.jpg etc
+        cleanUrl = url.replace(/[_-][snmlt]\.(jpg|png|webp)/i, '.$1');
+
+        // Remove dimension parameters
+        cleanUrl = cleanUrl.replace(/\/[pcs]\d+x\d+\//g, '/');
+
+        // Remove other Facebook parameters
+        cleanUrl = cleanUrl.replace(/[?&](w|h|_nc_[a-z]+)=[^&]+/g, '');
+      }
+
+      // Handle external.xx.fbcdn.net URLs
+      if (url.includes('fbcdn.net')) {
+        // These are usually direct image URLs, just clean query params
+        const urlObj = new URL(url);
+        urlObj.search = '';
+        cleanUrl = urlObj.toString();
+      }
+
+      return cleanUrl;
+    } catch (error) {
+      console.warn('[AI-Slop] Failed to clean image URL:', url, error);
+      return url; // Return original if cleaning fails
+    }
+  }
+
+  /**
    * Expands collapsed content by finding and clicking "See more" buttons
    * Handles various Facebook "See more" button patterns and waits for content expansion
    * @param postElement - The post's HTML element
@@ -792,7 +926,13 @@ export class FacebookPostObserver {
       isAiSlop: boolean;
       confidence: number;
       reasoning: string;
-      analysisDetails: Record<string, unknown>;
+      textAiProbability?: number;
+      textConfidence?: number;
+      imageAiProbability?: number;
+      imageConfidence?: number;
+      videoAiProbability?: number;
+      videoConfidence?: number;
+      analysisDetails?: Record<string, unknown>;
       processingTime: number;
       timestamp: string;
     }
@@ -1011,7 +1151,13 @@ export class FacebookPostObserver {
       isAiSlop: boolean;
       confidence: number;
       reasoning: string;
-      analysisDetails: Record<string, unknown>;
+      textAiProbability?: number;
+      textConfidence?: number;
+      imageAiProbability?: number;
+      imageConfidence?: number;
+      videoAiProbability?: number;
+      videoConfidence?: number;
+      analysisDetails?: Record<string, unknown>;
       processingTime: number;
       timestamp: string;
     }
@@ -1093,6 +1239,70 @@ export class FacebookPostObserver {
   }
 
   /**
+   * Generates confidence display HTML with separate values for text, image, and video
+   */
+  private generateConfidenceDisplay(analysisResult: {
+    confidence: number;
+    textAiProbability?: number;
+    textConfidence?: number;
+    imageAiProbability?: number;
+    imageConfidence?: number;
+    videoAiProbability?: number;
+    videoConfidence?: number;
+  }): string {
+    const sections = [];
+
+    // Always show text analysis if available
+    if (
+      analysisResult.textAiProbability !== undefined &&
+      analysisResult.textConfidence !== undefined
+    ) {
+      sections.push(`
+        <div class="modality-analysis">
+          <strong>📝 Text:</strong> 
+          ${Math.round(analysisResult.textAiProbability * 100)}% AI probability, 
+          ${Math.round(analysisResult.textConfidence * 100)}% confidence
+        </div>
+      `);
+    }
+
+    // Show image analysis if available
+    if (
+      analysisResult.imageAiProbability !== undefined &&
+      analysisResult.imageConfidence !== undefined
+    ) {
+      sections.push(`
+        <div class="modality-analysis">
+          <strong>🖼️ Images:</strong> 
+          ${Math.round(analysisResult.imageAiProbability * 100)}% AI probability, 
+          ${Math.round(analysisResult.imageConfidence * 100)}% confidence
+        </div>
+      `);
+    }
+
+    // Show video analysis if available
+    if (
+      analysisResult.videoAiProbability !== undefined &&
+      analysisResult.videoConfidence !== undefined
+    ) {
+      sections.push(`
+        <div class="modality-analysis">
+          <strong>🎥 Videos:</strong> 
+          ${Math.round(analysisResult.videoAiProbability * 100)}% AI probability, 
+          ${Math.round(analysisResult.videoConfidence * 100)}% confidence
+        </div>
+      `);
+    }
+
+    // Fallback to legacy confidence if no separate values are available
+    if (sections.length === 0) {
+      return `Overall Confidence: ${Math.round(analysisResult.confidence * 100)}%`;
+    }
+
+    return sections.join('');
+  }
+
+  /**
    * Creates and displays the chat window for AI slop analysis (non-blocking)
    * @param postElement - The post's HTML element
    * @param postId - Unique identifier for the post
@@ -1107,7 +1317,13 @@ export class FacebookPostObserver {
       isAiSlop: boolean;
       confidence: number;
       reasoning: string;
-      analysisDetails: Record<string, unknown>;
+      textAiProbability?: number;
+      textConfidence?: number;
+      imageAiProbability?: number;
+      imageConfidence?: number;
+      videoAiProbability?: number;
+      videoConfidence?: number;
+      analysisDetails?: Record<string, unknown>;
       processingTime: number;
       timestamp: string;
     }
@@ -1152,7 +1368,7 @@ export class FacebookPostObserver {
           <strong>${analysisResult.isAiSlop ? '🤖 AI-Generated Content Detected' : '👤 Human-Generated Content'}</strong>
         </div>
         <div class="confidence">
-          Confidence: ${Math.round(analysisResult.confidence * 100)}%
+          ${this.generateConfidenceDisplay(analysisResult)}
         </div>
         <div class="reasoning">
           ${analysisResult.reasoning}

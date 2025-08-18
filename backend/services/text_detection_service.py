@@ -71,10 +71,10 @@ class TextDetectionService:
                 return self._create_response_from_post(cached_result, from_cache=True)
 
         # Perform detection
-        verdict, confidence, explanation = self._analyze_content(request.content)
+        verdict, confidence, explanation, ai_probability, analysis_confidence = self._analyze_content(request.content)
 
         # Save to database
-        post = await self._save_to_database(request, verdict, confidence, explanation, db)
+        post = await self._save_to_database(request, verdict, confidence, explanation, ai_probability, analysis_confidence, db)
 
         return self._create_response_from_post(post, from_cache=False)
 
@@ -83,12 +83,12 @@ class TextDetectionService:
         result = await db.execute(select(Post).where(Post.post_id == post_id))
         return result.scalar_one_or_none()
 
-    def _analyze_content(self, content: str) -> tuple[str, float, str]:
+    def _analyze_content(self, content: str) -> tuple[str, float, str, float, float]:
         """
         Analyze content for AI-generated patterns.
 
         Returns:
-            Tuple of (verdict, confidence, explanation)
+            Tuple of (verdict, confidence, explanation, ai_probability, analysis_confidence)
         """
         # For testing mode, use random detection
         if self._is_testing_mode():
@@ -99,7 +99,24 @@ class TextDetectionService:
         matched_indicators = [indicator for indicator in self.ai_indicators if indicator in content_lower]
 
         indicator_score = len(matched_indicators)
-        confidence = min(0.95, 0.2 + indicator_score * 0.15)
+        
+        # Legacy confidence calculation for backward compatibility
+        legacy_confidence = min(0.95, 0.2 + indicator_score * 0.15)
+
+        # New AI probability calculation (0.0 = definitely human, 1.0 = definitely AI)
+        # Base probability starts at 0.1 (slight chance it could be AI)
+        # Each indicator adds 0.08 probability
+        ai_probability = min(0.95, 0.1 + indicator_score * 0.08)
+        
+        # Analysis confidence (how confident we are in our assessment)
+        # Higher confidence with more indicators (either way)
+        # Base confidence of 0.3, increases with indicators found
+        analysis_confidence = min(0.95, 0.3 + indicator_score * 0.1)
+        
+        # If no indicators, we're reasonably confident it's human content
+        if indicator_score == 0:
+            ai_probability = 0.05  # Very low chance of being AI
+            analysis_confidence = 0.75  # Reasonably confident in human assessment
 
         if indicator_score >= 3:
             verdict = "ai_slop"
@@ -116,20 +133,32 @@ class TextDetectionService:
             else "No AI-typical patterns detected"
         )
 
-        logger.debug(f"Analysis complete - Verdict: {verdict}, Confidence: {confidence:.2%}, Indicators: {indicator_score}")
+        logger.debug(f"Analysis complete - Verdict: {verdict}, Legacy Confidence: {legacy_confidence:.2%}, AI Probability: {ai_probability:.2%}, Analysis Confidence: {analysis_confidence:.2%}, Indicators: {indicator_score}")
 
-        return verdict, confidence, explanation
+        return verdict, legacy_confidence, explanation, ai_probability, analysis_confidence
 
-    def _random_detection(self, content: str) -> tuple[str, float, str]:
+    def _random_detection(self, content: str) -> tuple[str, float, str, float, float]:
         """Random detection for testing."""
         import random
 
         is_ai_slop = random.random() > 0.5
-        confidence = (
+        
+        # Legacy confidence for backward compatibility
+        legacy_confidence = (
             0.65 + random.random() * 0.35  # 65-100% for AI slop
             if is_ai_slop
             else 0.15 + random.random() * 0.35  # 15-50% for human content
         )
+
+        # AI probability (0.0 = human, 1.0 = AI)
+        ai_probability = (
+            0.7 + random.random() * 0.25  # 70-95% probability for AI content
+            if is_ai_slop
+            else 0.05 + random.random() * 0.25  # 5-30% probability for human content
+        )
+        
+        # Analysis confidence (how sure we are)
+        analysis_confidence = 0.6 + random.random() * 0.35  # 60-95% confidence
 
         verdict = "ai_slop" if is_ai_slop else "human_content"
 
@@ -149,7 +178,7 @@ class TextDetectionService:
 
         explanation = random.choice(ai_explanations) if is_ai_slop else random.choice(human_explanations)
 
-        return verdict, confidence, explanation
+        return verdict, legacy_confidence, explanation, ai_probability, analysis_confidence
 
     def _is_testing_mode(self) -> bool:
         """Check if running in testing mode."""
@@ -164,6 +193,8 @@ class TextDetectionService:
         verdict: str,
         confidence: float,
         explanation: str,
+        ai_probability: float,
+        analysis_confidence: float,
         db: AsyncSession,
     ) -> Post:
         """Save detection result to database."""
@@ -177,6 +208,8 @@ class TextDetectionService:
             existing.verdict = verdict
             existing.confidence = confidence
             existing.explanation = explanation
+            existing.text_ai_probability = ai_probability
+            existing.text_confidence = analysis_confidence
             existing.updated_at = datetime.utcnow()
             await db.commit()
             return existing
@@ -190,6 +223,8 @@ class TextDetectionService:
             verdict=verdict,
             confidence=confidence,
             explanation=explanation,
+            text_ai_probability=ai_probability,
+            text_confidence=analysis_confidence,
             post_metadata=request.metadata,
         )
 
@@ -207,6 +242,11 @@ class TextDetectionService:
             confidence=post.confidence,
             explanation=post.explanation,
             timestamp=post.updated_at.isoformat(),
+            text_ai_probability=post.text_ai_probability,
+            text_confidence=post.text_confidence,
+            text_analysis={"verdict": post.verdict, "confidence": post.confidence, "explanation": post.explanation},
+            image_analysis=[],
+            video_analysis=[],
             debug_info={
                 "mode": "cached_result" if from_cache else "real_detection",
                 "request_number": self.request_counter,

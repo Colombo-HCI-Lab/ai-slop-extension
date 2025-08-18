@@ -52,11 +52,23 @@ class Post(Base):
     # AI detection verdict: 'ai_slop', 'human_content', 'uncertain'
     verdict: Mapped[str] = mapped_column(String(50), nullable=False)
 
-    # Confidence score (0.0 to 1.0)
+    # Confidence score (0.0 to 1.0) - legacy field for backward compatibility
     confidence: Mapped[float] = mapped_column(Float, nullable=False)
 
     # Explanation of the verdict
     explanation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Text analysis results
+    text_ai_probability: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    text_confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    # Image analysis results
+    image_ai_probability: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    image_confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    # Video analysis results  
+    video_ai_probability: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    video_confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
     # Additional metadata as JSON
     post_metadata: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
