@@ -1240,20 +1240,29 @@ export class FacebookPostObserver {
 
   /**
    * Generates confidence display HTML with separate values for text, image, and video
+   * Only shows sections for content types that are actually present in the post
    */
-  private generateConfidenceDisplay(analysisResult: {
-    confidence: number;
-    textAiProbability?: number;
-    textConfidence?: number;
-    imageAiProbability?: number;
-    imageConfidence?: number;
-    videoAiProbability?: number;
-    videoConfidence?: number;
-  }): string {
+  private generateConfidenceDisplay(
+    analysisResult: {
+      confidence: number;
+      textAiProbability?: number;
+      textConfidence?: number;
+      imageAiProbability?: number;
+      imageConfidence?: number;
+      videoAiProbability?: number;
+      videoConfidence?: number;
+    },
+    contentPresent: {
+      hasText: boolean;
+      hasImages: boolean;
+      hasVideos: boolean;
+    }
+  ): string {
     const sections = [];
 
-    // Always show text analysis if available
+    // Show text analysis only if post has text content AND analysis values are available
     if (
+      contentPresent.hasText &&
       analysisResult.textAiProbability !== undefined &&
       analysisResult.textConfidence !== undefined
     ) {
@@ -1266,8 +1275,9 @@ export class FacebookPostObserver {
       `);
     }
 
-    // Show image analysis if available
+    // Show image analysis only if post has images AND analysis values are available
     if (
+      contentPresent.hasImages &&
       analysisResult.imageAiProbability !== undefined &&
       analysisResult.imageConfidence !== undefined
     ) {
@@ -1280,8 +1290,9 @@ export class FacebookPostObserver {
       `);
     }
 
-    // Show video analysis if available
+    // Show video analysis only if post has videos AND analysis values are available
     if (
+      contentPresent.hasVideos &&
       analysisResult.videoAiProbability !== undefined &&
       analysisResult.videoConfidence !== undefined
     ) {
@@ -1333,6 +1344,14 @@ export class FacebookPostObserver {
     const windowCount = existingWindows.length;
     const offset = windowCount * 30; // Cascade windows
 
+    // Determine what content types are present in the post
+    const mediaUrls = this.extractMediaUrls(postElement);
+    const contentPresent = {
+      hasText: Boolean(postContent && postContent.trim().length > 0),
+      hasImages: mediaUrls.images.length > 0,
+      hasVideos: mediaUrls.videos.length > 0,
+    };
+
     const chatWindow = document.createElement('div');
     chatWindow.className = 'detect-chat-window';
     chatWindow.setAttribute('data-post-id', postId);
@@ -1368,7 +1387,7 @@ export class FacebookPostObserver {
           <strong>${analysisResult.isAiSlop ? '🤖 AI-Generated Content Detected' : '👤 Human-Generated Content'}</strong>
         </div>
         <div class="confidence">
-          ${this.generateConfidenceDisplay(analysisResult)}
+          ${this.generateConfidenceDisplay(analysisResult, contentPresent)}
         </div>
         <div class="reasoning">
           ${analysisResult.reasoning}
