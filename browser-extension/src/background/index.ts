@@ -52,8 +52,8 @@ type ChatResponse = {
 class BackgroundService {
   /** Base URL for the backend API */
   private readonly API_BASE_URL = 'http://localhost:4000/api/v1';
-  /** Endpoint for content detection */
-  private readonly DETECT_ENDPOINT = `${this.API_BASE_URL}/detect/analyze`;
+  /** Endpoint for post processing (detection and analysis) */
+  private readonly PROCESS_ENDPOINT = `${this.API_BASE_URL}/posts/process`;
   /** Endpoint for chat functionality */
   private readonly CHAT_ENDPOINT = `${this.API_BASE_URL}/chat/send`;
 
@@ -143,7 +143,7 @@ class BackgroundService {
       contentPreview: content.substring(0, 100) + '...',
       imageCount: imageUrls?.length || 0,
       videoCount: videoUrls?.length || 0,
-      endpoint: this.DETECT_ENDPOINT,
+      endpoint: this.PROCESS_ENDPOINT,
     });
 
     try {
@@ -157,7 +157,7 @@ class BackgroundService {
 
       console.log('[Background] 📤 Sending request:', requestBody);
 
-      const response = await fetch(this.DETECT_ENDPOINT, {
+      const response = await fetch(this.PROCESS_ENDPOINT, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
