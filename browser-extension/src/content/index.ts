@@ -1360,8 +1360,28 @@ export class FacebookPostObserver {
     chatWindow.style.top = `${20 + offset}px`;
     chatWindow.style.right = `${20 + offset}px`;
 
-    // Extract a preview of the post content for the header
-    const postPreview = postContent.substring(0, 50) + (postContent.length > 50 ? '...' : '');
+    // Extract author information
+    const authorElement = postElement.querySelector('h2, h3, h4');
+    const authorText = authorElement?.textContent?.trim() || 'Unknown User';
+    
+    // Clean up author text and add @ prefix
+    const username = authorText.split('\n')[0].trim(); // Take first line only
+    const formattedUsername = username.startsWith('@') ? username : `@${username}`;
+    
+    // Check if content is meaningful (not generic Facebook UI text)
+    const isGenericContent = 
+      !postContent.trim() || 
+      postContent.length < 10 ||
+      postContent.toLowerCase().includes('facebook'.repeat(5)) ||
+      postContent.toLowerCase().includes('like comment share') ||
+      /^[\s\n]*$/.test(postContent); // Only whitespace/newlines
+    
+    // Extract a preview of the post content for the subtitle
+    let subtitle = formattedUsername;
+    if (!isGenericContent) {
+      const contentPreview = postContent.trim().substring(0, 100) + (postContent.length > 100 ? '...' : '');
+      subtitle = `${formattedUsername} - ${contentPreview}`;
+    }
 
     chatWindow.innerHTML = `
       <div class="chat-window-header">
@@ -1373,7 +1393,7 @@ export class FacebookPostObserver {
           </div>
           <div class="title-text">
             <span class="title-main">AI Content Analysis</span>
-            <span class="title-preview" title="${postContent}">${postPreview}</span>
+            <span class="title-preview" title="${postContent}">${subtitle}</span>
           </div>
         </div>
         <div class="chat-window-controls">
