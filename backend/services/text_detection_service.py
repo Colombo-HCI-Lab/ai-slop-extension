@@ -99,7 +99,7 @@ class TextDetectionService:
         matched_indicators = [indicator for indicator in self.ai_indicators if indicator in content_lower]
 
         indicator_score = len(matched_indicators)
-        
+
         # Legacy confidence calculation for backward compatibility
         legacy_confidence = min(0.95, 0.2 + indicator_score * 0.15)
 
@@ -107,12 +107,12 @@ class TextDetectionService:
         # Base probability starts at 0.1 (slight chance it could be AI)
         # Each indicator adds 0.08 probability
         ai_probability = min(0.95, 0.1 + indicator_score * 0.08)
-        
+
         # Analysis confidence (how confident we are in our assessment)
         # Higher confidence with more indicators (either way)
         # Base confidence of 0.3, increases with indicators found
         analysis_confidence = min(0.95, 0.3 + indicator_score * 0.1)
-        
+
         # If no indicators, we're reasonably confident it's human content
         if indicator_score == 0:
             ai_probability = 0.05  # Very low chance of being AI
@@ -133,7 +133,9 @@ class TextDetectionService:
             else "No AI-typical patterns detected"
         )
 
-        logger.debug(f"Analysis complete - Verdict: {verdict}, Legacy Confidence: {legacy_confidence:.2%}, AI Probability: {ai_probability:.2%}, Analysis Confidence: {analysis_confidence:.2%}, Indicators: {indicator_score}")
+        logger.debug(
+            f"Analysis complete - Verdict: {verdict}, Legacy Confidence: {legacy_confidence:.2%}, AI Probability: {ai_probability:.2%}, Analysis Confidence: {analysis_confidence:.2%}, Indicators: {indicator_score}"
+        )
 
         return verdict, legacy_confidence, explanation, ai_probability, analysis_confidence
 
@@ -142,7 +144,7 @@ class TextDetectionService:
         import random
 
         is_ai_slop = random.random() > 0.5
-        
+
         # Legacy confidence for backward compatibility
         legacy_confidence = (
             0.65 + random.random() * 0.35  # 65-100% for AI slop
@@ -156,7 +158,7 @@ class TextDetectionService:
             if is_ai_slop
             else 0.05 + random.random() * 0.25  # 5-30% probability for human content
         )
-        
+
         # Analysis confidence (how sure we are)
         analysis_confidence = 0.6 + random.random() * 0.35  # 60-95% confidence
 

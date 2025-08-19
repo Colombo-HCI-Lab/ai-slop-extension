@@ -28,17 +28,17 @@ class ContentDetectionResponse(BaseModel):
     confidence: float = Field(..., ge=0.0, le=1.0, description="Overall confidence score (legacy)")
     explanation: str = Field(..., description="Explanation for the verdict")
     timestamp: str = Field(..., description="Analysis timestamp")
-    
+
     # Separate AI probability and confidence for each modality
     text_ai_probability: Optional[float] = Field(None, ge=0.0, le=1.0, description="Text AI probability (0.0 = human, 1.0 = AI)")
     text_confidence: Optional[float] = Field(None, ge=0.0, le=1.0, description="Text analysis confidence")
-    
+
     image_ai_probability: Optional[float] = Field(None, ge=0.0, le=1.0, description="Image AI probability (0.0 = human, 1.0 = AI)")
     image_confidence: Optional[float] = Field(None, ge=0.0, le=1.0, description="Image analysis confidence")
-    
+
     video_ai_probability: Optional[float] = Field(None, ge=0.0, le=1.0, description="Video AI probability (0.0 = human, 1.0 = AI)")
     video_confidence: Optional[float] = Field(None, ge=0.0, le=1.0, description="Video analysis confidence")
-    
+
     # Detailed analysis results for backward compatibility
     text_analysis: Optional[dict] = Field(None, description="Text analysis results")
     image_analysis: Optional[List[dict]] = Field(None, description="Image analysis results")

@@ -51,18 +51,19 @@ class ContentDetectionService:
                 logger.info(f"Using cached text result for post {request.post_id}")
 
                 # For cached results, still analyze media if present
-                image_results, image_ai_prob, image_conf = await self._analyze_images(request.image_urls) if request.image_urls else ([], None, None)
-                video_results, video_ai_prob, video_conf = await self._analyze_videos(request.video_urls) if request.video_urls else ([], None, None)
+                image_results, image_ai_prob, image_conf = (
+                    await self._analyze_images(request.image_urls) if request.image_urls else ([], None, None)
+                )
+                video_results, video_ai_prob, video_conf = (
+                    await self._analyze_videos(request.video_urls) if request.video_urls else ([], None, None)
+                )
 
                 # Update the cached post with media analysis results
-                await self._update_post_with_media_analysis(
-                    request.post_id, image_ai_prob, image_conf, video_ai_prob, video_conf, db
-                )
+                await self._update_post_with_media_analysis(request.post_id, image_ai_prob, image_conf, video_ai_prob, video_conf, db)
 
                 # Create aggregated response
                 return self._create_aggregated_response(
-                    request.post_id, text_result, image_results, video_results,
-                    image_ai_prob, image_conf, video_ai_prob, video_conf
+                    request.post_id, text_result, image_results, video_results, image_ai_prob, image_conf, video_ai_prob, video_conf
                 )
 
         # Analyze all modalities in parallel
@@ -87,13 +88,10 @@ class ContentDetectionService:
         text_result, (image_results, image_ai_prob, image_conf), (video_results, video_ai_prob, video_conf) = await asyncio.gather(*tasks)
 
         # Update the post in database with image and video analysis results
-        await self._update_post_with_media_analysis(
-            request.post_id, image_ai_prob, image_conf, video_ai_prob, video_conf, db
-        )
+        await self._update_post_with_media_analysis(request.post_id, image_ai_prob, image_conf, video_ai_prob, video_conf, db)
 
         return self._create_aggregated_response(
-            request.post_id, text_result, image_results, video_results,
-            image_ai_prob, image_conf, video_ai_prob, video_conf
+            request.post_id, text_result, image_results, video_results, image_ai_prob, image_conf, video_ai_prob, video_conf
         )
 
     async def _analyze_text(self, request: ContentDetectionRequest, db: AsyncSession):
@@ -105,7 +103,7 @@ class ContentDetectionService:
     async def _analyze_images(self, image_urls: List[str]) -> tuple[List[Dict[str, Any]], Optional[float], Optional[float]]:
         """
         Analyze images from URLs.
-        
+
         Returns:
             Tuple of (image_results, ai_probability, analysis_confidence)
         """
@@ -114,7 +112,7 @@ class ContentDetectionService:
 
         logger.info(f"Analyzing {len(image_urls)} images")
         image_results = []
-        
+
         # For blocked images, we can't determine AI probability
         ai_probability = None
         analysis_confidence = None
@@ -124,12 +122,13 @@ class ContentDetectionService:
                 # For demonstration purposes, let's simulate some image analysis
                 # In reality, Facebook images are blocked, but let's show what would happen
                 # if we could analyze them or received image data directly from the browser
-                
+
                 # Simulate analysis based on URL patterns or image characteristics
                 # This is for testing - in production you'd use actual image analysis
                 import random
+
                 random.seed(hash(url) % 1000)  # Deterministic based on URL
-                
+
                 # Simulate different analysis scenarios
                 if "meme" in url.lower() or "generated" in url.lower():
                     # Higher chance of AI detection for obvious cases
@@ -145,7 +144,7 @@ class ContentDetectionService:
                     is_ai_generated = ai_probability > 0.65
                     status = "success"
                     error = None
-                    
+
                 result = {
                     "url": url,
                     "status": status,
@@ -157,19 +156,16 @@ class ContentDetectionService:
                     "error": error,
                 }
 
-                logger.info(f"Simulated image analysis for {url}: AI probability={ai_probability:.2f}, confidence={analysis_confidence:.2f}")
+                logger.info(
+                    f"Simulated image analysis for {url}: AI probability={ai_probability:.2f}, confidence={analysis_confidence:.2f}"
+                )
                 image_results.append(result)
 
             except Exception as e:
                 logger.error(f"Error analyzing image {url}: {e}")
-                image_results.append({
-                    "url": url, 
-                    "status": "error", 
-                    "error": str(e), 
-                    "is_ai_generated": None, 
-                    "ai_probability": None,
-                    "confidence": 0.0
-                })
+                image_results.append(
+                    {"url": url, "status": "error", "error": str(e), "is_ai_generated": None, "ai_probability": None, "confidence": 0.0}
+                )
 
         # Calculate aggregate AI probability and confidence for all images
         if image_results:
@@ -178,17 +174,19 @@ class ContentDetectionService:
                 # Average the AI probabilities and confidences
                 ai_probability = sum(r["ai_probability"] for r in successful_results) / len(successful_results)
                 analysis_confidence = sum(r["confidence"] for r in successful_results) / len(successful_results)
-                logger.info(f"Aggregate image analysis: {len(successful_results)} images, avg AI probability={ai_probability:.2f}, avg confidence={analysis_confidence:.2f}")
+                logger.info(
+                    f"Aggregate image analysis: {len(successful_results)} images, avg AI probability={ai_probability:.2f}, avg confidence={analysis_confidence:.2f}"
+                )
             else:
                 ai_probability = None
                 analysis_confidence = None
-        
+
         return image_results, ai_probability, analysis_confidence
 
     async def _analyze_videos(self, video_urls: List[str]) -> tuple[List[Dict[str, Any]], Optional[float], Optional[float]]:
         """
         Analyze videos from URLs.
-        
+
         Returns:
             Tuple of (video_results, ai_probability, analysis_confidence)
         """
@@ -197,7 +195,7 @@ class ContentDetectionService:
 
         logger.info(f"Analyzing {len(video_urls)} videos")
         video_results = []
-        
+
         # For blocked videos, we can't determine AI probability
         ai_probability = None
         analysis_confidence = None
@@ -207,8 +205,9 @@ class ContentDetectionService:
                 # Simulate video analysis for demonstration
                 # In production, this would use actual video AI detection models
                 import random
+
                 random.seed(hash(url) % 1000)  # Deterministic based on URL
-                
+
                 # Simulate different video analysis scenarios
                 if "ai" in url.lower() or "generated" in url.lower() or "deepfake" in url.lower():
                     # Higher chance of AI detection for obvious cases
@@ -224,7 +223,7 @@ class ContentDetectionService:
                     is_ai_generated = ai_probability > 0.6
                     status = "success"
                     error = None
-                
+
                 result = {
                     "url": url,
                     "status": status,
@@ -236,19 +235,16 @@ class ContentDetectionService:
                     "error": error,
                 }
 
-                logger.info(f"Simulated video analysis for {url}: AI probability={ai_probability:.2f}, confidence={analysis_confidence:.2f}")
+                logger.info(
+                    f"Simulated video analysis for {url}: AI probability={ai_probability:.2f}, confidence={analysis_confidence:.2f}"
+                )
                 video_results.append(result)
 
             except Exception as e:
                 logger.error(f"Error analyzing video {url}: {e}")
-                video_results.append({
-                    "url": url, 
-                    "status": "error", 
-                    "error": str(e), 
-                    "is_ai_generated": None, 
-                    "ai_probability": None,
-                    "confidence": 0.0
-                })
+                video_results.append(
+                    {"url": url, "status": "error", "error": str(e), "is_ai_generated": None, "ai_probability": None, "confidence": 0.0}
+                )
 
         # Calculate aggregate AI probability and confidence for all videos
         if video_results:
@@ -257,11 +253,13 @@ class ContentDetectionService:
                 # Average the AI probabilities and confidences
                 ai_probability = sum(r["ai_probability"] for r in successful_results) / len(successful_results)
                 analysis_confidence = sum(r["confidence"] for r in successful_results) / len(successful_results)
-                logger.info(f"Aggregate video analysis: {len(successful_results)} videos, avg AI probability={ai_probability:.2f}, avg confidence={analysis_confidence:.2f}")
+                logger.info(
+                    f"Aggregate video analysis: {len(successful_results)} videos, avg AI probability={ai_probability:.2f}, avg confidence={analysis_confidence:.2f}"
+                )
             else:
                 ai_probability = None
                 analysis_confidence = None
-        
+
         return video_results, ai_probability, analysis_confidence
 
     async def _update_post_with_media_analysis(
@@ -276,33 +274,35 @@ class ContentDetectionService:
         """Update the post in database with image and video analysis results."""
         from sqlalchemy import select, update
         from models import Post
-        
+
         # Find the post that was created by text analysis
         result = await db.execute(select(Post).where(Post.post_id == post_id))
         post = result.scalar_one_or_none()
-        
+
         if post:
             # Update the post with media analysis results
             post.image_ai_probability = image_ai_probability
-            post.image_confidence = image_confidence  
+            post.image_confidence = image_confidence
             post.video_ai_probability = video_ai_probability
             post.video_confidence = video_confidence
-            
+
             await db.commit()
-            logger.info(f"Updated post {post_id} with media analysis: image_prob={image_ai_probability}, image_conf={image_confidence}, video_prob={video_ai_probability}, video_conf={video_confidence}")
+            logger.info(
+                f"Updated post {post_id} with media analysis: image_prob={image_ai_probability}, image_conf={image_confidence}, video_prob={video_ai_probability}, video_conf={video_confidence}"
+            )
         else:
             logger.warning(f"Post {post_id} not found for media analysis update")
 
     def _create_aggregated_response(
-        self, 
-        post_id: str, 
-        text_result, 
-        image_results: List[Dict[str, Any]], 
+        self,
+        post_id: str,
+        text_result,
+        image_results: List[Dict[str, Any]],
         video_results: List[Dict[str, Any]],
         image_ai_probability: Optional[float] = None,
         image_confidence: Optional[float] = None,
         video_ai_probability: Optional[float] = None,
-        video_confidence: Optional[float] = None
+        video_confidence: Optional[float] = None,
     ) -> ContentDetectionResponse:
         """Create aggregated response from all modality analyses."""
 
@@ -339,8 +339,8 @@ class ContentDetectionService:
             confidence=overall_confidence,
             explanation=" | ".join(explanations),
             timestamp=datetime.utcnow().isoformat(),
-            text_ai_probability=getattr(text_result, 'text_ai_probability', None),
-            text_confidence=getattr(text_result, 'text_confidence', None),
+            text_ai_probability=getattr(text_result, "text_ai_probability", None),
+            text_confidence=getattr(text_result, "text_confidence", None),
             image_ai_probability=image_ai_probability,
             image_confidence=image_confidence,
             video_ai_probability=video_ai_probability,

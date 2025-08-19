@@ -319,7 +319,7 @@ export class FacebookPostObserver {
     // Strategy 1: Query articles (regular feed posts)
     const articlePosts = document.querySelectorAll('[role="article"]');
     totalCandidatesScanned += articlePosts.length;
-    
+
     for (const element of articlePosts) {
       if (element instanceof HTMLElement && this.isFacebookPost(element)) {
         validPostsFound++;
@@ -329,16 +329,16 @@ export class FacebookPostObserver {
 
     // Strategy 2: Look for Facebook feed containers with broader selectors
     const feedSelectors = [
-      '[role="feed"] > div',           // Feed container children
-      '[data-pagelet*="FeedUnit"]',    // Facebook feed units
-      '[data-testid*="posts"]',        // Posts with test IDs
-      'div[style*="flex-direction: column"] > div' // Common Facebook layout pattern
+      '[role="feed"] > div', // Feed container children
+      '[data-pagelet*="FeedUnit"]', // Facebook feed units
+      '[data-testid*="posts"]', // Posts with test IDs
+      'div[style*="flex-direction: column"] > div', // Common Facebook layout pattern
     ];
 
     for (const selector of feedSelectors) {
       const feedElements = document.querySelectorAll(selector);
       totalCandidatesScanned += feedElements.length;
-      
+
       for (const element of feedElements) {
         if (
           element instanceof HTMLElement &&
@@ -363,7 +363,7 @@ export class FacebookPostObserver {
         element.querySelectorAll('button').length > 3 && // Has multiple buttons (likely interactions)
         !element.closest('[role="article"]') && // Not already inside an article
         element.offsetHeight > 100 && // Must be reasonably tall (actual post content)
-        element.offsetWidth > 300     // Must be reasonably wide
+        element.offsetWidth > 300 // Must be reasonably wide
       ) {
         groupPostsScanned++;
         if (this.isFacebookPost(element)) {
@@ -1417,23 +1417,24 @@ export class FacebookPostObserver {
     // Extract author information
     const authorElement = postElement.querySelector('h2, h3, h4');
     const authorText = authorElement?.textContent?.trim() || 'Unknown User';
-    
+
     // Clean up author text and add @ prefix
     const username = authorText.split('\n')[0].trim(); // Take first line only
     const formattedUsername = username.startsWith('@') ? username : `@${username}`;
-    
+
     // Check if content is meaningful (not generic Facebook UI text)
-    const isGenericContent = 
-      !postContent.trim() || 
+    const isGenericContent =
+      !postContent.trim() ||
       postContent.length < 10 ||
       postContent.toLowerCase().includes('facebook'.repeat(5)) ||
       postContent.toLowerCase().includes('like comment share') ||
       /^[\s\n]*$/.test(postContent); // Only whitespace/newlines
-    
+
     // Extract a preview of the post content for the subtitle
     let subtitle = formattedUsername;
     if (!isGenericContent) {
-      const contentPreview = postContent.trim().substring(0, 100) + (postContent.length > 100 ? '...' : '');
+      const contentPreview =
+        postContent.trim().substring(0, 100) + (postContent.length > 100 ? '...' : '');
       subtitle = `${formattedUsername} - ${contentPreview}`;
     }
 

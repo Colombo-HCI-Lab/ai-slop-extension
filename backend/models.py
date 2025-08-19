@@ -66,7 +66,7 @@ class Post(Base):
     image_ai_probability: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     image_confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
-    # Video analysis results  
+    # Video analysis results
     video_ai_probability: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     video_confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 

@@ -26,11 +26,11 @@ class DetectResponse(BaseModel):
     confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence score (legacy)")
     explanation: str = Field(..., description="Explanation for the verdict")
     timestamp: str = Field(..., description="Analysis timestamp")
-    
+
     # Separate AI probability and confidence for text
     text_ai_probability: Optional[float] = Field(None, ge=0.0, le=1.0, description="Text AI probability (0.0 = human, 1.0 = AI)")
     text_confidence: Optional[float] = Field(None, ge=0.0, le=1.0, description="Text analysis confidence")
-    
+
     # Detailed analysis results for backward compatibility
     text_analysis: Optional[dict] = Field(None, description="Text analysis results")
     image_analysis: Optional[list] = Field(None, description="Image analysis results")
