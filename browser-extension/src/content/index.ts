@@ -235,10 +235,35 @@ export class FacebookPostObserver {
     // Add scroll event listener with debouncing
     window.addEventListener('scroll', this.boundHandleScroll);
 
-    // Process any existing posts
+    // Process any existing posts immediately
     this.processExistingPosts().catch(error => {
       console.error('[AI-Slop] Error processing existing posts:', error);
     });
+
+    // Add delayed processing to catch posts that load after initialization
+    // This fixes the issue where the first post is missed due to timing
+    setTimeout(() => {
+      console.log('[AI-Slop] Running delayed post processing to catch missed posts...');
+      this.processExistingPosts().catch(error => {
+        console.error('[AI-Slop] Error in delayed post processing:', error);
+      });
+    }, 1000);
+
+    // Add additional delayed processing for slower connections
+    setTimeout(() => {
+      console.log('[AI-Slop] Running secondary delayed post processing...');
+      this.processExistingPosts().catch(error => {
+        console.error('[AI-Slop] Error in secondary delayed post processing:', error);
+      });
+    }, 3000);
+
+    // Set up periodic rescanning to catch any posts that are still missed
+    setInterval(() => {
+      console.debug('[AI-Slop] Periodic post scan to ensure no posts are missed');
+      this.processExistingPosts().catch(error => {
+        console.error('[AI-Slop] Error in periodic post processing:', error);
+      });
+    }, 10000); // Every 10 seconds
   }
 
   /**
@@ -280,7 +305,7 @@ export class FacebookPostObserver {
   /**
    * Processes any posts that exist when the observer starts
    * Ensures posts loaded before observer initialization are processed
-   * Updated to handle both article elements and group posts
+   * Updated to handle both article elements and group posts with enhanced timing resilience
    */
   private async processExistingPosts(): Promise<void> {
     // Early exit if not in an allowed group
@@ -289,9 +314,12 @@ export class FacebookPostObserver {
     }
 
     let validPostsFound = 0;
+    let totalCandidatesScanned = 0;
 
-    // Query articles (regular feed posts)
+    // Strategy 1: Query articles (regular feed posts)
     const articlePosts = document.querySelectorAll('[role="article"]');
+    totalCandidatesScanned += articlePosts.length;
+    
     for (const element of articlePosts) {
       if (element instanceof HTMLElement && this.isFacebookPost(element)) {
         validPostsFound++;
@@ -299,7 +327,31 @@ export class FacebookPostObserver {
       }
     }
 
-    // For Facebook groups, also check for div elements with specific patterns
+    // Strategy 2: Look for Facebook feed containers with broader selectors
+    const feedSelectors = [
+      '[role="feed"] > div',           // Feed container children
+      '[data-pagelet*="FeedUnit"]',    // Facebook feed units
+      '[data-testid*="posts"]',        // Posts with test IDs
+      'div[style*="flex-direction: column"] > div' // Common Facebook layout pattern
+    ];
+
+    for (const selector of feedSelectors) {
+      const feedElements = document.querySelectorAll(selector);
+      totalCandidatesScanned += feedElements.length;
+      
+      for (const element of feedElements) {
+        if (
+          element instanceof HTMLElement &&
+          !element.closest('[role="article"]') && // Avoid duplicates with articles
+          this.isFacebookPost(element)
+        ) {
+          validPostsFound++;
+          await this.processPost(element);
+        }
+      }
+    }
+
+    // Strategy 3: For Facebook groups, check for div elements with specific patterns
     // Look for containers with author headings and interaction buttons
     const groupPostCandidates = document.querySelectorAll('div');
     let groupPostsScanned = 0;
@@ -309,10 +361,10 @@ export class FacebookPostObserver {
         element instanceof HTMLElement &&
         element.querySelector('h2, h3, h4') && // Has author heading
         element.querySelectorAll('button').length > 3 && // Has multiple buttons (likely interactions)
-        !element.closest('[role="article"]')
+        !element.closest('[role="article"]') && // Not already inside an article
+        element.offsetHeight > 100 && // Must be reasonably tall (actual post content)
+        element.offsetWidth > 300     // Must be reasonably wide
       ) {
-        // Not already inside an article
-
         groupPostsScanned++;
         if (this.isFacebookPost(element)) {
           validPostsFound++;
@@ -321,15 +373,17 @@ export class FacebookPostObserver {
       }
     }
 
-    // Only log if we found valid posts or scanned group posts
-    if (validPostsFound > 0 || groupPostsScanned > 0) {
-      console.log('[AI-Slop] 📈 Scan complete:', {
-        totalArticles: articlePosts.length,
-        groupPostsScanned: groupPostsScanned,
-        validPosts: validPostsFound,
-        totalProcessed: this.processedPosts.size,
-      });
-    }
+    totalCandidatesScanned += groupPostsScanned;
+
+    // Always log scan results to help debug timing issues
+    console.log('[AI-Slop] 📈 Post scan complete:', {
+      totalArticles: articlePosts.length,
+      totalCandidatesScanned: totalCandidatesScanned,
+      groupPostsScanned: groupPostsScanned,
+      validPostsFound: validPostsFound,
+      totalProcessed: this.processedPosts.size,
+      timestamp: new Date().toISOString(),
+    });
   }
 
   /**
