@@ -2,8 +2,7 @@
 
 import logging
 import uuid
-from datetime import datetime
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 import google.generativeai as genai
 from sqlalchemy import select
@@ -16,10 +15,6 @@ from schemas.chat import ChatRequest, ChatResponse, Message
 
 logger = logging.getLogger(__name__)
 
-# Configure Gemini API
-if settings.gemini_api_key:
-    genai.configure(api_key=settings.gemini_api_key)
-
 
 class ChatService:
     """Service for managing chat conversations about posts using Google Gemini."""
@@ -27,9 +22,10 @@ class ChatService:
     def __init__(self):
         """Initialize the chat service."""
         if not settings.gemini_api_key:
-            logger.warning("GEMINI_API_KEY not configured - chat service will use mock responses")
+            raise ValueError("GEMINI_API_KEY is required for chat functionality")
 
-        self.model = genai.GenerativeModel("gemini-pro") if settings.gemini_api_key else None
+        # Configure Gemini API
+        genai.configure(api_key=settings.gemini_api_key)
 
     async def send_message(
         self,
@@ -52,7 +48,7 @@ class ChatService:
             raise ValueError(f"Post with ID {request.post_id} not found")
 
         # Save user message
-        user_chat = await self._save_message(post.id, "user", request.message, db)
+        await self._save_message(post.id, "user", request.message, db)
 
         # Get chat history for context
         chat_history = await self._get_chat_history(post.id, db)
@@ -148,68 +144,85 @@ class ChatService:
         user_message: str,
         chat_history: List[Chat],
     ) -> str:
-        """Generate AI response using Gemini."""
-        if not self.model:
-            return self._generate_mock_response(post, user_message)
-
-        # Build context prompt
-        system_prompt = f"""You are an AI content detection assistant. You help users understand AI content detection results and answer questions about specific posts.
-
-Post Analysis Context:
-- Content: "{post.content[:500]}..."
-- Verdict: {post.verdict}
-- Confidence: {(post.confidence * 100):.1f}%
-- Explanation: {post.explanation}
-- Author: {post.author or "Unknown"}
-
-Guidelines:
-- Be helpful and informative about AI content detection
-- Explain the reasoning behind the analysis
-- Be honest about limitations and potential false positives
-- Keep responses concise but informative
-- Reference the specific post content when relevant"""
-
-        # Build conversation history
-        conversation_history = "\n".join(
-            f"{chat.role}: {chat.message}"
-            for chat in chat_history[:-1]  # Exclude the message we just saved
-        )
-
-        full_prompt = f"""{system_prompt}
-
-Previous conversation:
-{conversation_history}
-
-User question: {user_message}
-
-Please provide a helpful response about the AI detection analysis."""
-
+        """Generate AI response using Gemini with comprehensive context."""
         try:
-            # Generate response with Gemini
-            response = self.model.generate_content(full_prompt)
+            # Build comprehensive detection results summary
+            detection_summary = self._build_detection_summary(post)
+            
+            # Create system instruction with post content and detection results
+            system_instruction = f"""You are an expert AI content detection assistant helping users understand detection results for this specific social media post.
+
+POST CONTENT:
+"{post.content}"
+
+AUTHOR: {post.author or "Unknown"}
+
+DETECTION ANALYSIS RESULTS:
+{detection_summary}
+
+OVERALL VERDICT: {post.verdict}
+OVERALL CONFIDENCE: {(post.confidence * 100):.1f}%
+EXPLANATION: {post.explanation or "No detailed explanation provided"}
+
+Your role:
+- Help users understand these specific AI detection results
+- Explain the reasoning behind the analysis in an accessible way
+- Answer questions about the detection methods (text analysis, image detection, video analysis)
+- Reference the actual post content when relevant
+- Be conversational and engaging, not robotic
+- Acknowledge limitations and potential for false positives/negatives
+- Provide insights based on the specific detection scores and confidence levels shown above
+
+Keep responses informative but concise (2-4 sentences typically)."""
+
+            # Initialize model with the specific post context
+            model = genai.GenerativeModel("gemini-2.5-flash", system_instruction=system_instruction)
+            chat_session = model.start_chat()
+            
+            # Add previous conversation history
+            for chat in chat_history[:-1]:  # Exclude the current message we just saved
+                if chat.role == "user":
+                    # Send user message
+                    chat_session.send_message(chat.message)
+                elif chat.role == "assistant":
+                    # For assistant messages, we need to simulate the response
+                    # Since Gemini tracks assistant responses automatically, we skip this
+                    pass
+            
+            # Send the current user message and get response
+            response = chat_session.send_message(user_message)
             return response.text
+            
         except Exception as e:
             logger.error(f"Error generating Gemini response: {e}")
-            return self._generate_mock_response(post, user_message)
+            raise Exception(f"Failed to generate chat response: {str(e)}")
 
-    def _generate_mock_response(self, post: Post, user_message: str) -> str:
-        """Generate mock response for testing or when Gemini is unavailable."""
-        message_lower = user_message.lower()
+    def _build_detection_summary(self, post: Post) -> str:
+        """Build a comprehensive summary of all detection results."""
+        summary_parts = []
+        
+        # Text detection results
+        if post.text_ai_probability is not None:
+            text_status = "AI-generated" if post.text_ai_probability > 0.5 else "Human-written"
+            summary_parts.append(f"Text Analysis: {text_status} (probability: {post.text_ai_probability:.3f}, confidence: {post.text_confidence or 0:.3f})")
+        
+        # Image detection results
+        if post.image_ai_probability is not None:
+            image_status = "AI-generated" if post.image_ai_probability > 0.5 else "Human-created"
+            summary_parts.append(f"Image Analysis: {image_status} (probability: {post.image_ai_probability:.3f}, confidence: {post.image_confidence or 0:.3f})")
+        
+        # Video detection results
+        if post.video_ai_probability is not None:
+            video_status = "AI-generated" if post.video_ai_probability > 0.5 else "Human-created"
+            summary_parts.append(f"Video Analysis: {video_status} (probability: {post.video_ai_probability:.3f}, confidence: {post.video_confidence or 0:.3f})")
+        
+        # Add metadata if available
+        if post.post_metadata:
+            metadata_summary = ", ".join([f"{k}: {v}" for k, v in post.post_metadata.items()])
+            summary_parts.append(f"Additional Metadata: {metadata_summary}")
+        
+        return "\n".join(summary_parts) if summary_parts else "No detailed detection results available"
 
-        if "why" in message_lower:
-            if post.verdict == "ai_slop":
-                return f"This post was identified as AI-generated content because: {post.explanation}. The content shows typical AI patterns such as overly generic language, repetitive sentence structures, and lack of genuine personal experiences."
-            else:
-                return "The post appears to be human-written based on its natural language patterns, personal anecdotes, and authentic writing style."
-
-        if "sure" in message_lower or "confident" in message_lower:
-            return f"The confidence level for this analysis is {(post.confidence * 100):.1f}%. This is based on multiple factors including language patterns, content structure, and stylistic elements."
-
-        if "false positive" in message_lower:
-            return "While our AI detection system is highly accurate, false positives can occur. Human writing that is very formal, uses common phrases, or follows predictable patterns might be mistakenly flagged. If you believe this is incorrect, you can choose to ignore this analysis."
-
-        # Default response
-        return "I can help you understand the AI detection analysis for this post. The system has analyzed various aspects of the content including writing style, language patterns, and structural elements. Feel free to ask specific questions about the analysis."
 
     def _generate_suggested_questions(self, post: Post, chat_history: List[Chat]) -> List[str]:
         """Generate suggested follow-up questions."""

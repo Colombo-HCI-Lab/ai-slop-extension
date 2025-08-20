@@ -1556,18 +1556,15 @@ export class FacebookPostObserver {
    */
   private async sendChatMessage(chatWindow: HTMLElement, message: string): Promise<void> {
     const messagesContainer = chatWindow.querySelector('.chat-messages');
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const _postId = chatWindow.getAttribute('data-post-id') || '';
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const _postContent = chatWindow.getAttribute('data-post-content') || '';
+    const postId = chatWindow.getAttribute('data-post-id') || '';
+    const postContent = chatWindow.getAttribute('data-post-content') || '';
     const analysisData = chatWindow.getAttribute('data-analysis') || '{}';
 
-    let _previousAnalysis;
+    let previousAnalysis;
     try {
-      _previousAnalysis = JSON.parse(analysisData);
+      previousAnalysis = JSON.parse(analysisData);
     } catch {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      _previousAnalysis = null;
+      previousAnalysis = null;
     }
 
     // Add user message
@@ -1586,75 +1583,35 @@ export class FacebookPostObserver {
     messagesContainer?.scrollTo(0, messagesContainer.scrollHeight);
 
     try {
-      // Get conversation history
-      const conversationHistory: Array<{ role: string; content: string }> = [];
-      const existingMessages = messagesContainer?.querySelectorAll(
-        '.user-message, .assistant-message:not(.loading)'
-      );
-      existingMessages?.forEach(msg => {
-        if (msg.classList.contains('user-message')) {
-          conversationHistory.push({ role: 'user', content: msg.textContent || '' });
-        } else if (!msg.classList.contains('system-message')) {
-          conversationHistory.push({ role: 'assistant', content: msg.textContent || '' });
-        }
+      // Send message to background script to handle chat API
+      const response = await chrome.runtime.sendMessage({
+        type: 'CHAT_REQUEST',
+        postId: postId,
+        message: message,
+        postContent: postContent,
+        previousAnalysis: previousAnalysis,
       });
-
-      // Hardcoded chat response for testing
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate thinking time
 
       // Remove loading message
       loadingDiv.remove();
 
-      // Generate hardcoded response based on message
-      let response;
-      if (message.toLowerCase().includes('why') || message.toLowerCase().includes('how')) {
-        response = {
-          response:
-            'This post was identified as AI-generated because it shows typical patterns like generic language, repetitive phrases, and lacks genuine personal experiences. AI-generated content often follows predictable patterns and uses common phrases that sound natural but lack authenticity.',
-          suggestedQuestions: [
-            'What specific patterns indicate AI generation?',
-            'Could this be a false positive?',
-            'How confident are you in this analysis?',
-          ],
-        };
-      } else if (
-        message.toLowerCase().includes('confident') ||
-        message.toLowerCase().includes('sure')
-      ) {
-        response = {
-          response:
-            "The confidence level for this analysis is 85%. This is based on multiple factors including language patterns, content structure, and stylistic elements. While our detection is quite accurate, there's always a small chance of false positives.",
-          suggestedQuestions: [
-            'What makes this different from human writing?',
-            'How can I verify this myself?',
-            'What should I do with this information?',
-          ],
-        };
-      } else {
-        response = {
-          response:
-            'I can help you understand why this content was flagged as AI-generated. The analysis looks at writing patterns, language use, and content structure to make this determination. Feel free to ask specific questions about the analysis!',
-          suggestedQuestions: [
-            'Why do you think this is AI-generated?',
-            'How confident are you in this analysis?',
-            'What are the key indicators of AI content?',
-          ],
-        };
+      if (response.error) {
+        throw new Error(response.error);
       }
 
       // Add assistant response
       const assistantMessageDiv = document.createElement('div');
       assistantMessageDiv.className = 'assistant-message';
-      assistantMessageDiv.textContent = response.response;
+      assistantMessageDiv.textContent = response.message;
       messagesContainer?.appendChild(assistantMessageDiv);
 
       // Add suggested questions
-      if (response.suggestedQuestions && response.suggestedQuestions.length > 0) {
+      if (response.suggested_questions && response.suggested_questions.length > 0) {
         const suggestionsDiv = document.createElement('div');
         suggestionsDiv.className = 'suggested-questions';
         suggestionsDiv.innerHTML = '<div class="suggestions-label">Suggested questions:</div>';
 
-        response.suggestedQuestions.forEach((question: string) => {
+        response.suggested_questions.forEach((question: string) => {
           const questionButton = document.createElement('button');
           questionButton.className = 'suggested-question';
           questionButton.textContent = question;

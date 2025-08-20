@@ -36,9 +36,11 @@ type AiSlopResponse = {
  */
 type ChatResponse = {
   /** The AI assistant response */
-  response: string;
+  id: string;
+  /** The response message */
+  message: string;
   /** Suggested follow-up questions */
-  suggestedQuestions: string[];
+  suggested_questions: string[];
   /** Additional context */
   context?: Record<string, unknown>;
   /** Response timestamp */
@@ -229,11 +231,8 @@ class BackgroundService {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          postId: message.postId,
+          post_id: message.postId,
           message: message.message,
-          postContent: message.postContent,
-          previousAnalysis: message.previousAnalysis,
-          conversationHistory: message.conversationHistory || [],
         }),
       });
 
