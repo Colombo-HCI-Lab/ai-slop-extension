@@ -1,6 +1,5 @@
 """Chat endpoints for AI conversations about posts."""
 
-import logging
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -9,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.session import get_db
 from services.chat_service import ChatService
+from utils.logging import get_logger
 
 
 class ChatRequest(BaseModel):
@@ -45,7 +45,7 @@ class ChatHistoryResponse(BaseModel):
     total_messages: int = Field(..., description="Total number of messages")
 
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter(tags=["chat"])
 
@@ -65,19 +65,19 @@ async def send_message(
     analysis and receive AI-generated responses with context.
     """
     try:
-        logger.info(f"Sending chat message for post {request.post_id}")
+        logger.info("Sending chat message", post_id=request.post_id, message_length=len(request.message))
 
         response = await chat_service.send_message(request, db)
 
-        logger.info(f"Chat response generated for post {request.post_id}")
+        logger.info("Chat response generated", post_id=request.post_id, response_length=len(response.message))
 
         return response
 
     except ValueError as e:
-        logger.warning(f"Post not found: {e}")
+        logger.warning("Post not found for chat", post_id=request.post_id, error=str(e))
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except Exception as e:
-        logger.error(f"Error sending chat message: {e}")
+        logger.error("Error sending chat message", post_id=request.post_id, error=str(e), exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to generate response: {str(e)}")
 
 
@@ -93,7 +93,7 @@ async def get_chat_history(
     ordered chronologically.
     """
     try:
-        logger.info(f"Getting chat history for post {post_id}")
+        logger.info("Getting chat history", post_id=post_id)
 
         messages = await chat_service.get_chat_history(post_id, db)
 
@@ -104,10 +104,10 @@ async def get_chat_history(
         )
 
     except ValueError as e:
-        logger.warning(f"Post not found: {e}")
+        logger.warning("Post not found for chat history", post_id=post_id, error=str(e))
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except Exception as e:
-        logger.error(f"Error getting chat history: {e}")
+        logger.error("Error getting chat history", post_id=post_id, error=str(e), exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to get chat history: {str(e)}")
 
 
@@ -148,8 +148,8 @@ async def get_suggested_questions(
         return questions[:3]
 
     except ValueError as e:
-        logger.warning(f"Post not found: {e}")
+        logger.warning("Post not found for suggestions", post_id=post_id, error=str(e))
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except Exception as e:
-        logger.error(f"Error getting suggestions: {e}")
+        logger.error("Error getting suggestions", post_id=post_id, error=str(e), exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to get suggestions: {str(e)}")

@@ -1,6 +1,5 @@
 """Chat service for Google Gemini integration."""
 
-import logging
 import uuid
 from typing import List, Optional
 
@@ -12,8 +11,9 @@ from sqlalchemy.orm import selectinload
 from core.config import settings
 from models import Chat, Post
 from schemas.chat import ChatRequest, ChatResponse, Message
+from utils.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class ChatService:
@@ -148,7 +148,7 @@ class ChatService:
         try:
             # Build comprehensive detection results summary
             detection_summary = self._build_detection_summary(post)
-            
+
             # Create system instruction with post content and detection results
             system_instruction = f"""You are an expert AI content detection assistant helping users understand detection results for this specific social media post.
 
@@ -178,7 +178,7 @@ Keep responses informative but concise (2-4 sentences typically)."""
             # Initialize model with the specific post context
             model = genai.GenerativeModel("gemini-2.5-flash", system_instruction=system_instruction)
             chat_session = model.start_chat()
-            
+
             # Add previous conversation history
             for chat in chat_history[:-1]:  # Exclude the current message we just saved
                 if chat.role == "user":
@@ -188,41 +188,52 @@ Keep responses informative but concise (2-4 sentences typically)."""
                     # For assistant messages, we need to simulate the response
                     # Since Gemini tracks assistant responses automatically, we skip this
                     pass
-            
+
             # Send the current user message and get response
             response = chat_session.send_message(user_message)
             return response.text
-            
+
         except Exception as e:
-            logger.error(f"Error generating Gemini response: {e}")
+            logger.error(
+                "Error generating Gemini response",
+                error=str(e),
+                post_id=post.id,
+                user_message=user_message[:100] + "..." if len(user_message) > 100 else user_message,
+                exc_info=True,
+            )
             raise Exception(f"Failed to generate chat response: {str(e)}")
 
     def _build_detection_summary(self, post: Post) -> str:
         """Build a comprehensive summary of all detection results."""
         summary_parts = []
-        
+
         # Text detection results
         if post.text_ai_probability is not None:
             text_status = "AI-generated" if post.text_ai_probability > 0.5 else "Human-written"
-            summary_parts.append(f"Text Analysis: {text_status} (probability: {post.text_ai_probability:.3f}, confidence: {post.text_confidence or 0:.3f})")
-        
+            summary_parts.append(
+                f"Text Analysis: {text_status} (probability: {post.text_ai_probability:.3f}, confidence: {post.text_confidence or 0:.3f})"
+            )
+
         # Image detection results
         if post.image_ai_probability is not None:
             image_status = "AI-generated" if post.image_ai_probability > 0.5 else "Human-created"
-            summary_parts.append(f"Image Analysis: {image_status} (probability: {post.image_ai_probability:.3f}, confidence: {post.image_confidence or 0:.3f})")
-        
+            summary_parts.append(
+                f"Image Analysis: {image_status} (probability: {post.image_ai_probability:.3f}, confidence: {post.image_confidence or 0:.3f})"
+            )
+
         # Video detection results
         if post.video_ai_probability is not None:
             video_status = "AI-generated" if post.video_ai_probability > 0.5 else "Human-created"
-            summary_parts.append(f"Video Analysis: {video_status} (probability: {post.video_ai_probability:.3f}, confidence: {post.video_confidence or 0:.3f})")
-        
+            summary_parts.append(
+                f"Video Analysis: {video_status} (probability: {post.video_ai_probability:.3f}, confidence: {post.video_confidence or 0:.3f})"
+            )
+
         # Add metadata if available
         if post.post_metadata:
             metadata_summary = ", ".join([f"{k}: {v}" for k, v in post.post_metadata.items()])
             summary_parts.append(f"Additional Metadata: {metadata_summary}")
-        
-        return "\n".join(summary_parts) if summary_parts else "No detailed detection results available"
 
+        return "\n".join(summary_parts) if summary_parts else "No detailed detection results available"
 
     def _generate_suggested_questions(self, post: Post, chat_history: List[Chat]) -> List[str]:
         """Generate suggested follow-up questions."""

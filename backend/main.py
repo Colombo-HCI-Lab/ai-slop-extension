@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 from api.v1.router import api_router
 from core.config import settings
 from schemas.responses import ErrorResponse, ValidationErrorResponse
-from utils.logging import setup_logging
+from utils.logging import setup_logging, get_logger
 
 
 @asynccontextmanager
@@ -21,19 +21,23 @@ async def lifespan(app: FastAPI):
     """Application lifespan management."""
     # Startup
     setup_logging()
-    logger = logging.getLogger(__name__)
-    logger.info("Starting SlowFast Video Detection API")
-    logger.info(f"Available models: {settings.available_models}")
-    logger.info(f"Default model: {settings.default_model}")
-    logger.info(f"Device: {settings.device}")
+    logger = get_logger("main", component="application")
+    logger.info(
+        "Starting AI Detection API",
+        available_models=settings.available_models,
+        default_model=settings.default_model,
+        device=settings.device,
+        debug_mode=settings.debug,
+    )
 
     # Create upload directories
     settings.upload_dir.mkdir(parents=True, exist_ok=True)
+    logger.info("Upload directory initialized", path=str(settings.upload_dir))
 
     yield
 
     # Shutdown
-    logger.info("Shutting down SlowFast Video Detection API")
+    logger.info("Shutting down AI Detection API")
 
 
 # Create FastAPI app
@@ -93,8 +97,15 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
     """Handle general exceptions."""
-    logger = logging.getLogger(__name__)
-    logger.error(f"Unhandled exception: {exc}", exc_info=True)
+    logger = get_logger("main", component="exception_handler")
+    logger.error(
+        "Unhandled exception occurred",
+        exception_type=type(exc).__name__,
+        exception_message=str(exc),
+        request_url=str(request.url),
+        request_method=request.method,
+        exc_info=True,
+    )
 
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

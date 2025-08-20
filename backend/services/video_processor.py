@@ -2,7 +2,6 @@
 Video processing utilities for handling file uploads and management.
 """
 
-import logging
 import tempfile
 from pathlib import Path
 from typing import Dict
@@ -14,8 +13,9 @@ import magic
 from fastapi import UploadFile, HTTPException, status
 
 from core.config import settings
+from utils.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class VideoProcessor:
@@ -53,14 +53,14 @@ class VideoProcessor:
                 content = await upload_file.read()
                 await f.write(content)
 
-            logger.info(f"Saved uploaded file: {upload_file.filename} -> {file_path}")
+            logger.info("File uploaded successfully", filename=upload_file.filename, file_path=str(file_path), size=len(content))
             return file_path
 
         except Exception as e:
             # Clean up on error
             if file_path.exists():
                 file_path.unlink()
-            logger.error(f"Failed to save uploaded file: {e}")
+            logger.error("Failed to save uploaded file", filename=upload_file.filename, error=str(e), exc_info=True)
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to save uploaded file")
 
     async def _validate_upload_file(self, upload_file: UploadFile):
@@ -104,7 +104,9 @@ class VideoProcessor:
         # Reset file pointer
         upload_file.file.seek(0)
 
-        logger.debug(f"File validation passed: {upload_file.filename} ({total_size} bytes)")
+        logger.debug(
+            "File validation passed", filename=upload_file.filename, size_bytes=total_size, size_mb=round(total_size / (1024 * 1024), 2)
+        )
 
     def _get_file_extension(self, filename: str) -> str:
         """Get file extension from filename."""
@@ -123,10 +125,10 @@ class VideoProcessor:
         try:
             mime_type = magic.from_file(str(file_path), mime=True)
             is_valid = mime_type in settings.allowed_video_types
-            logger.debug(f"File MIME type: {mime_type}, valid: {is_valid}")
+            logger.debug("File MIME type detected", file_path=str(file_path), mime_type=mime_type, is_valid=is_valid)
             return is_valid
         except Exception as e:
-            logger.warning(f"Failed to detect MIME type for {file_path}: {e}")
+            logger.warning("Failed to detect MIME type", file_path=str(file_path), error=str(e))
             return False
 
     def get_file_info(self, file_path: Path) -> Dict:
@@ -162,9 +164,9 @@ class VideoProcessor:
         try:
             if file_path.exists():
                 file_path.unlink()
-                logger.debug(f"Cleaned up file: {file_path}")
+                logger.debug("File cleaned up", file_path=str(file_path))
         except Exception as e:
-            logger.warning(f"Failed to cleanup file {file_path}: {e}")
+            logger.warning("Failed to cleanup file", file_path=str(file_path), error=str(e))
 
     def cleanup_old_files(self, max_age_hours: int = 24):
         """
@@ -183,7 +185,7 @@ class VideoProcessor:
                 file_age = current_time - file_path.stat().st_mtime
                 if file_age > max_age_seconds:
                     self.cleanup_file(file_path)
-                    logger.info(f"Cleaned up old file: {file_path}")
+                    logger.info("Old file cleaned up", file_path=str(file_path), age_hours=round(file_age / 3600, 1))
 
     def get_upload_stats(self) -> Dict:
         """Get upload directory statistics."""
@@ -275,18 +277,24 @@ class VideoProcessor:
                 self.cleanup_file(file_path)
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid video file format")
 
-            logger.info(f"Downloaded video from URL: {video_url} -> {file_path} ({total_size} bytes)")
+            logger.info(
+                "Video downloaded from URL",
+                video_url=video_url,
+                file_path=str(file_path),
+                size_bytes=total_size,
+                size_mb=round(total_size / (1024 * 1024), 2),
+            )
             return file_path
 
         except aiohttp.ClientError as e:
             # Clean up on network error
             if file_path.exists():
                 file_path.unlink()
-            logger.error(f"Failed to download video from URL {video_url}: {e}")
+            logger.error("Failed to download video from URL", video_url=video_url, error=str(e), error_type=type(e).__name__, exc_info=True)
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to download video from URL")
         except Exception as e:
             # Clean up on any other error
             if file_path.exists():
                 file_path.unlink()
-            logger.error(f"Failed to download video from URL {video_url}: {e}")
+            logger.error("Failed to download video from URL", video_url=video_url, error=str(e), error_type=type(e).__name__, exc_info=True)
             raise

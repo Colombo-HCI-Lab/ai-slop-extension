@@ -2,7 +2,6 @@
 Image detection endpoints for AI-generated content detection.
 """
 
-import logging
 import time
 from datetime import datetime
 from typing import List, Optional
@@ -11,6 +10,7 @@ from fastapi import APIRouter, UploadFile, File, Form, HTTPException, status, Ba
 from pydantic import BaseModel, Field, validator
 
 from core.config import settings
+from utils.logging import get_logger
 
 
 class ImageInfo(BaseModel):
@@ -65,7 +65,7 @@ class ImageModelsResponse(BaseModel):
     default_image_model: str = Field(..., description="Default image detection model")
 
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 router = APIRouter()
 
 # Global job storage (in production, use Redis or database)
@@ -105,14 +105,16 @@ def _get_image_detector(model_name: str = "auto"):
 
                 return SSPImageDetector(), "ssp"
             except ImportError:
-                logger.warning("SSP detector not available, falling back to ClipBased")
+                logger.warning(
+                    "SSP detector not available, falling back to ClipBased", requested_model=model_name, fallback_model="clipbased"
+                )
                 from clipbased_detection import ClipBasedImageDetector
 
                 return ClipBasedImageDetector(), "clipbased"
         else:
             raise ValueError(f"Unknown model: {model_name}")
     except ImportError as e:
-        logger.error(f"Failed to import image detector: {e}")
+        logger.error("Failed to import image detector", model_name=model_name, error=str(e), exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Image detection models not available")
 
 
@@ -177,7 +179,7 @@ async def get_available_models():
         )
 
     except Exception as e:
-        logger.error(f"Failed to get available models: {e}")
+        logger.error("Failed to get available models", error=str(e), exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get available models")
 
 
@@ -258,7 +260,7 @@ async def detect_image_upload(
             background_tasks.add_task(os.unlink, tmp_file_path)
 
     except Exception as e:
-        logger.error(f"Image detection failed: {e}")
+        logger.error("Image detection failed", filename=file.filename, error=str(e), exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Image detection failed: {str(e)}")
 
 
@@ -330,5 +332,5 @@ async def detect_image_from_url(request: URLImageDetectionRequest, background_ta
         return response
 
     except Exception as e:
-        logger.error(f"URL image detection failed: {e}")
+        logger.error("URL image detection failed", image_url=request.image_url, error=str(e), exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"URL image detection failed: {str(e)}")

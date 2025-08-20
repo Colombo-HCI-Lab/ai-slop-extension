@@ -1,7 +1,6 @@
 """Text content AI detection service."""
 
 import hashlib
-import logging
 import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -11,8 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from models import Post
 from schemas.text_detection import DetectRequest, DetectResponse
+from utils.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class TextDetectionService:
@@ -67,7 +67,7 @@ class TextDetectionService:
         if use_cache:
             cached_result = await self._get_cached_result(request.post_id, db)
             if cached_result:
-                logger.info(f"Returning cached result for post {request.post_id}")
+                logger.info("Returning cached result", post_id=request.post_id)
                 return self._create_response_from_post(cached_result, from_cache=True)
 
         # Perform detection
@@ -134,7 +134,14 @@ class TextDetectionService:
         )
 
         logger.debug(
-            f"Analysis complete - Verdict: {verdict}, Legacy Confidence: {legacy_confidence:.2%}, AI Probability: {ai_probability:.2%}, Analysis Confidence: {analysis_confidence:.2%}, Indicators: {indicator_score}"
+            "Text analysis completed",
+            verdict=verdict,
+            legacy_confidence=round(legacy_confidence, 3),
+            ai_probability=round(ai_probability, 3),
+            analysis_confidence=round(analysis_confidence, 3),
+            indicator_score=indicator_score,
+            content_length=len(content),
+            matched_indicators=len(matched_indicators),
         )
 
         return verdict, legacy_confidence, explanation, ai_probability, analysis_confidence

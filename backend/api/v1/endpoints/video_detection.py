@@ -2,7 +2,6 @@
 Video detection endpoints.
 """
 
-import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, status
@@ -12,8 +11,9 @@ from core.dependencies import get_detection_service
 from schemas.video_detection import DetectionResponse, URLDetectionRequest
 from services.detection_service import DetectionService
 from services.video_processor import VideoProcessor
+from utils.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 router = APIRouter()
 
 # Video processor instance
@@ -68,7 +68,7 @@ async def detect_video_upload(
     try:
         file_path = await video_processor.save_uploaded_file(file)
     except Exception as e:
-        logger.error(f"File upload failed: {e}")
+        logger.error("File upload failed", filename=file.filename, error=str(e), exc_info=True)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     # Additional MIME type validation
@@ -97,7 +97,7 @@ async def detect_video_upload(
     except Exception as e:
         # Clean up on error
         video_processor.cleanup_file(file_path)
-        logger.error(f"Video processing failed: {e}")
+        logger.error("Video processing failed (upload)", filename=file.filename, model_name=model_name, error=str(e), exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Video processing failed")
 
 
@@ -127,7 +127,7 @@ async def detect_video_from_url(
     except HTTPException:
         raise  # Re-raise HTTP exceptions from download
     except Exception as e:
-        logger.error(f"Video download failed: {e}")
+        logger.error("Video download failed", video_url=request.video_url, error=str(e), exc_info=True)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to download video from URL")
 
     try:
@@ -151,5 +151,7 @@ async def detect_video_from_url(
     except Exception as e:
         # Clean up on error
         video_processor.cleanup_file(file_path)
-        logger.error(f"Video processing failed: {e}")
+        logger.error(
+            "Video processing failed (URL)", video_url=request.video_url, model_name=request.model_name, error=str(e), exc_info=True
+        )
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Video processing failed")

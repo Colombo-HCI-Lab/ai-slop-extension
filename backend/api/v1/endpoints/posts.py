@@ -1,6 +1,5 @@
 """Post management endpoints."""
 
-import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -14,6 +13,7 @@ from db.session import get_db
 from models import Post
 from schemas.content_detection import ContentDetectionRequest, ContentDetectionResponse
 from services.content_detection_service import ContentDetectionService
+from utils.logging import get_logger
 
 
 class PostResponse(BaseModel):
@@ -54,7 +54,7 @@ class PostUpdate(BaseModel):
     metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata")
 
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter(tags=["posts"])
 
@@ -84,18 +84,33 @@ async def process_post(
     try:
         # Debug logging to see what's received
         logger.info(
-            f"Processing post {request.post_id}: {len(request.content)} chars, {len(request.image_urls or [])} images, {len(request.video_urls or [])} videos"
+            "Processing post detection request",
+            post_id=request.post_id,
+            content_length=len(request.content),
+            image_count=len(request.image_urls or []),
+            video_count=len(request.video_urls or []),
+            author=request.author,
         )
 
         # Perform detection using the content detection service
         result = await detection_service.detect(request, db)
 
-        logger.info(f"Processing complete for post {request.post_id}: verdict={result.verdict}, confidence={result.confidence:.2%}")
+        logger.info(
+            "Post processing completed",
+            post_id=request.post_id,
+            verdict=result.verdict,
+            confidence=round(result.confidence, 3),
+            text_ai_probability=result.text_ai_probability,
+            image_ai_probability=result.image_ai_probability,
+            video_ai_probability=result.video_ai_probability,
+            has_images=bool(result.image_analysis),
+            has_videos=bool(result.video_analysis),
+        )
 
         return result
 
     except Exception as e:
-        logger.error(f"Error processing post {request.post_id}: {e}")
+        logger.error("Error processing post", post_id=request.post_id, error=str(e), exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to process post: {str(e)}")
 
 
@@ -128,7 +143,7 @@ async def get_post(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting post {post_id}: {e}")
+        logger.error("Error getting post", post_id=post_id, error=str(e), exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to get post: {str(e)}")
 
 
@@ -192,7 +207,7 @@ async def list_posts(
         )
 
     except Exception as e:
-        logger.error(f"Error listing posts: {e}")
+        logger.error("Error listing posts", verdict=verdict, limit=limit, offset=offset, error=str(e), exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to list posts: {str(e)}")
 
 
@@ -230,14 +245,14 @@ async def update_post(
         await db.commit()
         await db.refresh(post)
 
-        logger.info(f"Updated post {post_id}")
+        logger.info("Post updated successfully", post_id=post_id, verdict=post.verdict, confidence=post.confidence)
 
         return PostResponse.from_orm(post)
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error updating post {post_id}: {e}")
+        logger.error("Error updating post", post_id=post_id, error=str(e), exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to update post: {str(e)}")
 
 
@@ -262,12 +277,12 @@ async def delete_post(
         await db.delete(post)
         await db.commit()
 
-        logger.info(f"Deleted post {post_id}")
+        logger.info("Post deleted successfully", post_id=post_id)
 
         return {"message": f"Post {post_id} deleted successfully"}
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error deleting post {post_id}: {e}")
+        logger.error("Error deleting post", post_id=post_id, error=str(e), exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to delete post: {str(e)}")

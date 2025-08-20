@@ -1,7 +1,6 @@
 """Content AI detection service for text, images, and videos."""
 
 import asyncio
-import logging
 import tempfile
 import os
 from typing import List, Dict, Any, Optional
@@ -12,8 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from schemas.content_detection import ContentDetectionRequest, ContentDetectionResponse
 from schemas.text_detection import DetectRequest
 from services.text_detection_service import TextDetectionService
+from utils.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class ContentDetectionService:
@@ -40,7 +40,13 @@ class ContentDetectionService:
         Returns:
             Detection response with aggregated verdict and detailed analysis
         """
-        logger.info(f"Starting multi-modal analysis for post {request.post_id}")
+        logger.info(
+            "Starting multi-modal analysis",
+            post_id=request.post_id,
+            has_images=bool(request.image_urls),
+            has_videos=bool(request.video_urls),
+            content_length=len(request.content) if request.content else 0,
+        )
 
         # Check cache first for text analysis
         if use_cache:
@@ -48,7 +54,7 @@ class ContentDetectionService:
             text_request = DetectRequest(post_id=request.post_id, content=request.content, author=request.author, metadata=request.metadata)
             text_result = await self.text_service.detect(text_request, db, use_cache=True)
             if hasattr(text_result, "debug_info") and text_result.debug_info.get("from_cache"):
-                logger.info(f"Using cached text result for post {request.post_id}")
+                logger.info("Using cached text result", post_id=request.post_id)
 
                 # For cached results, still analyze media if present
                 image_results, image_ai_prob, image_conf = (
@@ -110,7 +116,7 @@ class ContentDetectionService:
         if not image_urls:
             return [], None, None
 
-        logger.info(f"Analyzing {len(image_urls)} images")
+        logger.info("Starting image analysis", image_count=len(image_urls))
         image_results = []
 
         # For blocked images, we can't determine AI probability
@@ -157,12 +163,16 @@ class ContentDetectionService:
                 }
 
                 logger.info(
-                    f"Simulated image analysis for {url}: AI probability={ai_probability:.2f}, confidence={analysis_confidence:.2f}"
+                    "Simulated image analysis completed",
+                    url=url,
+                    ai_probability=round(ai_probability, 3),
+                    confidence=round(analysis_confidence, 3),
+                    is_ai_generated=is_ai_generated,
                 )
                 image_results.append(result)
 
             except Exception as e:
-                logger.error(f"Error analyzing image {url}: {e}")
+                logger.error("Error analyzing image", url=url, error=str(e), exc_info=True)
                 image_results.append(
                     {"url": url, "status": "error", "error": str(e), "is_ai_generated": None, "ai_probability": None, "confidence": 0.0}
                 )
@@ -175,7 +185,11 @@ class ContentDetectionService:
                 ai_probability = sum(r["ai_probability"] for r in successful_results) / len(successful_results)
                 analysis_confidence = sum(r["confidence"] for r in successful_results) / len(successful_results)
                 logger.info(
-                    f"Aggregate image analysis: {len(successful_results)} images, avg AI probability={ai_probability:.2f}, avg confidence={analysis_confidence:.2f}"
+                    "Aggregate image analysis completed",
+                    successful_images=len(successful_results),
+                    total_images=len(image_results),
+                    avg_ai_probability=round(ai_probability, 3),
+                    avg_confidence=round(analysis_confidence, 3),
                 )
             else:
                 ai_probability = None
@@ -193,7 +207,7 @@ class ContentDetectionService:
         if not video_urls:
             return [], None, None
 
-        logger.info(f"Analyzing {len(video_urls)} videos")
+        logger.info("Starting video analysis", video_count=len(video_urls))
         video_results = []
 
         # For blocked videos, we can't determine AI probability
@@ -236,12 +250,16 @@ class ContentDetectionService:
                 }
 
                 logger.info(
-                    f"Simulated video analysis for {url}: AI probability={ai_probability:.2f}, confidence={analysis_confidence:.2f}"
+                    "Simulated video analysis completed",
+                    url=url,
+                    ai_probability=round(ai_probability, 3),
+                    confidence=round(analysis_confidence, 3),
+                    is_ai_generated=is_ai_generated,
                 )
                 video_results.append(result)
 
             except Exception as e:
-                logger.error(f"Error analyzing video {url}: {e}")
+                logger.error("Error analyzing video", url=url, error=str(e), exc_info=True)
                 video_results.append(
                     {"url": url, "status": "error", "error": str(e), "is_ai_generated": None, "ai_probability": None, "confidence": 0.0}
                 )
@@ -254,7 +272,11 @@ class ContentDetectionService:
                 ai_probability = sum(r["ai_probability"] for r in successful_results) / len(successful_results)
                 analysis_confidence = sum(r["confidence"] for r in successful_results) / len(successful_results)
                 logger.info(
-                    f"Aggregate video analysis: {len(successful_results)} videos, avg AI probability={ai_probability:.2f}, avg confidence={analysis_confidence:.2f}"
+                    "Aggregate video analysis completed",
+                    successful_videos=len(successful_results),
+                    total_videos=len(video_results),
+                    avg_ai_probability=round(ai_probability, 3),
+                    avg_confidence=round(analysis_confidence, 3),
                 )
             else:
                 ai_probability = None
@@ -288,10 +310,15 @@ class ContentDetectionService:
 
             await db.commit()
             logger.info(
-                f"Updated post {post_id} with media analysis: image_prob={image_ai_probability}, image_conf={image_confidence}, video_prob={video_ai_probability}, video_conf={video_confidence}"
+                "Updated post with media analysis",
+                post_id=post_id,
+                image_ai_probability=image_ai_probability,
+                image_confidence=image_confidence,
+                video_ai_probability=video_ai_probability,
+                video_confidence=video_confidence,
             )
         else:
-            logger.warning(f"Post {post_id} not found for media analysis update")
+            logger.warning("Post not found for media analysis update", post_id=post_id)
 
     def _create_aggregated_response(
         self,

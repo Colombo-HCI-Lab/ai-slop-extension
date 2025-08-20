@@ -12,7 +12,7 @@ from core.config import settings
 # Create async engine
 engine = create_async_engine(
     settings.database_url.replace("postgresql://", "postgresql+asyncpg://"),
-    echo=settings.debug,
+    echo=False,  # Disable SQL query logging to reduce noise
     poolclass=NullPool,  # Use NullPool for async connections
 )
 

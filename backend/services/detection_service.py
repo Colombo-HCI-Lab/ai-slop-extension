@@ -2,7 +2,6 @@
 High-level detection service that orchestrates video processing and model inference.
 """
 
-import logging
 import time
 from pathlib import Path
 from typing import Dict, List, Union
@@ -11,8 +10,9 @@ from uuid import UUID, uuid4
 from core.config import settings
 from schemas.video_detection import DetectionResult, Prediction, VideoInfo, DetectionResponse
 from slowfast_detection import AIVideoDetector, VideoPreprocessor
+from utils.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class DetectionService:
@@ -33,7 +33,7 @@ class DetectionService:
         self.preprocessor = VideoPreprocessor()
         self.detector = AIVideoDetector(model_name=self.model_name, device=self.device)
 
-        logger.info(f"DetectionService initialized with model: {self.model_name}")
+        logger.info("DetectionService initialized", model=self.model_name, device=self.device)
 
     def process_video_file(self, video_path: Union[str, Path], top_k: int = None, job_id: UUID = None) -> DetectionResponse:
         """
@@ -54,7 +54,7 @@ class DetectionService:
         video_path = Path(video_path)
 
         try:
-            logger.info(f"Processing video: {video_path} (job_id: {job_id})")
+            logger.info("Starting video processing", video_path=str(video_path), job_id=str(job_id), model=self.model_name)
 
             # Get video metadata
             video_info_dict = self.preprocessor.get_video_info(video_path)
@@ -110,17 +110,26 @@ class DetectionService:
             )
 
             logger.info(
-                f"Detection completed for {video_path.name} in {processing_time:.2f}s. "
-                f"AI generated: {ai_result['is_ai_generated']} "
-                f"(confidence: {ai_result['confidence']:.3f})"
+                "Detection completed",
+                video_name=video_path.name,
+                processing_time=round(processing_time, 2),
+                is_ai_generated=ai_result["is_ai_generated"],
+                confidence=round(ai_result["confidence"], 3),
+                job_id=str(job_id),
             )
 
             return response
 
         except Exception as e:
             processing_time = time.time() - start_time
-            error_msg = f"Detection failed for {video_path.name}: {str(e)}"
-            logger.error(error_msg)
+            logger.error(
+                "Detection failed",
+                video_name=video_path.name,
+                error=str(e),
+                processing_time=round(processing_time, 2),
+                job_id=str(job_id),
+                exc_info=True,
+            )
 
             # Create error response
             video_info = VideoInfo(filename=video_path.name, file_size=video_path.stat().st_size if video_path.exists() else None)
@@ -187,10 +196,10 @@ class DetectionService:
             threshold: Threshold value for AI classification
         """
         self.detector.set_threshold(threshold)
-        logger.info(f"Detection threshold set to {threshold}")
+        logger.info("Detection threshold updated", threshold=threshold)
 
     def cleanup(self):
         """Clean up service resources."""
         if hasattr(self, "detector"):
             self.detector.cleanup()
-        logger.info("DetectionService cleaned up")
+        logger.info("DetectionService cleaned up", model=self.model_name)
