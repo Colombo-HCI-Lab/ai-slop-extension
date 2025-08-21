@@ -48,9 +48,12 @@ echo -e "${GREEN}✅ Database recreated successfully${NC}"
 
 echo -e "${YELLOW}Step 4: Running Alembic migrations...${NC}"
 
+# Change to the backend directory (parent of scripts directory)
+cd "$(dirname "$0")/.."
+
 # Check if we're in the backend directory
 if [ ! -f "alembic.ini" ]; then
-    echo -e "${RED}Error: alembic.ini not found. Please run this script from the backend directory.${NC}"
+    echo -e "${RED}Error: alembic.ini not found. Cannot locate backend directory.${NC}"
     exit 1
 fi
 
