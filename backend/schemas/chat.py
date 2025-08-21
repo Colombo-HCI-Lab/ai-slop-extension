@@ -5,8 +5,10 @@ This module contains schemas for chat functionality including
 chat messages, conversation requests, and AI-powered responses about posts.
 """
 
-from typing import Any, Dict, List
-from pydantic import BaseModel, Field
+import uuid
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, Field, validator
 
 
 class ChatRequest(BaseModel):
@@ -14,6 +16,16 @@ class ChatRequest(BaseModel):
 
     post_id: str = Field(..., description="Facebook post ID")
     message: str = Field(..., description="User message")
+    user_id: str = Field(..., description="Unique user identifier (UUID)")
+
+    @validator("user_id")
+    def validate_user_id(cls, v):
+        """Validate that user_id is a valid UUID format."""
+        try:
+            uuid.UUID(v)
+        except ValueError:
+            raise ValueError("user_id must be a valid UUID")
+        return v
 
 
 class Message(BaseModel):

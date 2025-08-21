@@ -1,5 +1,15 @@
 import '../styles/content.css';
 
+// User identification utilities
+const getUserIdentifier = (): string => {
+  let userId = localStorage.getItem('ai-slop-user-id');
+  if (!userId) {
+    userId = crypto.randomUUID();
+    localStorage.setItem('ai-slop-user-id', userId);
+  }
+  return userId;
+};
+
 /**
  * Observes and processes Facebook posts to add AI slop detection functionality
  * - Monitors DOM for new posts
@@ -1588,6 +1598,7 @@ export class FacebookPostObserver {
         type: 'CHAT_REQUEST',
         postId: postId,
         message: message,
+        userId: getUserIdentifier(),
         postContent: postContent,
         previousAnalysis: previousAnalysis,
       });

@@ -220,9 +220,9 @@ class BackgroundService {
   private async handleChatRequest(message: {
     postId: string;
     message: string;
+    userId: string;
     postContent: string;
     previousAnalysis?: Record<string, unknown>;
-    conversationHistory?: unknown[];
   }): Promise<ChatResponse> {
     try {
       const response = await fetch(this.CHAT_ENDPOINT, {
@@ -233,6 +233,7 @@ class BackgroundService {
         body: JSON.stringify({
           post_id: message.postId,
           message: message.message,
+          user_id: message.userId,
         }),
       });
 

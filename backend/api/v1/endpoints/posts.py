@@ -13,6 +13,7 @@ from db.session import get_db
 from models import Post
 from schemas.content_detection import ContentDetectionRequest, ContentDetectionResponse
 from services.content_detection_service import ContentDetectionService
+from services.post_media_service import PostMediaService
 from utils.logging import get_logger
 
 
@@ -58,8 +59,9 @@ logger = get_logger(__name__)
 
 router = APIRouter(tags=["posts"])
 
-# Initialize detection service
+# Initialize services
 detection_service = ContentDetectionService()
+post_media_service = PostMediaService()
 
 
 @router.post("/process", response_model=ContentDetectionResponse)
@@ -95,9 +97,13 @@ async def process_post(
         # Perform detection using the content detection service
         result = await detection_service.detect(request, db)
 
+        # Save post with media to database
+        post = await post_media_service.save_post_with_media(request, result, db)
+
         logger.info(
             "Post processing completed",
             post_id=request.post_id,
+            post_db_id=post.id,
             verdict=result.verdict,
             confidence=round(result.confidence, 3),
             text_ai_probability=result.text_ai_probability,

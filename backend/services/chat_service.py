@@ -1,16 +1,18 @@
 """Chat service for Google Gemini integration."""
 
 import uuid
-from typing import List, Optional
+from datetime import datetime
+from typing import List, Optional, Tuple
 
 import google.generativeai as genai
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from core.config import settings
-from models import Chat, Post
+from models import Chat, Post, PostMedia, UserSession
 from schemas.chat import ChatRequest, ChatResponse, Message
+from services.file_upload_service import FileUploadService
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -27,49 +29,90 @@ class ChatService:
         # Configure Gemini API
         genai.configure(api_key=settings.gemini_api_key)
 
+        # Initialize file upload service
+        self.file_service = FileUploadService()
+
     async def send_message(
         self,
         request: ChatRequest,
         db: AsyncSession,
     ) -> ChatResponse:
         """
-        Send a message about a post and get AI response.
+        Send a message about a post and get AI response with multimodal support.
 
         Args:
-            request: Chat request with post ID and message
+            request: Chat request with post ID, message, user ID, and optional images
             db: Database session
 
         Returns:
             Chat response with AI-generated reply
         """
+        # Get or create user session
+        user_session = await self._get_or_create_user_session(request.user_id, db)
+
         # Get post from database
         post = await self._get_post(request.post_id, db)
         if not post:
             raise ValueError(f"Post with ID {request.post_id} not found")
 
-        # Save user message
-        await self._save_message(post.id, "user", request.message, db)
+        # Get user-specific chat history
+        chat_history = await self._get_user_chat_history(post.id, user_session.id, db)
 
-        # Get chat history for context
-        chat_history = await self._get_chat_history(post.id, db)
+        # Handle media uploads for first message in conversation
+        file_uris = []
+        if not chat_history:
+            # First message in conversation - get all media from post and upload to Gemini
+            image_urls, video_urls = await self._get_post_media_urls(post.id, db)
+            if image_urls or video_urls:
+                logger.info(f"Uploading {len(image_urls)} images and {len(video_urls)} videos from post media for new conversation")
+                file_uris = await self.file_service.upload_media_from_urls(image_urls, video_urls)
+        else:
+            # Reuse file URIs from previous messages in this conversation
+            for chat in chat_history:
+                if chat.file_uris:
+                    file_uris = chat.file_uris
+                    break
 
-        # Generate AI response
-        response_text = await self._generate_response(post, request.message, chat_history)
+        # Save user message with file references
+        await self._save_message(post.id, user_session.id, "user", request.message, file_uris, db)
+
+        # Update chat history to include the new message
+        chat_history = await self._get_user_chat_history(post.id, user_session.id, db)
+
+        # Generate AI response (multimodal if images available)
+        if file_uris:
+            response_text = await self._generate_multimodal_response(post, request.message, chat_history, file_uris)
+        else:
+            response_text = await self._generate_response(post, request.message, chat_history)
 
         # Save AI response
-        assistant_chat = await self._save_message(post.id, "assistant", response_text, db)
+        assistant_chat = await self._save_message(post.id, user_session.id, "assistant", response_text, [], db)
 
         # Generate suggested questions
         suggested_questions = self._generate_suggested_questions(post, chat_history)
+
+        # Count media types in file URIs (rough estimation based on typical naming)
+        media_sources = []
+        if file_uris:
+            # Check if we have media based on database info
+            image_urls, video_urls = await self._get_post_media_urls(post.id, db)
+            if image_urls:
+                media_sources.append("Image analysis")
+            if video_urls:
+                media_sources.append("Video analysis")
 
         return ChatResponse(
             id=assistant_chat.id,
             message=response_text,
             suggested_questions=suggested_questions,
             context={
-                "sources": ["Content analysis", "Pattern recognition", "Language modeling"],
+                "sources": ["Content analysis", "Pattern recognition", "Language modeling"] + media_sources,
                 "confidence": post.confidence,
-                "additional_info": "This analysis is based on multiple AI detection patterns",
+                "has_images": len(file_uris) > 0,
+                "media_count": len(file_uris),
+                "additional_info": "This analysis includes text and multimedia content"
+                if file_uris
+                else "This analysis is based on text content patterns",
             },
             timestamp=assistant_chat.created_at.isoformat(),
         )
@@ -107,6 +150,57 @@ class ChatService:
             for chat in chats
         ]
 
+    async def _get_or_create_user_session(self, user_identifier: str, db: AsyncSession) -> UserSession:
+        """Get or create user session by identifier."""
+        result = await db.execute(select(UserSession).where(UserSession.user_identifier == user_identifier))
+        user_session = result.scalar_one_or_none()
+
+        if not user_session:
+            user_session = UserSession(
+                id=str(uuid.uuid4()),
+                user_identifier=user_identifier,
+                last_active=datetime.now(),
+            )
+            db.add(user_session)
+        else:
+            # Update last active timestamp
+            await db.execute(update(UserSession).where(UserSession.id == user_session.id).values(last_active=datetime.now()))
+
+        await db.commit()
+        await db.refresh(user_session)
+        return user_session
+
+    async def _get_user_chat_history(self, post_db_id: str, user_session_id: str, db: AsyncSession, limit: int = 20) -> List[Chat]:
+        """Get chat history for a specific user and post."""
+        result = await db.execute(
+            select(Chat)
+            .where(Chat.post_db_id == post_db_id)
+            .where(Chat.user_session_id == user_session_id)
+            .order_by(Chat.created_at.asc())
+            .limit(limit)
+        )
+        return result.scalars().all()
+
+    async def _get_post_image_urls(self, post_db_id: str, db: AsyncSession) -> List[str]:
+        """Get image URLs from post media table."""
+        result = await db.execute(
+            select(PostMedia.media_url).where(PostMedia.post_db_id == post_db_id).where(PostMedia.media_type == "image")
+        )
+        return [url for (url,) in result.fetchall()]
+
+    async def _get_post_video_urls(self, post_db_id: str, db: AsyncSession) -> List[str]:
+        """Get video URLs from post media table."""
+        result = await db.execute(
+            select(PostMedia.media_url).where(PostMedia.post_db_id == post_db_id).where(PostMedia.media_type == "video")
+        )
+        return [url for (url,) in result.fetchall()]
+
+    async def _get_post_media_urls(self, post_db_id: str, db: AsyncSession) -> Tuple[List[str], List[str]]:
+        """Get both image and video URLs from post media table."""
+        image_urls = await self._get_post_image_urls(post_db_id, db)
+        video_urls = await self._get_post_video_urls(post_db_id, db)
+        return image_urls, video_urls
+
     async def _get_post(self, post_id: str, db: AsyncSession) -> Optional[Post]:
         """Get post by Facebook post ID."""
         result = await db.execute(select(Post).where(Post.post_id == post_id).options(selectinload(Post.chats)))
@@ -120,16 +214,20 @@ class ChatService:
     async def _save_message(
         self,
         post_db_id: str,
+        user_session_id: str,
         role: str,
         message: str,
+        file_uris: List[str],
         db: AsyncSession,
     ) -> Chat:
-        """Save a chat message to database."""
+        """Save a chat message to database with user session and file references."""
         chat = Chat(
             id=str(uuid.uuid4()),
             post_db_id=post_db_id,
+            user_session_id=user_session_id,
             role=role,
             message=message,
+            file_uris=file_uris if file_uris else None,
         )
 
         db.add(chat)
@@ -202,6 +300,89 @@ Keep responses informative but concise (2-4 sentences typically)."""
                 exc_info=True,
             )
             raise Exception(f"Failed to generate chat response: {str(e)}")
+
+    async def _generate_multimodal_response(self, post: Post, user_message: str, chat_history: List[Chat], file_uris: List[str]) -> str:
+        """Generate AI response using Gemini with text, images, and videos."""
+        try:
+            # Build comprehensive detection results summary
+            detection_summary = self._build_detection_summary(post)
+
+            # Create system instruction with post content and image context
+            system_instruction = f"""You are an expert AI content detection assistant helping users understand detection results for this specific social media post.
+
+POST CONTENT:
+"{post.content}"
+
+AUTHOR: {post.author or "Unknown"}
+
+DETECTION ANALYSIS RESULTS:
+{detection_summary}
+
+OVERALL VERDICT: {post.verdict}
+OVERALL CONFIDENCE: {(post.confidence * 100):.1f}%
+EXPLANATION: {post.explanation or "No detailed explanation provided"}
+
+MULTIMEDIA CONTENT: You have access to {len(file_uris)} media files (images and/or videos) from this post. Analyze them for:
+- Visual signs of AI generation (artifacts, inconsistencies, unnatural elements)
+- For videos: motion patterns, temporal consistency, audio-visual synchronization
+- Correlation between text claims and visual/video content
+- Overall authenticity assessment combining text and multimedia evidence
+
+Your role:
+- Help users understand these specific AI detection results
+- Analyze both text and visual content for comprehensive insights
+- Explain the reasoning behind the analysis in an accessible way
+- Reference specific visual elements when relevant
+- Be conversational and engaging, not robotic
+- Acknowledge limitations and potential for false positives/negatives
+- Provide insights based on the specific detection scores and confidence levels shown above
+
+Keep responses informative but concise (2-4 sentences typically)."""
+
+            # Initialize model with multimodal capability
+            model = genai.GenerativeModel("gemini-2.5-flash", system_instruction=system_instruction)
+            chat_session = model.start_chat()
+
+            # Create multimodal prompt with images
+            prompt_parts = []
+
+            # Add images first
+            for uri in file_uris:
+                try:
+                    # Extract file name from URI if needed
+                    if uri.startswith('https://generativelanguage.googleapis.com/v1beta/files/'):
+                        file_name = uri.split('/files/')[-1]
+                    else:
+                        file_name = uri
+                    
+                    file = genai.get_file(file_name)
+                    prompt_parts.append(file)
+                    logger.info("Successfully loaded media file for multimodal prompt", uri=uri, file_name=file_name)
+                except Exception as e:
+                    logger.warning("Failed to load media file for multimodal prompt", uri=uri, error=str(e))
+
+            # Add conversation history
+            for chat in chat_history[:-1]:  # Exclude the current message we just saved
+                if chat.role == "user":
+                    chat_session.send_message(chat.message)
+
+            # Add current user message
+            prompt_parts.append(f"User question: {user_message}")
+
+            # Generate response with multimodal content
+            response = chat_session.send_message(prompt_parts)
+            return response.text
+
+        except Exception as e:
+            logger.error(
+                "Error generating multimodal Gemini response",
+                error=str(e),
+                post_id=post.id,
+                user_message=user_message[:100] + "..." if len(user_message) > 100 else user_message,
+                media_file_count=len(file_uris),
+                exc_info=True,
+            )
+            raise Exception(f"Failed to generate multimodal chat response: {str(e)}")
 
     def _build_detection_summary(self, post: Post) -> str:
         """Build a comprehensive summary of all detection results."""

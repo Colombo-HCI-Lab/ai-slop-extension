@@ -1,40 +1,15 @@
 """Chat endpoints for AI conversations about posts."""
 
-from typing import Any, Dict, List
+from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.session import get_db
+from schemas.chat import ChatRequest, ChatResponse, Message
 from services.chat_service import ChatService
 from utils.logging import get_logger
-
-
-class ChatRequest(BaseModel):
-    """Request for sending a chat message."""
-
-    post_id: str = Field(..., description="Facebook post ID")
-    message: str = Field(..., description="User message")
-
-
-class Message(BaseModel):
-    """Chat message."""
-
-    id: str = Field(..., description="Message ID")
-    role: str = Field(..., description="Message role (user/assistant)")
-    message: str = Field(..., description="Message content")
-    created_at: str = Field(..., description="Message timestamp")
-
-
-class ChatResponse(BaseModel):
-    """Response for chat message."""
-
-    id: str = Field(..., description="Response message ID")
-    message: str = Field(..., description="AI response message")
-    suggested_questions: List[str] = Field(default_factory=list, description="Suggested follow-up questions")
-    context: Dict[str, Any] = Field(default_factory=dict, description="Additional context about the response")
-    timestamp: str = Field(..., description="Response timestamp")
 
 
 class ChatHistoryResponse(BaseModel):
@@ -59,25 +34,37 @@ async def send_message(
     db: AsyncSession = Depends(get_db),
 ) -> ChatResponse:
     """
-    Send a message about a post and get AI response.
+    Send a message about a post and get AI response with multimodal support.
 
     This endpoint allows users to ask questions about a post's AI detection
-    analysis and receive AI-generated responses with context.
+    analysis and receive AI-generated responses with context. Supports image
+    analysis for comprehensive multimodal AI detection insights.
     """
     try:
-        logger.info("Sending chat message", post_id=request.post_id, message_length=len(request.message))
+        logger.info(
+            "Sending chat message",
+            post_id=request.post_id,
+            user_id=request.user_id,
+            message_length=len(request.message),
+        )
 
         response = await chat_service.send_message(request, db)
 
-        logger.info("Chat response generated", post_id=request.post_id, response_length=len(response.message))
+        logger.info(
+            "Chat response generated",
+            post_id=request.post_id,
+            user_id=request.user_id,
+            response_length=len(response.message),
+            has_images=response.context.get("has_images", False),
+        )
 
         return response
 
     except ValueError as e:
-        logger.warning("Post not found for chat", post_id=request.post_id, error=str(e))
+        logger.warning("Post not found for chat", post_id=request.post_id, user_id=request.user_id, error=str(e))
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except Exception as e:
-        logger.error("Error sending chat message", post_id=request.post_id, error=str(e), exc_info=True)
+        logger.error("Error sending chat message", post_id=request.post_id, user_id=request.user_id, error=str(e), exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to generate response: {str(e)}")
 
 
