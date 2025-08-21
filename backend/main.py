@@ -30,9 +30,9 @@ async def lifespan(app: FastAPI):
         debug_mode=settings.debug,
     )
 
-    # Create upload directories
-    settings.upload_dir.mkdir(parents=True, exist_ok=True)
-    logger.info("Upload directory initialized", path=str(settings.upload_dir))
+    # Create tmp directories
+    settings.tmp_dir.mkdir(parents=True, exist_ok=True)
+    logger.info("Tmp directory initialized", path=str(settings.tmp_dir))
 
     yield
 

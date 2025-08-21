@@ -62,7 +62,7 @@ class Settings(BaseSettings):
     allowed_image_extensions: List[str] = [".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".webp"]
 
     # Directory settings
-    upload_dir: Path = Field(default_factory=lambda: Path("tmp"))
+    tmp_dir: Path = Field(default_factory=lambda: Path("tmp"))
 
     # Video Model settings
     default_model: str = "slowfast_r50"
@@ -113,7 +113,7 @@ class Settings(BaseSettings):
         super().__init__(**kwargs)
 
         # Ensure directories exist
-        self.upload_dir.mkdir(parents=True, exist_ok=True)
+        self.tmp_dir.mkdir(parents=True, exist_ok=True)
 
         # Auto-detect device if not specified or set to "auto"
         if self.device is None or self.device.lower() == "auto":

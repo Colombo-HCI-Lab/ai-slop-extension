@@ -56,16 +56,22 @@ class ChatService:
             raise ValueError(f"Post with ID {request.post_id} not found")
 
         # Get user-specific chat history
-        chat_history = await self._get_user_chat_history(post.id, user_session.id, db)
+        chat_history = await self._get_user_chat_history(post.post_id, user_session.id, db)
 
-        # Handle media uploads for first message in conversation
+        # Get pre-uploaded Gemini file URIs for first message in conversation
         file_uris = []
         if not chat_history:
-            # First message in conversation - get all media from post and upload to Gemini
-            image_urls, video_urls = await self._get_post_media_urls(post.id, db)
-            if image_urls or video_urls:
-                logger.info(f"Uploading {len(image_urls)} images and {len(video_urls)} videos from post media for new conversation")
-                file_uris = await self.file_service.upload_media_from_urls(image_urls, video_urls)
+            # First message in conversation - get pre-uploaded Gemini file URIs from database
+            file_uris = await self._get_post_gemini_file_uris(post.post_id, db)
+            if file_uris:
+                logger.info(f"Using {len(file_uris)} pre-uploaded Gemini file URIs for new conversation", post_id=post.post_id)
+            else:
+                # Check if post media exists but Gemini URIs are not set
+                media_count = await self._get_post_media_count(post.post_id, db)
+                if media_count > 0:
+                    logger.warning(f"Post has {media_count} media files but no Gemini file URIs found", post_id=post.post_id)
+                else:
+                    logger.info("No media found for this post", post_id=post.post_id)
         else:
             # Reuse file URIs from previous messages in this conversation
             for chat in chat_history:
@@ -74,10 +80,10 @@ class ChatService:
                     break
 
         # Save user message with file references
-        await self._save_message(post.id, user_session.id, "user", request.message, file_uris, db)
+        await self._save_message(post.post_id, user_session.id, "user", request.message, file_uris, db)
 
         # Update chat history to include the new message
-        chat_history = await self._get_user_chat_history(post.id, user_session.id, db)
+        chat_history = await self._get_user_chat_history(post.post_id, user_session.id, db)
 
         # Generate AI response (multimodal if images available)
         if file_uris:
@@ -86,16 +92,16 @@ class ChatService:
             response_text = await self._generate_response(post, request.message, chat_history)
 
         # Save AI response
-        assistant_chat = await self._save_message(post.id, user_session.id, "assistant", response_text, [], db)
+        assistant_chat = await self._save_message(post.post_id, user_session.id, "assistant", response_text, [], db)
 
-        # Generate suggested questions
-        suggested_questions = self._generate_suggested_questions(post, chat_history)
+        # Generate suggested questions using Gemini
+        suggested_questions = await self._generate_gemini_suggestions(post, chat_history)
 
         # Count media types in file URIs (rough estimation based on typical naming)
         media_sources = []
         if file_uris:
             # Check if we have media based on database info
-            image_urls, video_urls = await self._get_post_media_urls(post.id, db)
+            image_urls, video_urls = await self._get_post_media_urls(post.post_id, db)
             if image_urls:
                 media_sources.append("Image analysis")
             if video_urls:
@@ -138,7 +144,7 @@ class ChatService:
             raise ValueError(f"Post with ID {post_id} not found")
 
         # Get chat history
-        chats = await self._get_chat_history(post.id, db)
+        chats = await self._get_chat_history(post.post_id, db)
 
         return [
             Message(
@@ -170,50 +176,60 @@ class ChatService:
         await db.refresh(user_session)
         return user_session
 
-    async def _get_user_chat_history(self, post_db_id: str, user_session_id: str, db: AsyncSession, limit: int = 20) -> List[Chat]:
+    async def _get_user_chat_history(self, post_id: str, user_session_id: str, db: AsyncSession, limit: int = 20) -> List[Chat]:
         """Get chat history for a specific user and post."""
         result = await db.execute(
             select(Chat)
-            .where(Chat.post_db_id == post_db_id)
+            .where(Chat.post_id == post_id)
             .where(Chat.user_session_id == user_session_id)
             .order_by(Chat.created_at.asc())
             .limit(limit)
         )
         return result.scalars().all()
 
-    async def _get_post_image_urls(self, post_db_id: str, db: AsyncSession) -> List[str]:
+    async def _get_post_image_urls(self, post_id: str, db: AsyncSession) -> List[str]:
         """Get image URLs from post media table."""
-        result = await db.execute(
-            select(PostMedia.media_url).where(PostMedia.post_db_id == post_db_id).where(PostMedia.media_type == "image")
-        )
+        result = await db.execute(select(PostMedia.media_url).where(PostMedia.post_id == post_id).where(PostMedia.media_type == "image"))
         return [url for (url,) in result.fetchall()]
 
-    async def _get_post_video_urls(self, post_db_id: str, db: AsyncSession) -> List[str]:
+    async def _get_post_video_urls(self, post_id: str, db: AsyncSession) -> List[str]:
         """Get video URLs from post media table."""
-        result = await db.execute(
-            select(PostMedia.media_url).where(PostMedia.post_db_id == post_db_id).where(PostMedia.media_type == "video")
-        )
+        result = await db.execute(select(PostMedia.media_url).where(PostMedia.post_id == post_id).where(PostMedia.media_type == "video"))
         return [url for (url,) in result.fetchall()]
 
-    async def _get_post_media_urls(self, post_db_id: str, db: AsyncSession) -> Tuple[List[str], List[str]]:
+    async def _get_post_media_urls(self, post_id: str, db: AsyncSession) -> Tuple[List[str], List[str]]:
         """Get both image and video URLs from post media table."""
-        image_urls = await self._get_post_image_urls(post_db_id, db)
-        video_urls = await self._get_post_video_urls(post_db_id, db)
+        image_urls = await self._get_post_image_urls(post_id, db)
+        video_urls = await self._get_post_video_urls(post_id, db)
         return image_urls, video_urls
+
+    async def _get_post_gemini_file_uris(self, post_id: str, db: AsyncSession) -> List[str]:
+        """Get pre-uploaded Gemini file URIs from post media table."""
+        result = await db.execute(
+            select(PostMedia.gemini_file_uri).where(PostMedia.post_id == post_id).where(PostMedia.gemini_file_uri.isnot(None))
+        )
+        return [uri for (uri,) in result.fetchall() if uri]
+
+    async def _get_post_media_count(self, post_id: str, db: AsyncSession) -> int:
+        """Get count of media files for a post."""
+        from sqlalchemy import func
+
+        result = await db.execute(select(func.count(PostMedia.id)).where(PostMedia.post_id == post_id))
+        return result.scalar() or 0
 
     async def _get_post(self, post_id: str, db: AsyncSession) -> Optional[Post]:
         """Get post by Facebook post ID."""
         result = await db.execute(select(Post).where(Post.post_id == post_id).options(selectinload(Post.chats)))
         return result.scalar_one_or_none()
 
-    async def _get_chat_history(self, post_db_id: str, db: AsyncSession, limit: int = 20) -> List[Chat]:
+    async def _get_chat_history(self, post_id: str, db: AsyncSession, limit: int = 20) -> List[Chat]:
         """Get chat history for a post."""
-        result = await db.execute(select(Chat).where(Chat.post_db_id == post_db_id).order_by(Chat.created_at.asc()).limit(limit))
+        result = await db.execute(select(Chat).where(Chat.post_id == post_id).order_by(Chat.created_at.asc()).limit(limit))
         return result.scalars().all()
 
     async def _save_message(
         self,
-        post_db_id: str,
+        post_id: str,
         user_session_id: str,
         role: str,
         message: str,
@@ -223,7 +239,7 @@ class ChatService:
         """Save a chat message to database with user session and file references."""
         chat = Chat(
             id=str(uuid.uuid4()),
-            post_db_id=post_db_id,
+            post_id=post_id,
             user_session_id=user_session_id,
             role=role,
             message=message,
@@ -295,7 +311,7 @@ Keep responses informative but concise (2-4 sentences typically)."""
             logger.error(
                 "Error generating Gemini response",
                 error=str(e),
-                post_id=post.id,
+                post_id=post.post_id,
                 user_message=user_message[:100] + "..." if len(user_message) > 100 else user_message,
                 exc_info=True,
             )
@@ -350,11 +366,11 @@ Keep responses informative but concise (2-4 sentences typically)."""
             for uri in file_uris:
                 try:
                     # Extract file name from URI if needed
-                    if uri.startswith('https://generativelanguage.googleapis.com/v1beta/files/'):
-                        file_name = uri.split('/files/')[-1]
+                    if uri.startswith("https://generativelanguage.googleapis.com/v1beta/files/"):
+                        file_name = uri.split("/files/")[-1]
                     else:
                         file_name = uri
-                    
+
                     file = genai.get_file(file_name)
                     prompt_parts.append(file)
                     logger.info("Successfully loaded media file for multimodal prompt", uri=uri, file_name=file_name)
@@ -377,7 +393,7 @@ Keep responses informative but concise (2-4 sentences typically)."""
             logger.error(
                 "Error generating multimodal Gemini response",
                 error=str(e),
-                post_id=post.id,
+                post_id=post.post_id,
                 user_message=user_message[:100] + "..." if len(user_message) > 100 else user_message,
                 media_file_count=len(file_uris),
                 exc_info=True,
@@ -416,19 +432,94 @@ Keep responses informative but concise (2-4 sentences typically)."""
 
         return "\n".join(summary_parts) if summary_parts else "No detailed detection results available"
 
-    def _generate_suggested_questions(self, post: Post, chat_history: List[Chat]) -> List[str]:
-        """Generate suggested follow-up questions."""
+    async def _generate_gemini_suggestions(self, post: Post, chat_history: List[Chat]) -> List[str]:
+        """Generate intelligent question suggestions using Gemini AI."""
+        try:
+            # Build comprehensive detection results summary
+            detection_summary = self._build_detection_summary(post)
+
+            # Create conversation history summary
+            conversation_summary = ""
+            if chat_history:
+                conversation_summary = "\n\nCONVERSATION HISTORY:\n"
+                for chat in chat_history:
+                    conversation_summary += f"{chat.role.upper()}: {chat.message}\n"
+            else:
+                conversation_summary = "\n\nCONVERSATION HISTORY: No previous conversation"
+
+            # Create system instruction for generating suggestions
+            system_instruction = f"""You are an AI assistant helping generate intelligent follow-up questions for users who want to understand AI content detection results.
+
+POST CONTENT:
+"{post.content}"
+
+AUTHOR: {post.author or "Unknown"}
+
+DETECTION ANALYSIS RESULTS:
+{detection_summary}
+
+OVERALL VERDICT: {post.verdict}
+OVERALL CONFIDENCE: {(post.confidence * 100):.1f}%
+EXPLANATION: {post.explanation or "No detailed explanation provided"}
+{conversation_summary}
+
+Generate 3 short, concise follow-up questions that:
+1. Haven't been asked before in the conversation history
+2. Help the user better understand the detection results
+3. Explore different aspects of AI detection (patterns, confidence, methodology, implications)
+4. Are specific to this post's content and analysis results
+5. Are conversational and engaging
+6. Keep each question under 8 words when possible
+7. Use simple, direct language
+
+Return ONLY the 3 questions, each on a separate line, without numbers or bullet points."""
+
+            # Initialize model
+            model = genai.GenerativeModel("gemini-2.5-flash", system_instruction=system_instruction)
+
+            # Generate suggestions
+            response = model.generate_content("Generate 3 intelligent follow-up questions based on the context above.")
+
+            # Parse response into individual questions
+            questions = [q.strip() for q in response.text.strip().split("\n") if q.strip()]
+
+            # Ensure we have exactly 3 questions
+            if len(questions) > 3:
+                questions = questions[:3]
+            elif len(questions) < 3:
+                # Fallback to basic questions if needed
+                fallback_questions = [
+                    "What patterns suggest AI generation?",
+                    "How confident is this analysis?",
+                    "Could this be wrong?",
+                ]
+                questions.extend(fallback_questions[len(questions) : 3])
+
+            return questions
+
+        except Exception as e:
+            logger.error(
+                "Error generating Gemini suggestions",
+                error=str(e),
+                post_id=post.post_id,
+                exc_info=True,
+            )
+            # Fallback to basic suggestions
+            return self._generate_fallback_suggestions(post, chat_history)
+
+    def _generate_fallback_suggestions(self, post: Post, chat_history: List[Chat]) -> List[str]:
+        """Generate fallback suggestions when Gemini fails."""
         questions = [
-            "What specific patterns indicate this is AI-generated?",
-            "How confident are you in this analysis?",
-            "Could this be a false positive?",
-            "What are the key indicators of AI-generated content?",
+            "What patterns suggest AI generation?",
+            "How confident is this analysis?",
+            "Could this be wrong?",
+            "What are the key indicators?",
         ]
 
         if post.verdict == "ai_slop":
-            questions.append("What makes this different from human writing?")
+            questions.append("How is this different from human writing?")
         else:
-            questions.append("Why do you think this is human-written?")
+            questions.append("Why is this human-written?")
 
         # Filter out questions that have already been asked
         asked_questions = {chat.message.lower() for chat in chat_history if chat.role == "user"}
@@ -436,3 +527,7 @@ Keep responses informative but concise (2-4 sentences typically)."""
 
         # Return top 3 questions
         return available_questions[:3]
+
+    def _generate_suggested_questions(self, post: Post, chat_history: List[Chat]) -> List[str]:
+        """Generate suggested follow-up questions (legacy method, kept for compatibility)."""
+        return self._generate_fallback_suggestions(post, chat_history)

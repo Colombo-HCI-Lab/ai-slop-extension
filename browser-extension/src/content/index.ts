@@ -245,10 +245,13 @@ export class FacebookPostObserver {
     // Add scroll event listener with debouncing
     window.addEventListener('scroll', this.boundHandleScroll);
 
-    // Process any existing posts immediately
-    this.processExistingPosts().catch(error => {
-      console.error('[AI-Slop] Error processing existing posts:', error);
-    });
+    // Process any existing posts with a small delay to allow Facebook to load URLs
+    setTimeout(() => {
+      console.log('[AI-Slop] Running initial post processing with URL-first strategy...');
+      this.processExistingPosts().catch(error => {
+        console.error('[AI-Slop] Error processing existing posts:', error);
+      });
+    }, 500);
 
     // Add delayed processing to catch posts that load after initialization
     // This fixes the issue where the first post is missed due to timing
@@ -555,8 +558,8 @@ export class FacebookPostObserver {
    * @returns Facebook post ID (numeric string) or fallback Base64 encoded string
    */
   private async generatePostId(postElement: HTMLElement): Promise<string> {
-    // Primary method: Extract post ID from Facebook URLs
-    const postId = this.extractPostIdFromUrls(postElement);
+    // Primary method: Extract post ID from Facebook URLs with retry logic
+    const postId = await this.extractPostIdFromUrls(postElement);
     if (postId) {
       console.log(`[AI-Slop] 🆔 Using URL-based post ID: ${postId}`);
       return postId;
@@ -607,32 +610,97 @@ export class FacebookPostObserver {
   }
 
   /**
-   * Extracts Facebook post ID from URLs within the post element
+   * Extracts Facebook post ID from URLs within the post element with retry logic
    * Looks for patterns like /posts/{numeric_id} or /posts/{numeric_id}/
    * @param postElement - The post's HTML element
+   * @param retryCount - Number of retries attempted (default: 0)
    * @returns Facebook post ID (numeric string) or null if not found
    */
-  private extractPostIdFromUrls(postElement: HTMLElement): string | null {
-    // Look for all links within the post that contain 'posts/' in their href
-    const postLinks = postElement.querySelectorAll('a[href*="posts/"]');
+  private async extractPostIdFromUrls(postElement: HTMLElement, retryCount: number = 0): Promise<string | null> {
+    const maxRetries = 3;
+    const retryDelay = 200; // 200ms between retries
 
-    for (const link of postLinks) {
+    // Look for all links within the post that might contain post IDs
+    // Check multiple patterns to catch various Facebook URL formats
+    const linkSelectors = [
+      'a[href*="posts/"]',
+      'a[href*="/posts/"]',
+      'a[href*="story_fbid="]',
+      'a[href*="fbid="]',
+      'time a',
+      '[aria-label*="ago"] a',
+      '[aria-label*="hours"] a',
+      '[aria-label*="minutes"] a'
+    ];
+
+    const allLinks = new Set<HTMLAnchorElement>();
+    
+    // Collect all potential links
+    linkSelectors.forEach(selector => {
+      const links = postElement.querySelectorAll(selector);
+      links.forEach(link => {
+        if (link instanceof HTMLAnchorElement) {
+          allLinks.add(link);
+        }
+      });
+    });
+
+    for (const link of allLinks) {
       const href = link.getAttribute('href') || '';
 
-      // Match Facebook post URL pattern: /posts/{numeric_id}
-      // Supports both full URLs and relative paths
-      const match = href.match(/\/posts\/(\d+)/);
+      if (!href) continue;
 
+      // Try different Facebook URL patterns:
+      
+      // Pattern 1: /posts/{numeric_id}
+      let match = href.match(/\/posts\/(\d+)/);
       if (match && match[1]) {
         const postId = match[1];
         console.log(
-          `[AI-Slop] 🔗 Extracted post ID from URL: ${postId} (from: ${href.slice(0, 100)}...)`
+          `[AI-Slop] 🔗 Extracted post ID from URL (posts pattern): ${postId} (from: ${href.slice(0, 100)}...)`
+        );
+        return postId;
+      }
+
+      // Pattern 2: story_fbid={numeric_id}
+      match = href.match(/story_fbid=(\d+)/);
+      if (match && match[1]) {
+        const postId = match[1];
+        console.log(
+          `[AI-Slop] 🔗 Extracted post ID from URL (story_fbid pattern): ${postId} (from: ${href.slice(0, 100)}...)`
+        );
+        return postId;
+      }
+
+      // Pattern 3: fbid={numeric_id}
+      match = href.match(/fbid=(\d+)/);
+      if (match && match[1]) {
+        const postId = match[1];
+        console.log(
+          `[AI-Slop] 🔗 Extracted post ID from URL (fbid pattern): ${postId} (from: ${href.slice(0, 100)}...)`
+        );
+        return postId;
+      }
+
+      // Pattern 4: /{numeric_id}/posts/{another_id} (group posts)
+      match = href.match(/\/(\d{10,})\/posts\/(\d+)/);
+      if (match && match[2]) {
+        const postId = match[2];
+        console.log(
+          `[AI-Slop] 🔗 Extracted post ID from URL (group posts pattern): ${postId} (from: ${href.slice(0, 100)}...)`
         );
         return postId;
       }
     }
 
-    console.log(`[AI-Slop] 🔍 No post URLs found in element, checked ${postLinks.length} links`);
+    // If no URLs found and we haven't exceeded retry limit, wait and try again
+    if (retryCount < maxRetries) {
+      console.log(`[AI-Slop] 🔄 No post URLs found (attempt ${retryCount + 1}/${maxRetries + 1}), retrying in ${retryDelay}ms...`);
+      await new Promise(resolve => setTimeout(resolve, retryDelay));
+      return this.extractPostIdFromUrls(postElement, retryCount + 1);
+    }
+
+    console.log(`[AI-Slop] 🔍 No post URLs found after ${maxRetries + 1} attempts, checked ${allLinks.size} links`);
     return null;
   }
 
@@ -753,10 +821,9 @@ export class FacebookPostObserver {
       if (img.width > 100 || img.height > 100 || (!img.width && !img.height)) {
         const src = img.getAttribute('src') || img.getAttribute('data-src');
         if (src && !src.includes('emoji') && !src.includes('icon') && !src.includes('avatar')) {
-          // Clean up Facebook image URLs
-          const cleanUrl = this.cleanFacebookImageUrl(src);
-          if (cleanUrl && !images.includes(cleanUrl)) {
-            images.push(cleanUrl);
+          // Don't clean Facebook URLs - preserve all authentication parameters
+          if (!images.includes(src)) {
+            images.push(src);
           }
         }
       }
@@ -768,9 +835,9 @@ export class FacebookPostObserver {
       const style = div.getAttribute('style') || '';
       const match = style.match(/url\(["']?([^"')]+)["']?\)/);
       if (match && match[1]) {
-        const cleanUrl = this.cleanFacebookImageUrl(match[1]);
-        if (cleanUrl && !images.includes(cleanUrl)) {
-          images.push(cleanUrl);
+        // Don't clean Facebook URLs - preserve all authentication parameters
+        if (!images.includes(match[1])) {
+          images.push(match[1]);
         }
       }
     });
@@ -781,7 +848,10 @@ export class FacebookPostObserver {
     videoElements.forEach(video => {
       const src = video.getAttribute('src') || video.querySelector('source')?.getAttribute('src');
       if (src) {
-        videos.push(src);
+        // Don't clean Facebook URLs - preserve all authentication parameters
+        if (!videos.includes(src)) {
+          videos.push(src);
+        }
       }
     });
 
@@ -790,8 +860,11 @@ export class FacebookPostObserver {
     videoLinks.forEach(element => {
       const videoUrl =
         element.getAttribute('data-video-url') || element.getAttribute('data-video-src');
-      if (videoUrl && !videos.includes(videoUrl)) {
-        videos.push(videoUrl);
+      if (videoUrl) {
+        // Don't clean Facebook URLs - preserve all authentication parameters
+        if (!videos.includes(videoUrl)) {
+          videos.push(videoUrl);
+        }
       }
     });
 
@@ -804,59 +877,24 @@ export class FacebookPostObserver {
       const links = player.querySelectorAll('a[href*="/videos/"], a[href*="/watch/"]');
       links.forEach(link => {
         const href = link.getAttribute('href');
-        if (href && !videos.includes(href)) {
-          videos.push(href);
+        if (href) {
+          // Don't clean Facebook URLs - preserve all authentication parameters
+          if (!videos.includes(href)) {
+            videos.push(href);
+          }
         }
       });
     });
 
-    console.log('[AI-Slop] 📸 Extracted media:', {
+    console.log('[AI-Slop] 📸 Extracted media (preserving original URLs):', {
       images: images.length,
       videos: videos.length,
+      'auth_preserved': 'All original authentication parameters intact',
       imageUrls: images,
       videoUrls: videos,
     });
 
     return { images, videos };
-  }
-
-  /**
-   * Cleans Facebook image URLs to get the highest quality version
-   * @param url - The image URL to clean
-   * @returns Cleaned URL or null if invalid
-   */
-  private cleanFacebookImageUrl(url: string): string | null {
-    if (!url) return null;
-
-    try {
-      // Remove Facebook's image resizing parameters
-      let cleanUrl = url;
-
-      // Handle scontent URLs (Facebook's CDN)
-      if (url.includes('scontent')) {
-        // Remove size parameters like _s.jpg, _n.jpg etc
-        cleanUrl = url.replace(/[_-][snmlt]\.(jpg|png|webp)/i, '.$1');
-
-        // Remove dimension parameters
-        cleanUrl = cleanUrl.replace(/\/[pcs]\d+x\d+\//g, '/');
-
-        // Remove other Facebook parameters
-        cleanUrl = cleanUrl.replace(/[?&](w|h|_nc_[a-z]+)=[^&]+/g, '');
-      }
-
-      // Handle external.xx.fbcdn.net URLs
-      if (url.includes('fbcdn.net')) {
-        // These are usually direct image URLs, just clean query params
-        const urlObj = new URL(url);
-        urlObj.search = '';
-        cleanUrl = urlObj.toString();
-      }
-
-      return cleanUrl;
-    } catch (error) {
-      console.warn('[AI-Slop] Failed to clean image URL:', url, error);
-      return url; // Return original if cleaning fails
-    }
   }
 
   /**

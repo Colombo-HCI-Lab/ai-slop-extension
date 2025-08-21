@@ -13,11 +13,6 @@ class Base(DeclarativeBase):
 
     __abstract__ = True
 
-    id: Mapped[str] = mapped_column(
-        String(36),
-        primary_key=True,
-        default=lambda: str(uuid.uuid4()),
-    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -40,8 +35,8 @@ class Post(Base):
 
     __tablename__ = "post"
 
-    # Facebook post ID (numeric string from URL)
-    post_id: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    # Facebook post ID (numeric string from URL) - now primary key
+    post_id: Mapped[str] = mapped_column(String(255), primary_key=True, index=True)
 
     # Post content
     content: Mapped[str] = mapped_column(Text, nullable=False)
@@ -91,7 +86,7 @@ class Post(Base):
 
     def __repr__(self) -> str:
         """String representation."""
-        return f"<Post(id={self.id}, post_id={self.post_id}, verdict={self.verdict}, confidence={self.confidence})>"
+        return f"<Post(post_id={self.post_id}, verdict={self.verdict}, confidence={self.confidence})>"
 
 
 class Chat(Base):
@@ -99,9 +94,15 @@ class Chat(Base):
 
     __tablename__ = "chat"
 
-    # Reference to the post table's internal id
-    post_db_id: Mapped[str] = mapped_column(
-        ForeignKey("post.id", ondelete="CASCADE"),
+    id: Mapped[str] = mapped_column(
+        String(36),
+        primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+
+    # Reference to the post table's post_id
+    post_id: Mapped[str] = mapped_column(
+        ForeignKey("post.post_id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -138,13 +139,19 @@ class Chat(Base):
 
     def __repr__(self) -> str:
         """String representation."""
-        return f"<Chat(id={self.id}, post_db_id={self.post_db_id}, role={self.role})>"
+        return f"<Chat(id={self.id}, post_id={self.post_id}, role={self.role})>"
 
 
 class UserSession(Base):
     """User session model for tracking individual extension users."""
 
     __tablename__ = "user_session"
+
+    id: Mapped[str] = mapped_column(
+        String(36),
+        primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+    )
 
     # Unique identifier from browser (UUID)
     user_identifier: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
@@ -174,9 +181,15 @@ class PostMedia(Base):
 
     __tablename__ = "post_media"
 
-    # Reference to the post table's internal id
-    post_db_id: Mapped[str] = mapped_column(
-        ForeignKey("post.id", ondelete="CASCADE"),
+    id: Mapped[str] = mapped_column(
+        String(36),
+        primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+
+    # Reference to the post table's post_id
+    post_id: Mapped[str] = mapped_column(
+        ForeignKey("post.post_id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -198,6 +211,12 @@ class PostMedia(Base):
     file_size: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     mime_type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
 
+    # Gemini File API URI for pre-uploaded media
+    gemini_file_uri: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Local file path for downloaded media
+    local_file_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
     # Relationship to post
     post: Mapped["Post"] = relationship(
         "Post",
@@ -207,4 +226,4 @@ class PostMedia(Base):
 
     def __repr__(self) -> str:
         """String representation."""
-        return f"<PostMedia(id={self.id}, post_db_id={self.post_db_id}, media_type={self.media_type})>"
+        return f"<PostMedia(id={self.id}, post_id={self.post_id}, media_type={self.media_type})>"

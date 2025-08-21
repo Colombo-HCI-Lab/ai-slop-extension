@@ -94,24 +94,47 @@ async def process_post(
             author=request.author,
         )
 
-        # Perform detection using the content detection service
+        # Step 1: Save post and download/upload media to Gemini
+        # This completes ALL media operations before proceeding
+        logger.info("Step 1: Saving post and processing media", post_id=request.post_id)
+        post = await post_media_service.save_post_before_detection(request, db)
+        
+        # Step 2: Wait a moment to ensure all files are written to disk
+        import asyncio
+        await asyncio.sleep(0.5)  # Small delay to ensure file system operations complete
+        
+        # Step 3: Run detection only after media is fully processed
+        logger.info("Step 2: Running detection with downloaded media", post_id=request.post_id)
         result = await detection_service.detect(request, db)
 
-        # Save post with media to database
-        post = await post_media_service.save_post_with_media(request, result, db)
+        # Check if this was a cached result to avoid confusing logs
+        is_cached = hasattr(result, "debug_info") and result.debug_info and result.debug_info.get("from_cache", False)
 
-        logger.info(
-            "Post processing completed",
-            post_id=request.post_id,
-            post_db_id=post.id,
-            verdict=result.verdict,
-            confidence=round(result.confidence, 3),
-            text_ai_probability=result.text_ai_probability,
-            image_ai_probability=result.image_ai_probability,
-            video_ai_probability=result.video_ai_probability,
-            has_images=bool(result.image_analysis),
-            has_videos=bool(result.video_analysis),
-        )
+        if is_cached:
+            # For cached results, just log that we returned cached data
+            logger.info(
+                "Returned cached detection result",
+                post_id=request.post_id,
+                verdict=result.verdict,
+                confidence=round(result.confidence, 3),
+                source="cache",
+            )
+        else:
+            # For new analysis, update post with detection results and log processing
+            post = await post_media_service.update_post_with_results(request.post_id, result, db)
+
+            logger.info(
+                "Post processing completed",
+                post_id=request.post_id,
+                verdict=result.verdict,
+                confidence=round(result.confidence, 3),
+                text_ai_probability=result.text_ai_probability,
+                image_ai_probability=result.image_ai_probability,
+                video_ai_probability=result.video_ai_probability,
+                has_images=bool(result.image_analysis),
+                has_videos=bool(result.video_analysis),
+                source="new_analysis",
+            )
 
         return result
 

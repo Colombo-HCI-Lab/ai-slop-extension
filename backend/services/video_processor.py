@@ -23,7 +23,7 @@ class VideoProcessor:
 
     def __init__(self):
         """Initialize video processor."""
-        self.upload_dir = settings.upload_dir
+        self.upload_dir = settings.tmp_dir
         self.upload_dir.mkdir(parents=True, exist_ok=True)
 
     async def save_uploaded_file(self, upload_file: UploadFile) -> Path:

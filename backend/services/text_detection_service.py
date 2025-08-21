@@ -1,7 +1,6 @@
 """Text content AI detection service."""
 
 import hashlib
-import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -48,7 +47,6 @@ class TextDetectionService:
         self,
         request: DetectRequest,
         db: AsyncSession,
-        use_cache: bool = True,
     ) -> DetectResponse:
         """
         Detect if text content is AI-generated.
@@ -56,19 +54,17 @@ class TextDetectionService:
         Args:
             request: Detection request with content and post ID
             db: Database session
-            use_cache: Whether to use cached results
 
         Returns:
             Detection response with verdict and confidence
         """
         self.request_counter += 1
 
-        # Check cache if enabled
-        if use_cache:
-            cached_result = await self._get_cached_result(request.post_id, db)
-            if cached_result:
-                logger.info("Returning cached result", post_id=request.post_id)
-                return self._create_response_from_post(cached_result, from_cache=True)
+        # Check for existing complete results
+        cached_result = await self._get_cached_result(request.post_id, db)
+        if cached_result:
+            logger.info("Returning cached result", post_id=request.post_id)
+            return self._create_response_from_post(cached_result, from_cache=True)
 
         # Perform detection
         verdict, confidence, explanation, ai_probability, analysis_confidence = self._analyze_content(request.content)
@@ -81,7 +77,13 @@ class TextDetectionService:
     async def _get_cached_result(self, post_id: str, db: AsyncSession) -> Optional[Post]:
         """Get cached result from database."""
         result = await db.execute(select(Post).where(Post.post_id == post_id))
-        return result.scalar_one_or_none()
+        post = result.scalar_one_or_none()
+
+        # Only return posts that have actual detection results, not placeholder values
+        if post and post.verdict != "pending":
+            return post
+
+        return None
 
     def _analyze_content(self, content: str) -> tuple[str, float, str, float, float]:
         """
@@ -207,8 +209,9 @@ class TextDetectionService:
         db: AsyncSession,
     ) -> Post:
         """Save detection result to database."""
-        # Check if post already exists
-        existing = await self._get_cached_result(request.post_id, db)
+        # Check if post already exists (including those with pending results)
+        result = await db.execute(select(Post).where(Post.post_id == request.post_id))
+        existing = result.scalar_one_or_none()
 
         if existing:
             # Update existing post
@@ -225,7 +228,6 @@ class TextDetectionService:
 
         # Create new post
         post = Post(
-            id=str(uuid.uuid4()),
             post_id=request.post_id,
             content=request.content,
             author=request.author,
@@ -245,15 +247,16 @@ class TextDetectionService:
 
     def _create_response_from_post(self, post: Post, from_cache: bool = False) -> DetectResponse:
         """Create detection response from post model."""
+        explanation = post.explanation or "No explanation available"
         return DetectResponse(
             post_id=post.post_id,
             verdict=post.verdict,
             confidence=post.confidence,
-            explanation=post.explanation,
+            explanation=explanation,
             timestamp=post.updated_at.isoformat(),
             text_ai_probability=post.text_ai_probability,
             text_confidence=post.text_confidence,
-            text_analysis={"verdict": post.verdict, "confidence": post.confidence, "explanation": post.explanation},
+            text_analysis={"verdict": post.verdict, "confidence": post.confidence, "explanation": explanation},
             image_analysis=[],
             video_analysis=[],
             debug_info={
