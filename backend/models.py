@@ -213,8 +213,11 @@ class PostMedia(Base):
     # Gemini File API URI for pre-uploaded media
     gemini_file_uri: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
-    # Local file path for downloaded media
-    local_file_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Storage path for downloaded media (GCS URI or local file path)
+    storage_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    
+    # Storage type: 'gcs' or 'local'
+    storage_type: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
 
     # Relationship to post
     post: Mapped["Post"] = relationship(

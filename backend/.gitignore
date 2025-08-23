@@ -33,3 +33,6 @@ slowfast_detection/models/*.pt
 slowfast_detection/models/*.ckpt
 *.safetensors
 *.bin
+
+# GCP credentials
+gcp-credentials.json

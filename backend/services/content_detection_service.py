@@ -121,10 +121,11 @@ class ContentDetectionService:
 
         media_info = {}
         for media in media_records:
-            # Map URL to media ID and local path
+            # Map URL to media ID and storage path
             media_info[media.media_url] = {
                 "media_id": media.id,
-                "local_path": media.local_file_path,
+                "storage_path": media.storage_path,
+                "storage_type": media.storage_type,
                 "gemini_uri": media.gemini_file_uri,
                 "media_type": media.media_type,
             }
@@ -178,13 +179,21 @@ class ContentDetectionService:
                 # Get media info from database
                 media_record = media_info.get(url, {})
                 media_id = media_record.get("media_id")
-                local_path = media_record.get("local_path")
+                storage_path = media_record.get("storage_path")
+                storage_type = media_record.get("storage_type")
 
-                # Use local path from database if available
-                if local_path:
-                    from pathlib import Path
-
-                    image_file = Path(local_path)
+                # Handle different storage types
+                image_file = None
+                if storage_path:
+                    if storage_type == "gcs":
+                        # For GCS storage, we need to download the file temporarily for analysis
+                        logger.warning("GCS storage analysis not yet implemented for images", url=url)
+                        # TODO: Implement GCS download for analysis
+                        # For now, fall back to local file detection
+                    else:
+                        # Local storage
+                        from pathlib import Path
+                        image_file = Path(storage_path)
                 else:
                     # Fallback to finding file by URL hash if not in database
                     import hashlib
@@ -325,13 +334,21 @@ class ContentDetectionService:
                 # Get media info from database
                 media_record = media_info.get(url, {})
                 media_id = media_record.get("media_id")
-                local_path = media_record.get("local_path")
+                storage_path = media_record.get("storage_path")
+                storage_type = media_record.get("storage_type")
 
-                # Use local path from database if available
-                if local_path:
-                    from pathlib import Path
-
-                    video_file = Path(local_path)
+                # Handle different storage types
+                video_file = None
+                if storage_path:
+                    if storage_type == "gcs":
+                        # For GCS storage, we need to download the file temporarily for analysis
+                        logger.warning("GCS storage analysis not yet implemented for videos", url=url)
+                        # TODO: Implement GCS download for analysis
+                        # For now, fall back to local file detection
+                    else:
+                        # Local storage
+                        from pathlib import Path
+                        video_file = Path(storage_path)
                 else:
                     # Fallback to finding file by URL hash if not in database
                     import hashlib

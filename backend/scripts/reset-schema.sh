@@ -5,6 +5,15 @@
 
 set -e  # Exit on error
 
+# Load environment variables from .env file in backend directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BACKEND_DIR="$(dirname "$SCRIPT_DIR")"
+ENV_FILE="$BACKEND_DIR/.env"
+
+if [ -f "$ENV_FILE" ]; then
+    export $(grep -v '^#' "$ENV_FILE" | xargs)
+fi
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -13,12 +22,20 @@ NC='\033[0m' # No Color
 
 echo -e "${YELLOW}🔄 Resetting database schema...${NC}"
 
-# Database configuration
-DB_NAME="ai_slop_extension"
-DB_USER="postgres"
-DB_PASSWORD="cats"
-DB_HOST="localhost"
-DB_PORT="5432"
+# Database configuration from environment variables with defaults
+DB_NAME="${DB_NAME:-ai_slop_extension}"
+DB_USER="${DB_USER:-postgres}"
+DB_PASSWORD="${DB_PASSWORD:-cats}"
+DB_HOST="${DB_HOST:-localhost}"
+DB_PORT="${DB_PORT:-5432}"
+
+# Print database configuration being used
+echo -e "${YELLOW}Database Configuration:${NC}"
+echo -e "  Host: ${DB_HOST}:${DB_PORT}"
+echo -e "  User: ${DB_USER}"
+echo -e "  Database: ${DB_NAME}"
+echo -e "  Password: [${#DB_PASSWORD} characters]"
+echo
 
 # Function to execute PostgreSQL commands
 execute_psql() {

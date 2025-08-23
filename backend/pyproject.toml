@@ -57,6 +57,7 @@ dependencies = [
     "structlog>=24.4.0",
     "colorama>=0.4.6",
     "yt-dlp>=2025.8.22",
+    "google-cloud-storage>=3.3.0",
 ]
 
 [project.optional-dependencies]

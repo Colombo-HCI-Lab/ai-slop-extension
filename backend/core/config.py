@@ -5,7 +5,7 @@ Configuration management for the FastAPI application.
 from pathlib import Path
 from typing import List, Optional
 
-from pydantic import Field
+from pydantic import Field, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -61,8 +61,14 @@ class Settings(BaseSettings):
     allowed_image_types: List[str] = ["image/jpeg", "image/jpg", "image/png", "image/bmp", "image/tiff", "image/webp"]
     allowed_image_extensions: List[str] = [".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".webp"]
 
-    # Directory settings
+    # Directory settings (for local processing only)
     tmp_dir: Path = Field(default_factory=lambda: Path("tmp"))
+    
+    # Google Cloud Storage settings (required for media storage)
+    gcs_bucket_name: str = ""  # GCS bucket for media storage (required)
+    gcs_project_id: Optional[str] = None  # Auto-detect if None
+    gcs_credentials_path: Optional[str] = None  # Service account key file path
+    enable_local_fallback: bool = False  # Disabled - GCS storage is required
 
     # Video Model settings
     default_model: str = "slowfast_r50"
@@ -90,25 +96,26 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
-    # Database settings
-    database_url: str = "postgresql://postgres:cats@localhost:5432/ai_slop_extension"
+    # Database settings - individual components
+    db_name: str = "ai_slop_extension"
+    db_user: str = "postgres"
+    db_password: str = "cats"
+    db_host: str = "localhost"
+    db_port: int = 5432
+    
+    # Database connection settings
     database_echo: bool = False
     database_pool_size: int = 5
     database_max_overflow: int = 10
+    
+    @property
+    def database_url(self) -> str:
+        """Construct database URL from individual components."""
+        return f"postgresql://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
 
     # Google Gemini settings
     gemini_api_key: str = ""
-
-    # JWT settings
-    jwt_secret: str = "your-super-secret-jwt-key-change-this-in-production"
-    jwt_algorithm: str = "HS256"
-    jwt_expiration_days: int = 7
-
-    # Cache settings
-    redis_url: str = "redis://localhost:6379/0"
-    cache_ttl: int = 3600  # 1 hour in seconds
-    enable_cache: bool = True
-
+    
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 

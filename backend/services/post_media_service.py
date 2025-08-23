@@ -191,18 +191,23 @@ class PostMediaService:
         media_entries = []
         gemini_uri_index = 0
 
-        # Create lookup dictionary for local file paths
-        local_file_lookup = {}
+        # Create lookup dictionary for storage paths
+        storage_path_lookup = {}
         for file_info in media_file_info:
-            local_file_lookup[file_info["url"]] = file_info.get("local_path")
+            storage_path_lookup[file_info["url"]] = file_info.get("storage_path")
 
         # Add image URLs
         for image_url in request.image_urls or []:
             gemini_uri = gemini_file_uris[gemini_uri_index] if gemini_uri_index < len(gemini_file_uris) else None
-            local_path = local_file_lookup.get(image_url)
+            storage_path = storage_path_lookup.get(image_url)
 
             # Generate composite media ID using Facebook media ID if available
             media_id = generate_composite_media_id(post_id, image_url, "image")
+
+            # Determine storage type
+            storage_type = None
+            if storage_path:
+                storage_type = "gcs" if storage_path.startswith("gs://") else "local"
 
             media_entry = PostMedia(
                 id=media_id,
@@ -210,7 +215,8 @@ class PostMediaService:
                 media_type="image",
                 media_url=image_url,
                 gemini_file_uri=gemini_uri,
-                local_file_path=local_path,
+                storage_path=storage_path,
+                storage_type=storage_type,
             )
             media_entries.append(media_entry)
             gemini_uri_index += 1
@@ -218,10 +224,15 @@ class PostMediaService:
         # Add video URLs
         for video_url in request.video_urls or []:
             gemini_uri = gemini_file_uris[gemini_uri_index] if gemini_uri_index < len(gemini_file_uris) else None
-            local_path = local_file_lookup.get(video_url)
+            storage_path = storage_path_lookup.get(video_url)
 
             # Generate composite media ID using Facebook media ID if available
             media_id = generate_composite_media_id(post_id, video_url, "video")
+
+            # Determine storage type
+            storage_type = None
+            if storage_path:
+                storage_type = "gcs" if storage_path.startswith("gs://") else "local"
 
             media_entry = PostMedia(
                 id=media_id,
@@ -229,7 +240,8 @@ class PostMediaService:
                 media_type="video",
                 media_url=video_url,
                 gemini_file_uri=gemini_uri,
-                local_file_path=local_path,
+                storage_path=storage_path,
+                storage_type=storage_type,
             )
             media_entries.append(media_entry)
             gemini_uri_index += 1

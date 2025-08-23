@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
+from services.gcs_storage_service import GCSStorageService
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -27,10 +28,27 @@ class FileUploadService:
 
         # Configure Gemini API
         genai.configure(api_key=settings.gemini_api_key)
+        
+        # Initialize GCS storage service (required)
+        self.gcs_service = GCSStorageService()
+
+    def _get_storage_path(self, post_id: str, media_url: str, media_type: str) -> str:
+        """
+        Generate GCS storage path for media.
+
+        Args:
+            post_id: Facebook post ID
+            media_url: Original media URL
+            media_type: 'image' or 'video'
+
+        Returns:
+            GCS storage path
+        """
+        return self.gcs_service.get_media_path(post_id, media_url, media_type)
 
     def _get_local_file_path(self, post_id: str, media_url: str, media_type: str) -> Path:
         """
-        Generate local file path for media storage.
+        Generate local file path for media storage (fallback).
 
         Args:
             post_id: Facebook post ID
@@ -63,9 +81,40 @@ class FileUploadService:
         filename = f"{url_hash}_{unique_id}{extension}"
         return post_folder / filename
 
-    async def check_local_file_exists(self, post_id: str, media_url: str, db: AsyncSession) -> Optional[str]:
+    async def save_media(self, data: bytes, post_id: str, media_url: str, 
+                        media_type: str, content_type: str) -> str:
         """
-        Check if media file already exists locally.
+        Save media to GCS storage.
+        
+        Args:
+            data: Media file bytes
+            post_id: Facebook post ID
+            media_url: Original media URL
+            media_type: 'image' or 'video'
+            content_type: MIME type of the media
+            
+        Returns:
+            GCS URI
+        """
+        # Save to GCS (required)
+        gcs_path = self.gcs_service.get_media_path(post_id, media_url, media_type)
+        try:
+            gcs_uri = await self.gcs_service.upload_media(data, gcs_path, content_type)
+            logger.info("Saved media to GCS", 
+                       post_id=post_id, 
+                       gcs_path=gcs_path,
+                       size_bytes=len(data))
+            return gcs_uri
+        except Exception as e:
+            logger.error("Failed to save media to GCS", 
+                        post_id=post_id, 
+                        gcs_path=gcs_path,
+                        error=str(e))
+            raise RuntimeError(f"Failed to save media to GCS: {str(e)}") from e
+
+    async def check_media_exists(self, post_id: str, media_url: str, db: AsyncSession) -> Optional[str]:
+        """
+        Check if media file already exists in GCS storage.
 
         Args:
             post_id: Facebook post ID
@@ -73,46 +122,66 @@ class FileUploadService:
             db: Database session
 
         Returns:
-            Local file path if exists, None otherwise
+            GCS URI if exists, None otherwise
         """
         try:
             from models import PostMedia
 
-            # Check database for existing local file path
+            # Check database for existing storage path
             media_result = await db.execute(
-                select(PostMedia.local_file_path)
+                select(PostMedia.storage_path)
                 .where(PostMedia.post_id == post_id)
                 .where(PostMedia.media_url == media_url)
-                .where(PostMedia.local_file_path.isnot(None))
+                .where(PostMedia.storage_path.isnot(None))
             )
-            local_path = media_result.scalar_one_or_none()
+            storage_path = media_result.scalar_one_or_none()
 
-            if local_path and Path(local_path).exists():
-                logger.info(
-                    "Local file already exists, skipping download",
-                    post_id=post_id,
-                    media_url=media_url[:100] + "..." if len(media_url) > 100 else media_url,
-                    local_path=local_path,
-                )
-                return local_path
+            if storage_path:
+                # Check if it's a GCS URI
+                if storage_path.startswith("gs://"):
+                    gcs_path = self.gcs_service.gcs_uri_to_path(storage_path)
+                    if await self.gcs_service.media_exists(gcs_path):
+                        logger.info(
+                            "Media already exists in GCS, skipping download",
+                            post_id=post_id,
+                            media_url=media_url[:100] + "..." if len(media_url) > 100 else media_url,
+                            gcs_uri=storage_path,
+                        )
+                        return storage_path
+                    else:
+                        logger.warning("Media not found in GCS but exists in database",
+                                     post_id=post_id,
+                                     gcs_uri=storage_path)
+                
+                # Handle legacy local file paths (migration scenario)
+                else:
+                    logger.warning("Found legacy local file path in database - media will be re-uploaded to GCS",
+                                 post_id=post_id,
+                                 local_path=storage_path)
 
             return None
 
         except Exception as e:
             logger.error(
-                "Error checking for existing local file",
+                "Error checking for existing media file",
                 post_id=post_id,
                 media_url=media_url[:100] + "..." if len(media_url) > 100 else media_url,
                 error=str(e),
             )
             return None
 
-    async def _upload_to_gemini_from_file(self, file_path: str, mime_type: str, display_name: str) -> Optional[str]:
+    async def check_local_file_exists(self, post_id: str, media_url: str, db: AsyncSession) -> Optional[str]:
         """
-        Upload existing local file to Gemini File API.
+        Legacy method - use check_media_exists instead.
+        """
+        return await self.check_media_exists(post_id, media_url, db)
+
+    async def _upload_to_gemini_from_storage(self, storage_path: str, mime_type: str, display_name: str) -> Optional[str]:
+        """
+        Upload file from GCS storage to Gemini File API.
 
         Args:
-            file_path: Path to local file
+            storage_path: GCS URI
             mime_type: MIME type of the file
             display_name: Display name for the file
 
@@ -120,8 +189,46 @@ class FileUploadService:
             Gemini file URI or None if failed
         """
         try:
-            # Upload to Gemini File API
-            file = genai.upload_file(path=file_path, mime_type=mime_type, display_name=display_name)
+            # Handle GCS URIs
+            if storage_path.startswith("gs://"):
+                # Download from GCS to temporary file
+                import os
+                import tempfile
+                
+                gcs_path = self.gcs_service.gcs_uri_to_path(storage_path)
+                data = await self.gcs_service.download_media(gcs_path)
+                
+                # Get appropriate file extension
+                extension_map = {
+                    "image/jpeg": ".jpg",
+                    "image/png": ".png",
+                    "video/mp4": ".mp4",
+                    "video/webm": ".webm",
+                    "video/quicktime": ".mov",
+                    "video/x-msvideo": ".avi",
+                }
+                extension = extension_map.get(mime_type, ".tmp")
+                
+                with tempfile.NamedTemporaryFile(delete=False, suffix=extension) as temp_file:
+                    temp_file.write(data)
+                    temp_file_path = temp_file.name
+                
+                try:
+                    # Upload to Gemini File API
+                    file = genai.upload_file(path=temp_file_path, mime_type=mime_type, display_name=display_name)
+                finally:
+                    # Clean up temporary file
+                    os.unlink(temp_file_path)
+                    
+                logger.info("Uploaded from GCS to Gemini", gcs_path=gcs_path, file_name=file.name)
+                
+            else:
+                # Handle legacy local file paths during migration
+                logger.warning("Attempting to upload legacy local file to Gemini", 
+                             local_path=storage_path, 
+                             display_name=display_name)
+                file = genai.upload_file(path=storage_path, mime_type=mime_type, display_name=display_name)
+                logger.info("Uploaded from local file to Gemini", local_path=storage_path, file_name=file.name)
 
             # Wait for file to be processed
             import time
@@ -146,8 +253,14 @@ class FileUploadService:
             return None
 
         except Exception as e:
-            logger.error("Failed to upload local file to Gemini", file_path=file_path, error=str(e), exc_info=True)
+            logger.error("Failed to upload to Gemini from storage", storage_path=storage_path, error=str(e), exc_info=True)
             return None
+
+    async def _upload_to_gemini_from_file(self, file_path: str, mime_type: str, display_name: str) -> Optional[str]:
+        """
+        Legacy method - use _upload_to_gemini_from_storage instead.
+        """
+        return await self._upload_to_gemini_from_storage(file_path, mime_type, display_name)
 
     def check_post_media_directory_exists(self, post_id: str) -> bool:
         """
@@ -343,14 +456,14 @@ class FileUploadService:
                         file_uris.append(existing_uri)
                         continue
 
-                    # Then check for existing local file
-                    local_path = await self.check_local_file_exists(post_id, url, db)
-                    if local_path:
-                        # File exists locally, upload from local file
-                        file_uri = await self._upload_to_gemini_from_file(local_path, "image/jpeg", f"post_image_{i + 1}")
+                    # Then check for existing media file
+                    existing_storage_path = await self.check_media_exists(post_id, url, db)
+                    if existing_storage_path:
+                        # File exists in storage, upload from storage
+                        file_uri = await self._upload_to_gemini_from_storage(existing_storage_path, "image/jpeg", f"post_image_{i + 1}")
                         if file_uri:
                             file_uris.append(file_uri)
-                            logger.info("Successfully uploaded local image to Gemini", uri=file_uri, local_path=local_path)
+                            logger.info("Successfully uploaded existing image to Gemini", uri=file_uri, storage_path=existing_storage_path)
                         continue
 
                 logger.info(f"Processing image {i + 1}/{len(image_urls)}", url=url[:100] + "..." if len(url) > 100 else url)
@@ -367,16 +480,14 @@ class FileUploadService:
                     logger.warning("Failed to process image", url=url)
                     continue
 
-                # Save to local file if post_id is provided
-                local_file_path = None
+                # Save to storage if post_id is provided
+                storage_path = None
                 if post_id:
                     try:
-                        local_file_path = self._get_local_file_path(post_id, url, "image")
-                        with open(local_file_path, "wb") as f:
-                            f.write(processed_data)
-                        logger.info("Saved image locally", local_path=str(local_file_path))
+                        storage_path = await self.save_media(processed_data, post_id, url, "image", mime_type)
+                        logger.info("Saved image to storage", storage_path=storage_path)
                     except Exception as e:
-                        logger.warning("Failed to save image locally", error=str(e))
+                        logger.warning("Failed to save image to storage", error=str(e))
 
                 # Upload to Gemini
                 file_uri = await self._upload_to_gemini(processed_data, mime_type, f"post_image_{i + 1}")
@@ -417,15 +528,15 @@ class FileUploadService:
                         file_uris.append(existing_uri)
                         continue
 
-                    # Then check for existing local file
-                    local_path = await self.check_local_file_exists(post_id, url, db)
-                    if local_path:
-                        # File exists locally, upload from local file
+                    # Then check for existing media file
+                    existing_storage_path = await self.check_media_exists(post_id, url, db)
+                    if existing_storage_path:
+                        # File exists in storage, upload from storage
                         mime_type = self._get_video_mime_type("video/mp4")  # Default, will be corrected if needed
-                        file_uri = await self._upload_to_gemini_from_file(local_path, mime_type, f"post_video_{i + 1}")
+                        file_uri = await self._upload_to_gemini_from_storage(existing_storage_path, mime_type, f"post_video_{i + 1}")
                         if file_uri:
                             file_uris.append(file_uri)
-                            logger.info("Successfully uploaded local video to Gemini", uri=file_uri, local_path=local_path)
+                            logger.info("Successfully uploaded existing video to Gemini", uri=file_uri, storage_path=existing_storage_path)
                         continue
 
                 logger.info(f"Processing video {i + 1}/{len(video_urls)}", url=url[:100] + "..." if len(url) > 100 else url)
@@ -442,16 +553,14 @@ class FileUploadService:
                     logger.warning("Unsupported video format", url=url, content_type=content_type)
                     continue
 
-                # Save to local file if post_id is provided
-                local_file_path = None
+                # Save to storage if post_id is provided
+                storage_path = None
                 if post_id:
                     try:
-                        local_file_path = self._get_local_file_path(post_id, url, "video")
-                        with open(local_file_path, "wb") as f:
-                            f.write(video_data)
-                        logger.info("Saved video locally", local_path=str(local_file_path))
+                        storage_path = await self.save_media(video_data, post_id, url, "video", mime_type)
+                        logger.info("Saved video to storage", storage_path=storage_path)
                     except Exception as e:
-                        logger.warning("Failed to save video locally", error=str(e))
+                        logger.warning("Failed to save video to storage", error=str(e))
 
                 # Upload to Gemini
                 file_uri = await self._upload_video_to_gemini(video_data, mime_type, f"post_video_{i + 1}")
@@ -496,64 +605,66 @@ class FileUploadService:
         # Download images first
         for i, url in enumerate(image_urls):
             try:
-                # Check if already exists locally
+                # Check if already exists in storage
                 if post_id and db:
-                    local_path = await self.check_local_file_exists(post_id, url, db)
-                    if local_path:
-                        downloaded_files.append({"type": "image", "url": url, "local_path": local_path, "index": i})
+                    storage_path = await self.check_media_exists(post_id, url, db)
+                    if storage_path:
+                        downloaded_files.append({"type": "image", "url": url, "storage_path": storage_path, "index": i})
                         continue
 
-                # Download and save locally
+                # Download and save to storage
                 image_data, content_type = await self._download_image(url)
                 if image_data:
                     processed_data, mime_type = await self._process_image(image_data, content_type)
                     if processed_data and post_id:
-                        local_file_path = self._get_local_file_path(post_id, url, "image")
-                        with open(local_file_path, "wb") as f:
-                            f.write(processed_data)
-                        downloaded_files.append(
-                            {
-                                "type": "image",
-                                "url": url,
-                                "local_path": str(local_file_path),
-                                "index": i,
-                                "data": processed_data,
-                                "mime_type": mime_type,
-                            }
-                        )
-                        logger.info("Downloaded image", url=url[:50], local_path=str(local_file_path))
+                        try:
+                            storage_path = await self.save_media(processed_data, post_id, url, "image", mime_type)
+                            downloaded_files.append(
+                                {
+                                    "type": "image",
+                                    "url": url,
+                                    "storage_path": storage_path,
+                                    "index": i,
+                                    "data": processed_data,
+                                    "mime_type": mime_type,
+                                }
+                            )
+                            logger.info("Downloaded image", url=url[:50], storage_path=storage_path)
+                        except Exception as e:
+                            logger.error("Failed to save downloaded image", url=url, error=str(e))
             except Exception as e:
                 logger.error("Failed to download image", url=url, error=str(e))
 
         # Download videos
         for i, url in enumerate(video_urls):
             try:
-                # Check if already exists locally
+                # Check if already exists in storage
                 if post_id and db:
-                    local_path = await self.check_local_file_exists(post_id, url, db)
-                    if local_path:
-                        downloaded_files.append({"type": "video", "url": url, "local_path": local_path, "index": i})
+                    storage_path = await self.check_media_exists(post_id, url, db)
+                    if storage_path:
+                        downloaded_files.append({"type": "video", "url": url, "storage_path": storage_path, "index": i})
                         continue
 
-                # Download and save locally
+                # Download and save to storage
                 video_data, content_type = await self._download_video(url)
                 if video_data:
                     mime_type = self._get_video_mime_type(content_type)
                     if mime_type and post_id:
-                        local_file_path = self._get_local_file_path(post_id, url, "video")
-                        with open(local_file_path, "wb") as f:
-                            f.write(video_data)
-                        downloaded_files.append(
-                            {
-                                "type": "video",
-                                "url": url,
-                                "local_path": str(local_file_path),
-                                "index": i,
-                                "data": video_data,
-                                "mime_type": mime_type,
-                            }
-                        )
-                        logger.info("Downloaded video", url=url[:50], local_path=str(local_file_path))
+                        try:
+                            storage_path = await self.save_media(video_data, post_id, url, "video", mime_type)
+                            downloaded_files.append(
+                                {
+                                    "type": "video",
+                                    "url": url,
+                                    "storage_path": storage_path,
+                                    "index": i,
+                                    "data": video_data,
+                                    "mime_type": mime_type,
+                                }
+                            )
+                            logger.info("Downloaded video", url=url[:50], storage_path=storage_path)
+                        except Exception as e:
+                            logger.error("Failed to save downloaded video", url=url, error=str(e))
             except Exception as e:
                 logger.error("Failed to download video", url=url, error=str(e))
 
@@ -577,19 +688,19 @@ class FileUploadService:
                         file_uris.append(existing_uri)
                         continue
 
-                # Upload to Gemini from local file
+                # Upload to Gemini from storage
                 if file_info["type"] == "image":
-                    file_uri = await self._upload_to_gemini_from_file(
-                        file_info["local_path"], file_info.get("mime_type", "image/jpeg"), f"post_image_{file_info['index'] + 1}"
+                    file_uri = await self._upload_to_gemini_from_storage(
+                        file_info["storage_path"], file_info.get("mime_type", "image/jpeg"), f"post_image_{file_info['index'] + 1}"
                     )
                 else:  # video
-                    file_uri = await self._upload_to_gemini_from_file(
-                        file_info["local_path"], file_info.get("mime_type", "video/mp4"), f"post_video_{file_info['index'] + 1}"
+                    file_uri = await self._upload_to_gemini_from_storage(
+                        file_info["storage_path"], file_info.get("mime_type", "video/mp4"), f"post_video_{file_info['index'] + 1}"
                     )
 
                 if file_uri:
                     file_uris.append(file_uri)
-                    logger.info("Uploaded to Gemini", file_type=file_info["type"], local_path=file_info["local_path"], gemini_uri=file_uri)
+                    logger.info("Uploaded to Gemini", file_type=file_info["type"], storage_path=file_info["storage_path"], gemini_uri=file_uri)
 
             except Exception as e:
                 logger.error("Failed to upload file to Gemini", file_info=file_info["url"], error=str(e))
