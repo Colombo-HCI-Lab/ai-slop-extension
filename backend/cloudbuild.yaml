@@ -1,14 +1,14 @@
 steps:
   # Build backend Docker image
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', 'gcr.io/$PROJECT_ID/slowfast-detection-backend:$COMMIT_SHA', '.']
+    args: [ 'build', '-t', 'gcr.io/$PROJECT_ID/slowfast-detection-backend:$COMMIT_SHA', '.' ]
     id: 'build-backend'
 
   # Push backend image to Container Registry
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'gcr.io/$PROJECT_ID/slowfast-detection-backend:$COMMIT_SHA']
+    args: [ 'push', 'gcr.io/$PROJECT_ID/slowfast-detection-backend:$COMMIT_SHA' ]
     id: 'push-backend'
-    waitFor: ['build-backend']
+    waitFor: [ 'build-backend' ]
 
   # Deploy backend to Cloud Run
   - name: 'gcr.io/cloud-builders/gcloud'
@@ -38,7 +38,7 @@ steps:
       - '--timeout'
       - '$_TIMEOUT'
     id: 'deploy-backend'
-    waitFor: ['push-backend']
+    waitFor: [ 'push-backend' ]
 
 # Set timeout for the entire build
 timeout: 3600s

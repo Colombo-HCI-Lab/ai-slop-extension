@@ -1,0 +1,359 @@
+"""
+High-level image detection service that orchestrates image processing and model inference.
+"""
+
+import time
+from pathlib import Path
+from typing import Dict, List, Union, Optional, Tuple
+from uuid import UUID, uuid4
+
+from core.config import settings
+from schemas.image_detection import ImageDetectionResult, ImageInfo, ImageDetectionResponse
+from utils.logging import get_logger
+
+logger = get_logger(__name__)
+
+
+class ImageDetectionService:
+    """High-level service for image AI detection."""
+
+    def __init__(self, model_name: str = None, device: str = None):
+        """
+        Initialize image detection service.
+
+        Args:
+            model_name: Name of the model to use
+            device: Device for inference
+        """
+        self.model_name = model_name or settings.default_image_model
+        self.device = device or settings.device
+        self.detector = None
+        self.actual_model = None
+
+        logger.info("ImageDetectionService initialized", model=self.model_name, device=self.device)
+
+    def _get_detector(self, model_name: str = "auto") -> Tuple[object, str]:
+        """Get the appropriate image detector based on model name."""
+        try:
+            if model_name == "auto" or model_name == "clipbased":
+                # Try ClipBased first
+                from clipbased_detection import ClipBasedImageDetector
+
+                return ClipBasedImageDetector(), "clipbased"
+            elif model_name == "ssp":
+                # Try SSP detector
+                try:
+                    from slowfast_detection.image_detection import SSPImageDetector
+
+                    return SSPImageDetector(), "ssp"
+                except ImportError:
+                    logger.warning(
+                        "SSP detector not available, falling back to ClipBased", requested_model=model_name, fallback_model="clipbased"
+                    )
+                    from clipbased_detection import ClipBasedImageDetector
+
+                    return ClipBasedImageDetector(), "clipbased"
+            else:
+                raise ValueError(f"Unknown model: {model_name}")
+        except ImportError as e:
+            logger.error("Failed to import image detector", model_name=model_name, error=str(e), exc_info=True)
+            raise RuntimeError("Image detection models not available")
+
+    def process_image_file(
+        self, image_path: Union[str, Path], threshold: Optional[float] = None, job_id: UUID = None
+    ) -> ImageDetectionResponse:
+        """
+        Process an image file for AI generation detection.
+
+        Args:
+            image_path: Path to image file
+            threshold: Detection threshold
+            job_id: Optional job ID for tracking
+
+        Returns:
+            Detection response with results
+        """
+        start_time = time.time()
+        job_id = job_id or uuid4()
+        threshold = threshold if threshold is not None else 0.0
+
+        image_path = Path(image_path)
+
+        try:
+            logger.info("Starting image processing", image_path=str(image_path), job_id=str(job_id), model=self.model_name)
+
+            # Get detector
+            detector, actual_model = self._get_detector(self.model_name)
+            self.detector = detector
+            self.actual_model = actual_model
+
+            # Get image metadata
+            file_size = image_path.stat().st_size if image_path.exists() else None
+            image_info = ImageInfo(
+                filename=image_path.name,
+                file_size=file_size,
+                format=image_path.suffix.lower() if image_path.suffix else None,
+            )
+
+            # Run detection
+            if hasattr(detector, "detect_image"):
+                result = detector.detect_image(str(image_path), threshold=threshold)
+            else:
+                result = detector.detect(str(image_path))
+
+            # Update image info with detection metadata
+            if result.get("metadata", {}).get("image_size"):
+                image_info.size = str(result["metadata"]["image_size"])
+
+            processing_time = time.time() - start_time
+
+            # Create detection result
+            detection_result = ImageDetectionResult(
+                is_ai_generated=result.get("is_ai_generated", False),
+                confidence=result.get("confidence", 0.0),
+                model_used=actual_model,
+                processing_time=processing_time,
+                llr_score=result.get("llr_score"),
+                probability=result.get("probability"),
+                threshold=result.get("threshold"),
+                metadata=result.get("metadata", {}),
+            )
+
+            response = ImageDetectionResponse(
+                status="completed",
+                image_info=image_info,
+                detection_result=detection_result,
+                created_at=time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(start_time)),
+            )
+
+            logger.info(
+                "Image detection completed",
+                image_name=image_path.name,
+                processing_time=round(processing_time, 2),
+                is_ai_generated=result.get("is_ai_generated", False),
+                confidence=round(result.get("confidence", 0.0), 3),
+                job_id=str(job_id),
+            )
+
+            return response
+
+        except Exception as e:
+            processing_time = time.time() - start_time
+            logger.error(
+                "Image detection failed",
+                image_name=image_path.name,
+                error=str(e),
+                processing_time=round(processing_time, 2),
+                job_id=str(job_id),
+                exc_info=True,
+            )
+
+            # Create error response
+            image_info = ImageInfo(filename=image_path.name, file_size=image_path.stat().st_size if image_path.exists() else None)
+
+            return ImageDetectionResponse(
+                status="failed",
+                image_info=image_info,
+                detection_result=None,
+                created_at=time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(start_time)),
+            )
+
+    def process_image_from_url(self, image_url: str, threshold: Optional[float] = None, job_id: UUID = None) -> ImageDetectionResponse:
+        """
+        Process an image from URL for AI generation detection.
+
+        Args:
+            image_url: URL of the image to analyze
+            threshold: Detection threshold
+            job_id: Optional job ID for tracking
+
+        Returns:
+            Detection response with results
+        """
+        start_time = time.time()
+        job_id = job_id or uuid4()
+        threshold = threshold if threshold is not None else 0.0
+
+        try:
+            logger.info("Starting URL image processing", image_url=image_url, job_id=str(job_id), model=self.model_name)
+
+            # Get detector
+            detector, actual_model = self._get_detector(self.model_name)
+            self.detector = detector
+            self.actual_model = actual_model
+
+            # Run detection from URL
+            if hasattr(detector, "detect_from_url"):
+                result = detector.detect_from_url(image_url, threshold=threshold)
+            else:
+                # Fallback: download manually
+                from clipbased_detection.utils import download_image_from_url
+                import tempfile
+                import os
+
+                image = download_image_from_url(image_url)
+
+                # Save temporarily and detect
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_file:
+                    image.save(tmp_file, format="JPEG")
+                    tmp_file_path = tmp_file.name
+
+                try:
+                    if hasattr(detector, "detect_image"):
+                        result = detector.detect_image(tmp_file_path, threshold=threshold)
+                    else:
+                        result = detector.detect(tmp_file_path)
+                finally:
+                    os.unlink(tmp_file_path)
+
+            processing_time = time.time() - start_time
+
+            # Create image info
+            image_info = ImageInfo(
+                filename=image_url.split("/")[-1] or "url_image",
+                size=str(result.get("metadata", {}).get("image_size", "unknown")),
+                format="unknown",
+                file_size=None,
+            )
+
+            # Create detection result
+            detection_result = ImageDetectionResult(
+                is_ai_generated=result.get("is_ai_generated", False),
+                confidence=result.get("confidence", 0.0),
+                model_used=actual_model,
+                processing_time=processing_time,
+                llr_score=result.get("llr_score"),
+                probability=result.get("probability"),
+                threshold=result.get("threshold"),
+                metadata=result.get("metadata", {}),
+            )
+
+            response = ImageDetectionResponse(
+                status="completed",
+                image_info=image_info,
+                detection_result=detection_result,
+                created_at=time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(start_time)),
+            )
+
+            logger.info(
+                "URL image detection completed",
+                image_url=image_url,
+                processing_time=round(processing_time, 2),
+                is_ai_generated=result.get("is_ai_generated", False),
+                confidence=round(result.get("confidence", 0.0), 3),
+                job_id=str(job_id),
+            )
+
+            return response
+
+        except Exception as e:
+            processing_time = time.time() - start_time
+            logger.error(
+                "URL image detection failed",
+                image_url=image_url,
+                error=str(e),
+                processing_time=round(processing_time, 2),
+                job_id=str(job_id),
+                exc_info=True,
+            )
+
+            # Create error response
+            image_info = ImageInfo(filename=image_url.split("/")[-1] or "url_image", file_size=None)
+
+            return ImageDetectionResponse(
+                status="failed",
+                image_info=image_info,
+                detection_result=None,
+                created_at=time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(start_time)),
+            )
+
+    def get_supported_formats(self) -> List[str]:
+        """Get list of supported image formats."""
+        return [".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".webp"]
+
+    def get_available_models(self) -> List[str]:
+        """Get list of available image detection models."""
+        models = []
+
+        # Check ClipBased
+        try:
+            from clipbased_detection import ClipBasedImageDetector
+            from clipbased_detection.config import config
+
+            models.extend(config.get_available_models())
+        except ImportError:
+            logger.warning("ClipBased models not available")
+
+        # Check SSP
+        try:
+            from slowfast_detection.image_detection import SSPImageDetector
+
+            models.append("ssp")
+        except ImportError:
+            logger.warning("SSP model not available")
+
+        # Add auto option
+        if models:
+            models.insert(0, "auto")
+
+        return models
+
+    def get_model_info(self) -> Dict:
+        """Get information about the current model."""
+        model_info = {
+            "name": self.model_name,
+            "actual_model": getattr(self, "actual_model", None),
+            "supported_formats": self.get_supported_formats(),
+            "max_file_size": settings.max_file_size,
+            "available_models": self.get_available_models(),
+        }
+
+        if hasattr(self.detector, "get_model_info"):
+            model_specific_info = self.detector.get_model_info()
+            model_info.update(model_specific_info)
+
+        return model_info
+
+    def validate_image_file(self, file_path: Union[str, Path]) -> bool:
+        """
+        Validate if an image file is supported.
+
+        Args:
+            file_path: Path to image file
+
+        Returns:
+            True if file is valid and supported
+        """
+        file_path = Path(file_path)
+
+        # Check if file exists
+        if not file_path.exists():
+            return False
+
+        # Check file extension
+        supported_formats = self.get_supported_formats()
+        if file_path.suffix.lower() not in supported_formats:
+            return False
+
+        # Check file size
+        if file_path.stat().st_size > settings.max_file_size:
+            return False
+
+        return True
+
+    def set_threshold(self, threshold: float):
+        """
+        Set AI detection threshold.
+
+        Args:
+            threshold: Threshold value for AI classification
+        """
+        if hasattr(self.detector, "set_threshold"):
+            self.detector.set_threshold(threshold)
+        logger.info("Detection threshold updated", threshold=threshold)
+
+    def cleanup(self):
+        """Clean up service resources."""
+        if hasattr(self.detector, "cleanup"):
+            self.detector.cleanup()
+        logger.info("ImageDetectionService cleaned up", model=self.model_name)

@@ -6,7 +6,7 @@ chat messages, conversation requests, and AI-powered responses about posts.
 """
 
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from pydantic import BaseModel, Field, validator
 

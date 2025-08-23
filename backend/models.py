@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, List, Optional
+from typing import Any, List, Optional
 
 from sqlalchemy import BigInteger, DateTime, Float, ForeignKey, Integer, JSON, String, Text, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -182,9 +182,8 @@ class PostMedia(Base):
     __tablename__ = "post_media"
 
     id: Mapped[str] = mapped_column(
-        String(36),
+        String(64),  # Increased length to accommodate Facebook IDs (fb_xxxxx format)
         primary_key=True,
-        default=lambda: str(uuid.uuid4()),
     )
 
     # Reference to the post table's post_id

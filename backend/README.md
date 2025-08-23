@@ -19,6 +19,7 @@ uv run python -m uvicorn main:app --reload --port 4000
 ## Environment
 
 Copy `.env` example and configure:
+
 ```bash
 DATABASE_URL=postgresql://postgres:password@localhost:5432/ai_slop_extension
 GEMINI_API_KEY=your_gemini_api_key

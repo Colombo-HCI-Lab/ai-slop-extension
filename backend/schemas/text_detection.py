@@ -6,6 +6,7 @@ request/response models for analyzing Facebook posts and other text content.
 """
 
 from typing import Optional
+
 from pydantic import BaseModel, Field
 
 

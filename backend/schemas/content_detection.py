@@ -5,7 +5,8 @@ This module contains schemas for multi-modal AI detection functionality includin
 request/response models for analyzing content that may contain text, images, and videos.
 """
 
-from typing import Optional, List
+from typing import List, Optional
+
 from pydantic import BaseModel, Field
 
 
@@ -17,7 +18,9 @@ class ContentDetectionRequest(BaseModel):
     author: Optional[str] = Field(None, description="Content author")
     metadata: Optional[dict] = Field(None, description="Additional metadata")
     image_urls: Optional[List[str]] = Field(default=[], description="Image URLs from the content")
-    video_urls: Optional[List[str]] = Field(default=[], description="Video URLs from the content")
+    video_urls: Optional[List[str]] = Field(default=[], description="Video URLs from the content (deprecated - use post_url)")
+    post_url: Optional[str] = Field(None, description="Facebook post URL for yt-dlp video extraction")
+    has_videos: Optional[bool] = Field(False, description="Whether the post contains videos")
 
 
 class ContentDetectionResponse(BaseModel):

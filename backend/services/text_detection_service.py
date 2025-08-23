@@ -1,8 +1,7 @@
 """Text content AI detection service."""
 
-import hashlib
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -265,22 +264,3 @@ class TextDetectionService:
                 "from_cache": from_cache,
             },
         )
-
-    async def get_cache_stats(self, db: AsyncSession) -> Dict[str, Any]:
-        """Get cache statistics."""
-        result = await db.execute(select(Post))
-        posts = result.scalars().all()
-
-        total_posts = len(posts)
-        ai_slop_count = sum(1 for p in posts if p.verdict == "ai_slop")
-        human_count = sum(1 for p in posts if p.verdict == "human_content")
-        uncertain_count = sum(1 for p in posts if p.verdict == "uncertain")
-
-        return {
-            "total_cached": total_posts,
-            "ai_slop": ai_slop_count,
-            "human_content": human_count,
-            "uncertain": uncertain_count,
-            "cache_hit_rate": "N/A",  # Would need to track this separately
-            "last_updated": datetime.utcnow().isoformat(),
-        }

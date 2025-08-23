@@ -9,7 +9,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer
 
 from core.config import settings
-from services.detection_service import DetectionService
+from services.video_detection_service import DetectionService
 
 # Security
 security = HTTPBearer(auto_error=False)

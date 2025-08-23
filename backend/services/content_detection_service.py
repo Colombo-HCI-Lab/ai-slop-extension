@@ -1,10 +1,8 @@
 """Content AI detection service for text, images, and videos."""
 
 import asyncio
-import tempfile
-import os
-from typing import List, Dict, Any, Optional
 from datetime import datetime
+from typing import List, Dict, Any, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -41,12 +39,10 @@ class ContentDetectionService:
         # Check if post has already been fully processed
         from sqlalchemy import select
         from models import Post
-        
-        result = await db.execute(
-            select(Post).where(Post.post_id == request.post_id)
-        )
+
+        result = await db.execute(select(Post).where(Post.post_id == request.post_id))
         existing_post = result.scalar_one_or_none()
-        
+
         # If post exists and has been processed (verdict != "pending"), return cached results
         if existing_post and existing_post.verdict != "pending":
             logger.info(
@@ -55,9 +51,10 @@ class ContentDetectionService:
                 verdict=existing_post.verdict,
                 confidence=existing_post.confidence,
             )
-            
+
             # Build cached response from database
             from datetime import datetime
+
             return ContentDetectionResponse(
                 post_id=request.post_id,
                 verdict=existing_post.verdict,
@@ -74,7 +71,7 @@ class ContentDetectionService:
                 debug_info={"from_cache": True},
                 timestamp=datetime.now().isoformat(),
             )
-        
+
         logger.info(
             "Starting multi-modal analysis",
             post_id=request.post_id,
@@ -118,12 +115,10 @@ class ContentDetectionService:
         """Get media information from database for the post."""
         from sqlalchemy import select
         from models import PostMedia
-        
-        result = await db.execute(
-            select(PostMedia).where(PostMedia.post_id == post_id)
-        )
+
+        result = await db.execute(select(PostMedia).where(PostMedia.post_id == post_id))
         media_records = result.scalars().all()
-        
+
         media_info = {}
         for media in media_records:
             # Map URL to media ID and local path
@@ -133,7 +128,7 @@ class ContentDetectionService:
                 "gemini_uri": media.gemini_file_uri,
                 "media_type": media.media_type,
             }
-        
+
         return media_info
 
     async def _analyze_text(self, request: ContentDetectionRequest, db: AsyncSession):
@@ -142,7 +137,9 @@ class ContentDetectionService:
         text_request = DetectRequest(post_id=request.post_id, content=request.content, author=request.author, metadata=request.metadata)
         return await self.text_service.detect(text_request, db)
 
-    async def _analyze_images(self, image_urls: List[str], post_id: str, media_info: Dict[str, Any]) -> tuple[List[Dict[str, Any]], Optional[float], Optional[float]]:
+    async def _analyze_images(
+        self, image_urls: List[str], post_id: str, media_info: Dict[str, Any]
+    ) -> tuple[List[Dict[str, Any]], Optional[float], Optional[float]]:
         """
         Analyze images using ClipBased AI detection on locally downloaded images.
 
@@ -182,10 +179,11 @@ class ContentDetectionService:
                 media_record = media_info.get(url, {})
                 media_id = media_record.get("media_id")
                 local_path = media_record.get("local_path")
-                
+
                 # Use local path from database if available
                 if local_path:
                     from pathlib import Path
+
                     image_file = Path(local_path)
                 else:
                     # Fallback to finding file by URL hash if not in database
@@ -286,7 +284,9 @@ class ContentDetectionService:
 
         return image_results, ai_probability, analysis_confidence
 
-    async def _analyze_videos(self, video_urls: List[str], post_id: str, media_info: Dict[str, Any]) -> tuple[List[Dict[str, Any]], Optional[float], Optional[float]]:
+    async def _analyze_videos(
+        self, video_urls: List[str], post_id: str, media_info: Dict[str, Any]
+    ) -> tuple[List[Dict[str, Any]], Optional[float], Optional[float]]:
         """
         Analyze videos using SlowFast AI detection on locally downloaded videos.
 
@@ -302,6 +302,7 @@ class ContentDetectionService:
         # Initialize SlowFast detector
         try:
             from slowfast_detection import SlowFastVideoDetector
+
             detector = SlowFastVideoDetector()
         except ImportError as e:
             logger.error("Failed to import SlowFast detector", error=str(e))
@@ -325,10 +326,11 @@ class ContentDetectionService:
                 media_record = media_info.get(url, {})
                 media_id = media_record.get("media_id")
                 local_path = media_record.get("local_path")
-                
+
                 # Use local path from database if available
                 if local_path:
                     from pathlib import Path
+
                     video_file = Path(local_path)
                 else:
                     # Fallback to finding file by URL hash if not in database
@@ -345,7 +347,7 @@ class ContentDetectionService:
                     video_file = None
                     if post_media_dir.exists():
                         for video_path in post_media_dir.glob(f"*{url_hash}*"):
-                            if video_path.is_file() and video_path.suffix.lower() in ['.mp4', '.avi', '.mov', '.webm']:
+                            if video_path.is_file() and video_path.suffix.lower() in [".mp4", ".avi", ".mov", ".webm"]:
                                 video_file = video_path
                                 break
 
@@ -370,7 +372,7 @@ class ContentDetectionService:
                 # Convert SlowFast result format to our expected format
                 is_ai_generated = detection_result.get("is_ai_generated", False)
                 confidence = detection_result.get("confidence", 0.0)
-                
+
                 # Convert to probability (0.0 = human, 1.0 = AI)
                 ai_probability = detection_result.get("ai_probability", 0.5)
 
@@ -434,7 +436,7 @@ class ContentDetectionService:
         db: AsyncSession,
     ) -> None:
         """Update the post in database with image and video analysis results."""
-        from sqlalchemy import select, update
+        from sqlalchemy import select
         from models import Post
 
         # Find the post that was created by text analysis

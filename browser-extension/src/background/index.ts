@@ -84,7 +84,9 @@ class BackgroundService {
           message.content,
           message.postId,
           message.imageUrls,
-          message.videoUrls
+          message.videoUrls,
+          message.postUrl,
+          message.hasVideos
         )
           .then(sendResponse)
           .catch(error => {
@@ -138,13 +140,16 @@ class BackgroundService {
     content: string,
     postId: string,
     imageUrls?: string[],
-    videoUrls?: string[]
+    videoUrls?: string[],
+    postUrl?: string,
+    hasVideos?: boolean
   ): Promise<AiSlopResponse> {
     console.log(`[Background] 🔍 Analyzing content for post ${postId}:`, {
       contentLength: content.length,
       contentPreview: content.substring(0, 100) + '...',
       imageCount: imageUrls?.length || 0,
-      videoCount: videoUrls?.length || 0,
+      hasVideos: hasVideos || false,
+      postUrl: postUrl?.substring(0, 100),
       endpoint: this.PROCESS_ENDPOINT,
     });
 
@@ -154,7 +159,9 @@ class BackgroundService {
         post_id: postId, // Backend expects post_id not postId
         author: null, // Default to null for now - could be extracted in future
         image_urls: imageUrls || [],
-        video_urls: videoUrls || [],
+        video_urls: videoUrls || [], // Keep empty, videos handled by post_url
+        post_url: postUrl,
+        has_videos: hasVideos || false,
       };
 
       console.log('[Background] 📤 Sending request:', requestBody);

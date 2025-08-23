@@ -202,6 +202,183 @@ class VideoProcessor:
 
         return {"total_files": total_files, "total_size": total_size, "upload_dir": str(self.upload_dir)}
 
+    async def save_uploaded_file_to_post(self, upload_file: UploadFile, post_id: str) -> Path:
+        """
+        Save uploaded file to post media directory structure.
+
+        Args:
+            upload_file: FastAPI UploadFile object
+            post_id: Facebook post ID for directory structure
+
+        Returns:
+            Path to saved file
+
+        Raises:
+            HTTPException: If file validation fails
+        """
+        # Validate file
+        await self._validate_upload_file(upload_file)
+
+        # Create post media directory
+        post_media_dir = settings.tmp_dir / "posts" / post_id / "media"
+        post_media_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create unique filename with timestamp
+        import time
+
+        file_extension = self._get_file_extension(upload_file.filename)
+        timestamp = int(time.time() * 1000)  # milliseconds
+        filename = f"video_{timestamp}{file_extension}"
+        file_path = post_media_dir / filename
+
+        try:
+            # Save file
+            async with aiofiles.open(file_path, "wb") as f:
+                content = await upload_file.read()
+                await f.write(content)
+
+            logger.info(
+                "File uploaded to post directory",
+                filename=upload_file.filename,
+                post_id=post_id,
+                file_path=str(file_path),
+                size=len(content),
+            )
+            return file_path
+
+        except Exception as e:
+            # Clean up on error
+            if file_path.exists():
+                file_path.unlink()
+            logger.error(
+                "Failed to save uploaded file to post directory",
+                filename=upload_file.filename,
+                post_id=post_id,
+                error=str(e),
+                exc_info=True,
+            )
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to save uploaded file")
+
+    async def download_video_from_url_to_post(self, video_url: str, post_id: str) -> Path:
+        """
+        Download video from URL to post media directory structure.
+
+        Args:
+            video_url: URL of the video to download
+            post_id: Facebook post ID for directory structure
+
+        Returns:
+            Path to downloaded file
+
+        Raises:
+            HTTPException: If download fails or validation fails
+        """
+        # Validate URL
+        parsed_url = urlparse(video_url)
+        if not all([parsed_url.scheme, parsed_url.netloc]):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid URL format")
+
+        if parsed_url.scheme not in ["http", "https"]:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only HTTP/HTTPS URLs are supported")
+
+        # Create post media directory
+        post_media_dir = settings.tmp_dir / "posts" / post_id / "media"
+        post_media_dir.mkdir(parents=True, exist_ok=True)
+
+        # Extract filename from URL or create a default one
+        url_path = Path(parsed_url.path)
+        if url_path.suffix.lower() in settings.allowed_extensions:
+            file_extension = url_path.suffix.lower()
+        else:
+            file_extension = ".mp4"  # Default extension
+
+        # Create unique filename with timestamp
+        import time
+
+        timestamp = int(time.time() * 1000)  # milliseconds
+        filename = f"video_{timestamp}{file_extension}"
+        file_path = post_media_dir / filename
+
+        try:
+            # Download file
+            async with aiohttp.ClientSession() as session:
+                async with session.get(video_url) as response:
+                    # Check response status
+                    if response.status != 200:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to download video: HTTP {response.status}"
+                        )
+
+                    # Check content type
+                    content_type = response.headers.get("content-type", "").lower()
+                    if content_type and not any(mime in content_type for mime in settings.allowed_video_types):
+                        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid video content type: {content_type}")
+
+                    # Check content length if available
+                    content_length = response.headers.get("content-length")
+                    if content_length and int(content_length) > settings.max_file_size:
+                        raise HTTPException(
+                            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                            detail=f"File too large. Maximum size: {settings.max_file_size // (1024 * 1024)}MB",
+                        )
+
+                    # Download and save file
+                    total_size = 0
+                    async with aiofiles.open(file_path, "wb") as f:
+                        async for chunk in response.content.iter_chunked(8192):
+                            total_size += len(chunk)
+
+                            # Check size during download
+                            if total_size > settings.max_file_size:
+                                raise HTTPException(
+                                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                                    detail=f"File too large. Maximum size: {settings.max_file_size // (1024 * 1024)}MB",
+                                )
+
+                            await f.write(chunk)
+
+            # Validate downloaded file
+            if not self.validate_mime_type(file_path):
+                self.cleanup_file(file_path)
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid video file format")
+
+            logger.info(
+                "Video downloaded from URL to post directory",
+                video_url=video_url,
+                post_id=post_id,
+                file_path=str(file_path),
+                size_bytes=total_size,
+                size_mb=round(total_size / (1024 * 1024), 2),
+            )
+            return file_path
+
+        except aiohttp.ClientError as e:
+            # Clean up on network error
+            if file_path.exists():
+                file_path.unlink()
+            logger.error(
+                "Failed to download video from URL to post directory",
+                video_url=video_url,
+                post_id=post_id,
+                error=str(e),
+                error_type=type(e).__name__,
+                exc_info=True,
+            )
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to download video from URL")
+        except Exception as e:
+            # Clean up on any other error
+            if file_path.exists():
+                file_path.unlink()
+            logger.error(
+                "Failed to download video from URL to post directory",
+                video_url=video_url,
+                post_id=post_id,
+                error=str(e),
+                error_type=type(e).__name__,
+                exc_info=True,
+            )
+            raise
+
     async def download_video_from_url(self, video_url: str) -> Path:
         """
         Download video from URL to temporary location.

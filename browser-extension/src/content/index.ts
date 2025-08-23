@@ -196,6 +196,9 @@ export class FacebookPostObserver {
   /** Bound scroll handler for proper event cleanup */
   private readonly boundHandleScroll: () => void;
 
+  /** Video processor for Facebook videos (disabled - using yt-dlp) */
+  // private videoProcessor: FacebookVideoProcessor;
+
   constructor() {
     console.group('[AI-Slop] 🚀 Initializing Facebook Post Observer');
     console.log('📅 Timestamp:', new Date().toISOString());
@@ -205,6 +208,7 @@ export class FacebookPostObserver {
     this.processedPosts = new Set();
     this.boundHandleScroll = this.handleScroll.bind(this);
     this.observer = new MutationObserver(this.handleMutations.bind(this));
+    // this.videoProcessor = new FacebookVideoProcessor(); // Disabled - using yt-dlp
 
     console.log('⚙️ Observer setup complete');
     console.groupEnd();
@@ -219,6 +223,11 @@ export class FacebookPostObserver {
   public cleanup(): void {
     this.observer.disconnect();
     this.processedPosts.clear();
+
+    // Clean up video processor (disabled)
+    // if (this.videoProcessor) {
+    //   this.videoProcessor.cleanup();
+    // }
 
     // Remove scroll event listener
     window.removeEventListener('scroll', this.boundHandleScroll);
@@ -493,6 +502,16 @@ export class FacebookPostObserver {
       // Extract media URLs (images and videos)
       const mediaUrls = this.extractMediaUrls(postElement);
 
+      // Process videos if any are found (using yt-dlp via backend)
+      const videoResults: unknown[] = [];
+      if (mediaUrls.hasVideos && mediaUrls.postUrl) {
+        console.log(
+          `[AI-Slop] Post ${postId} contains videos, will send post URL to backend for yt-dlp processing`
+        );
+        // Note: Video processing now happens in backend via yt-dlp
+        // The post URL will be sent with the detection request
+      }
+
       if (!content || content.trim().length < 10) {
         console.log(`[AI-Slop] ⏭️ Post ${postId} has insufficient content, skipping analysis`);
         return;
@@ -521,7 +540,10 @@ export class FacebookPostObserver {
             content: content,
             postId: postId,
             imageUrls: mediaUrls.images,
-            videoUrls: mediaUrls.videos,
+            videoUrls: mediaUrls.videos, // Keep empty for compatibility
+            postUrl: mediaUrls.postUrl,
+            hasVideos: mediaUrls.hasVideos,
+            videoResults: videoResults,
           },
           response => {
             if (chrome.runtime.lastError) {
@@ -616,7 +638,10 @@ export class FacebookPostObserver {
    * @param retryCount - Number of retries attempted (default: 0)
    * @returns Facebook post ID (numeric string) or null if not found
    */
-  private async extractPostIdFromUrls(postElement: HTMLElement, retryCount: number = 0): Promise<string | null> {
+  private async extractPostIdFromUrls(
+    postElement: HTMLElement,
+    retryCount: number = 0
+  ): Promise<string | null> {
     const maxRetries = 3;
     const retryDelay = 200; // 200ms between retries
 
@@ -630,11 +655,11 @@ export class FacebookPostObserver {
       'time a',
       '[aria-label*="ago"] a',
       '[aria-label*="hours"] a',
-      '[aria-label*="minutes"] a'
+      '[aria-label*="minutes"] a',
     ];
 
     const allLinks = new Set<HTMLAnchorElement>();
-    
+
     // Collect all potential links
     linkSelectors.forEach(selector => {
       const links = postElement.querySelectorAll(selector);
@@ -651,7 +676,7 @@ export class FacebookPostObserver {
       if (!href) continue;
 
       // Try different Facebook URL patterns:
-      
+
       // Pattern 1: /posts/{numeric_id}
       let match = href.match(/\/posts\/(\d+)/);
       if (match && match[1]) {
@@ -695,12 +720,16 @@ export class FacebookPostObserver {
 
     // If no URLs found and we haven't exceeded retry limit, wait and try again
     if (retryCount < maxRetries) {
-      console.log(`[AI-Slop] 🔄 No post URLs found (attempt ${retryCount + 1}/${maxRetries + 1}), retrying in ${retryDelay}ms...`);
+      console.log(
+        `[AI-Slop] 🔄 No post URLs found (attempt ${retryCount + 1}/${maxRetries + 1}), retrying in ${retryDelay}ms...`
+      );
       await new Promise(resolve => setTimeout(resolve, retryDelay));
       return this.extractPostIdFromUrls(postElement, retryCount + 1);
     }
 
-    console.log(`[AI-Slop] 🔍 No post URLs found after ${maxRetries + 1} attempts, checked ${allLinks.size} links`);
+    console.log(
+      `[AI-Slop] 🔍 No post URLs found after ${maxRetries + 1} attempts, checked ${allLinks.size} links`
+    );
     return null;
   }
 
@@ -809,9 +838,13 @@ export class FacebookPostObserver {
    * @param postElement - The post's HTML element
    * @returns Object containing arrays of image and video URLs
    */
-  private extractMediaUrls(postElement: HTMLElement): { images: string[]; videos: string[] } {
+  private extractMediaUrls(postElement: HTMLElement): {
+    images: string[];
+    videos: string[];
+    postUrl?: string;
+    hasVideos: boolean;
+  } {
     const images: string[] = [];
-    const videos: string[] = [];
 
     // Extract image URLs
     // Facebook images are typically in img tags with data-src or src attributes
@@ -842,59 +875,60 @@ export class FacebookPostObserver {
       }
     });
 
-    // Extract video URLs
-    // Facebook videos can be in video tags or embedded in iframes
+    // Check if post contains videos (don't extract blob URLs anymore)
     const videoElements = postElement.querySelectorAll('video');
-    videoElements.forEach(video => {
-      const src = video.getAttribute('src') || video.querySelector('source')?.getAttribute('src');
-      if (src) {
-        // Don't clean Facebook URLs - preserve all authentication parameters
-        if (!videos.includes(src)) {
-          videos.push(src);
+    const hasVideos = videoElements.length > 0;
+    let postUrl: string | undefined;
+
+    // If post has videos, extract post URL for yt-dlp downloading
+    if (hasVideos) {
+      // Try to find post permalink
+      const postLinks = postElement.querySelectorAll(
+        'a[href*="/reel/"], a[href*="/watch/"], a[href*="/videos/"], a[href*="/posts/"], a[role="link"][href*="facebook.com"]'
+      );
+
+      for (const link of postLinks) {
+        const href = (link as HTMLAnchorElement).href;
+        // Look for timestamps or "Full Story" links which are usually permalinks
+        const linkText = link.textContent?.toLowerCase() || '';
+        if (
+          linkText.includes('full story') ||
+          linkText.includes('min') ||
+          linkText.includes('hr') ||
+          linkText.includes('yesterday') ||
+          linkText.includes('ago')
+        ) {
+          postUrl = href;
+          break;
         }
       }
-    });
 
-    // Check for video links in data attributes
-    const videoLinks = postElement.querySelectorAll('[data-video-url], [data-video-src]');
-    videoLinks.forEach(element => {
-      const videoUrl =
-        element.getAttribute('data-video-url') || element.getAttribute('data-video-src');
-      if (videoUrl) {
-        // Don't clean Facebook URLs - preserve all authentication parameters
-        if (!videos.includes(videoUrl)) {
-          videos.push(videoUrl);
-        }
+      // Fallback: try to construct URL from current page if we're on a post page
+      if (
+        !postUrl &&
+        (window.location.href.includes('/posts/') || window.location.href.includes('/videos/'))
+      ) {
+        postUrl = window.location.href;
       }
-    });
 
-    // Look for Facebook video player divs
-    const fbVideoPlayers = postElement.querySelectorAll(
-      '[data-testid*="video"], [aria-label*="video"], [role="img"][aria-label*="Video"]'
-    );
-    fbVideoPlayers.forEach(player => {
-      // Try to find associated video URL
-      const links = player.querySelectorAll('a[href*="/videos/"], a[href*="/watch/"]');
-      links.forEach(link => {
-        const href = link.getAttribute('href');
-        if (href) {
-          // Don't clean Facebook URLs - preserve all authentication parameters
-          if (!videos.includes(href)) {
-            videos.push(href);
-          }
-        }
-      });
-    });
+      // Last resort: look for any link that might be the post
+      if (!postUrl && postLinks.length > 0) {
+        postUrl = (postLinks[0] as HTMLAnchorElement).href;
+      }
 
-    console.log('[AI-Slop] 📸 Extracted media (preserving original URLs):', {
+      console.log('[AI-Slop] 🎥 Found video in post, extracted post URL:', postUrl);
+    }
+
+    // Note: We no longer extract video blob URLs as they can't be downloaded by backend
+    // Instead, we send the post URL for yt-dlp to handle
+
+    console.log('[AI-Slop] 📸 Extracted media info:', {
       images: images.length,
-      videos: videos.length,
-      'auth_preserved': 'All original authentication parameters intact',
-      imageUrls: images,
-      videoUrls: videos,
+      hasVideos,
+      postUrl: postUrl?.substring(0, 100),
     });
 
-    return { images, videos };
+    return { images, videos: [], postUrl, hasVideos };
   }
 
   /**

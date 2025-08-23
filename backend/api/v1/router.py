@@ -4,7 +4,7 @@ API v1 router configuration.
 
 from fastapi import APIRouter
 
-from api.v1.endpoints import video_detection, health, image_detection, chat, posts
+from api.v1.endpoints import chat, health, image_detection, posts, video_detection
 
 api_router = APIRouter()
 

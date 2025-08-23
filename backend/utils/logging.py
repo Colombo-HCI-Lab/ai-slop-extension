@@ -5,7 +5,7 @@ Structured logging configuration using structlog.
 import logging
 import sys
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 import structlog
 from structlog.typing import EventDict

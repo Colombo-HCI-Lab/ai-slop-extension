@@ -4,14 +4,33 @@ Video detection endpoints.
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from pydantic import BaseModel, Field, validator
 
 from core.config import settings
 from core.dependencies import get_detection_service
-from schemas.video_detection import DetectionResponse, URLDetectionRequest
-from services.detection_service import DetectionService
+from schemas.video_detection import DetectionResponse
+from services.video_detection_service import DetectionService
 from services.video_processor import VideoProcessor
 from utils.logging import get_logger
+
+
+class URLDetectionRequest(BaseModel):
+    """Request for detecting video from URL."""
+
+    video_url: str = Field(..., description="URL of the video to analyze")
+    model_name: Optional[str] = Field("slowfast_r50", description="Model to use for detection (default: slowfast_r50)")
+    threshold: Optional[float] = Field(0.5, ge=0.0, le=1.0, description="Detection threshold (0.0-1.0)")
+    top_k: int = Field(5, ge=1, le=10, description="Number of top predictions to return")
+    post_id: Optional[str] = Field(None, description="Facebook post ID (optional, for organized storage)")
+
+    @validator("video_url")
+    def validate_url(cls, v):
+        """Validate that URL starts with http or https."""
+        if not v.startswith(("http://", "https://")):
+            raise ValueError("URL must start with http:// or https://")
+        return v
+
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -50,6 +69,7 @@ async def detect_video_upload(
         description=f"Model to use for detection (default: slowfast_r50, options: {', '.join(settings.available_models)})",
     ),
     threshold: float = Form(0.5, description="Detection threshold (0.0-1.0)"),
+    post_id: Optional[str] = Form(None, description="Facebook post ID (optional, for organized storage)"),
     service: DetectionService = Depends(get_detection_service),
 ):
     """
@@ -66,9 +86,12 @@ async def detect_video_upload(
 
     # Save uploaded file
     try:
-        file_path = await video_processor.save_uploaded_file(file)
+        if post_id:
+            file_path = await video_processor.save_uploaded_file_to_post(file, post_id)
+        else:
+            file_path = await video_processor.save_uploaded_file(file)
     except Exception as e:
-        logger.error("File upload failed", filename=file.filename, error=str(e), exc_info=True)
+        logger.error("File upload failed", filename=file.filename, post_id=post_id, error=str(e), exc_info=True)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     # Additional MIME type validation
@@ -89,8 +112,9 @@ async def detect_video_upload(
             service.set_threshold(threshold)
             result = service.process_video_file(file_path)
 
-        # Clean up file
-        video_processor.cleanup_file(file_path)
+        # Clean up file only if not saving to post directory
+        if not post_id:
+            video_processor.cleanup_file(file_path)
 
         return result
 
@@ -123,11 +147,14 @@ async def detect_video_from_url(
 
     # Download video from URL
     try:
-        file_path = await video_processor.download_video_from_url(request.video_url)
+        if request.post_id:
+            file_path = await video_processor.download_video_from_url_to_post(request.video_url, request.post_id)
+        else:
+            file_path = await video_processor.download_video_from_url(request.video_url)
     except HTTPException:
         raise  # Re-raise HTTP exceptions from download
     except Exception as e:
-        logger.error("Video download failed", video_url=request.video_url, error=str(e), exc_info=True)
+        logger.error("Video download failed", video_url=request.video_url, post_id=request.post_id, error=str(e), exc_info=True)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to download video from URL")
 
     try:
@@ -143,8 +170,9 @@ async def detect_video_from_url(
             service.set_threshold(threshold)
             result = service.process_video_file(file_path)
 
-        # Clean up downloaded file
-        video_processor.cleanup_file(file_path)
+        # Clean up downloaded file only if not saving to post directory
+        if not request.post_id:
+            video_processor.cleanup_file(file_path)
 
         return result
 

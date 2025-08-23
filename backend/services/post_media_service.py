@@ -1,7 +1,5 @@
 """Service for managing post media storage and Gemini uploads."""
 
-import uuid
-
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,6 +7,7 @@ from models import Post, PostMedia
 from schemas.content_detection import ContentDetectionRequest, ContentDetectionResponse
 from services.file_upload_service import FileUploadService
 from utils.logging import get_logger
+from utils.media_id_extractor import generate_composite_media_id
 
 logger = get_logger(__name__)
 
@@ -191,7 +190,7 @@ class PostMediaService:
 
         media_entries = []
         gemini_uri_index = 0
-        
+
         # Create lookup dictionary for local file paths
         local_file_lookup = {}
         for file_info in media_file_info:
@@ -201,8 +200,12 @@ class PostMediaService:
         for image_url in request.image_urls or []:
             gemini_uri = gemini_file_uris[gemini_uri_index] if gemini_uri_index < len(gemini_file_uris) else None
             local_path = local_file_lookup.get(image_url)
+
+            # Generate composite media ID using Facebook media ID if available
+            media_id = generate_composite_media_id(post_id, image_url, "image")
+
             media_entry = PostMedia(
-                id=str(uuid.uuid4()),
+                id=media_id,
                 post_id=post_id,
                 media_type="image",
                 media_url=image_url,
@@ -216,8 +219,12 @@ class PostMediaService:
         for video_url in request.video_urls or []:
             gemini_uri = gemini_file_uris[gemini_uri_index] if gemini_uri_index < len(gemini_file_uris) else None
             local_path = local_file_lookup.get(video_url)
+
+            # Generate composite media ID using Facebook media ID if available
+            media_id = generate_composite_media_id(post_id, video_url, "video")
+
             media_entry = PostMedia(
-                id=str(uuid.uuid4()),
+                id=media_id,
                 post_id=post_id,
                 media_type="video",
                 media_url=video_url,

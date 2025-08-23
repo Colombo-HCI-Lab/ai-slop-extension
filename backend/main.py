@@ -2,7 +2,6 @@
 FastAPI main application.
 """
 
-import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request, status

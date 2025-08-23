@@ -15,6 +15,10 @@ echo "🛑 Killing existing backend processes..."
 echo "🗄️ Resetting database schema..."
 ./scripts/reset-schema.sh
 
+# Clean up temporary directory
+echo "🧹 Cleaning up tmp directory..."
+rm -rf tmp
+
 # Start the backend server
 echo "🚀 Starting backend server..."
 ./scripts/start.sh

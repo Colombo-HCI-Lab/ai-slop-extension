@@ -211,26 +211,27 @@ class FileUploadService:
             from models import Post
 
             # Check if post exists AND has completed detection (verdict != "pending")
-            result = await db.execute(
-                select(Post.post_id, Post.verdict)
-                .where(Post.post_id == post_id)
-            )
+            result = await db.execute(select(Post.post_id, Post.verdict).where(Post.post_id == post_id))
             row = result.first()
-            
+
             # Only consider it "fully processed" if verdict is not "pending"
             if row and row.verdict != "pending":
-                logger.info("Post exists with completed detection - media already processed", 
-                           post_id=post_id, 
-                           verdict=row.verdict,
-                           status="fully_processed")
+                logger.info(
+                    "Post exists with completed detection - media already processed",
+                    post_id=post_id,
+                    verdict=row.verdict,
+                    status="fully_processed",
+                )
                 return True
             elif row:
-                logger.debug("Post exists but detection pending - needs media download", 
-                            post_id=post_id,
-                            verdict=row.verdict,
-                            status="pending_detection")
+                logger.debug(
+                    "Post exists but detection pending - needs media download",
+                    post_id=post_id,
+                    verdict=row.verdict,
+                    status="pending_detection",
+                )
                 return False
-            
+
             return False
 
         except Exception as e:
@@ -486,10 +487,7 @@ class FileUploadService:
             return [], []
 
         # Sequential processing: Download ALL files first, then upload ALL files
-        logger.info("Starting sequential media processing", 
-                   post_id=post_id, 
-                   images=len(image_urls), 
-                   videos=len(video_urls))
+        logger.info("Starting sequential media processing", post_id=post_id, images=len(image_urls), videos=len(video_urls))
 
         # Phase 1: Download all media files
         logger.info("Phase 1: Downloading all media files", post_id=post_id)
@@ -513,7 +511,16 @@ class FileUploadService:
                         local_file_path = self._get_local_file_path(post_id, url, "image")
                         with open(local_file_path, "wb") as f:
                             f.write(processed_data)
-                        downloaded_files.append({"type": "image", "url": url, "local_path": str(local_file_path), "index": i, "data": processed_data, "mime_type": mime_type})
+                        downloaded_files.append(
+                            {
+                                "type": "image",
+                                "url": url,
+                                "local_path": str(local_file_path),
+                                "index": i,
+                                "data": processed_data,
+                                "mime_type": mime_type,
+                            }
+                        )
                         logger.info("Downloaded image", url=url[:50], local_path=str(local_file_path))
             except Exception as e:
                 logger.error("Failed to download image", url=url, error=str(e))
@@ -536,15 +543,26 @@ class FileUploadService:
                         local_file_path = self._get_local_file_path(post_id, url, "video")
                         with open(local_file_path, "wb") as f:
                             f.write(video_data)
-                        downloaded_files.append({"type": "video", "url": url, "local_path": str(local_file_path), "index": i, "data": video_data, "mime_type": mime_type})
+                        downloaded_files.append(
+                            {
+                                "type": "video",
+                                "url": url,
+                                "local_path": str(local_file_path),
+                                "index": i,
+                                "data": video_data,
+                                "mime_type": mime_type,
+                            }
+                        )
                         logger.info("Downloaded video", url=url[:50], local_path=str(local_file_path))
             except Exception as e:
                 logger.error("Failed to download video", url=url, error=str(e))
 
-        logger.info("Phase 1 complete: Downloaded media files", 
-                   post_id=post_id, 
-                   downloaded=len(downloaded_files), 
-                   total=len(image_urls) + len(video_urls))
+        logger.info(
+            "Phase 1 complete: Downloaded media files",
+            post_id=post_id,
+            downloaded=len(downloaded_files),
+            total=len(image_urls) + len(video_urls),
+        )
 
         # Phase 2: Upload all downloaded files to Gemini
         logger.info("Phase 2: Uploading all files to Gemini", post_id=post_id)
@@ -562,36 +580,29 @@ class FileUploadService:
                 # Upload to Gemini from local file
                 if file_info["type"] == "image":
                     file_uri = await self._upload_to_gemini_from_file(
-                        file_info["local_path"], 
-                        file_info.get("mime_type", "image/jpeg"), 
-                        f"post_image_{file_info['index'] + 1}"
+                        file_info["local_path"], file_info.get("mime_type", "image/jpeg"), f"post_image_{file_info['index'] + 1}"
                     )
                 else:  # video
                     file_uri = await self._upload_to_gemini_from_file(
-                        file_info["local_path"], 
-                        file_info.get("mime_type", "video/mp4"), 
-                        f"post_video_{file_info['index'] + 1}"
+                        file_info["local_path"], file_info.get("mime_type", "video/mp4"), f"post_video_{file_info['index'] + 1}"
                     )
 
                 if file_uri:
                     file_uris.append(file_uri)
-                    logger.info("Uploaded to Gemini", 
-                               file_type=file_info["type"], 
-                               local_path=file_info["local_path"], 
-                               gemini_uri=file_uri)
+                    logger.info("Uploaded to Gemini", file_type=file_info["type"], local_path=file_info["local_path"], gemini_uri=file_uri)
 
             except Exception as e:
-                logger.error("Failed to upload file to Gemini", 
-                           file_info=file_info["url"], 
-                           error=str(e))
+                logger.error("Failed to upload file to Gemini", file_info=file_info["url"], error=str(e))
 
         total_media = len(image_urls) + len(video_urls)
-        logger.info("Sequential media processing complete", 
-                   post_id=post_id,
-                   downloaded=len(downloaded_files),
-                   uploaded=len(file_uris),
-                   total=total_media,
-                   success_rate=f"{len(file_uris)}/{total_media}")
+        logger.info(
+            "Sequential media processing complete",
+            post_id=post_id,
+            downloaded=len(downloaded_files),
+            uploaded=len(file_uris),
+            total=total_media,
+            success_rate=f"{len(file_uris)}/{total_media}",
+        )
 
         return file_uris, downloaded_files
 

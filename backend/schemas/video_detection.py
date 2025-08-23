@@ -6,6 +6,7 @@ video metadata, prediction results, and API request/response models.
 """
 
 from typing import List, Optional
+
 from pydantic import BaseModel, Field, validator
 
 
@@ -51,19 +52,3 @@ class DetectionResponse(BaseModel):
     video_info: VideoInfo = Field(..., description="Video metadata")
     detection_result: Optional[DetectionResult] = Field(None, description="Detection results")
     created_at: Optional[str] = Field(None, description="Processing timestamp")
-
-
-class URLDetectionRequest(BaseModel):
-    """Request for detecting video from URL."""
-
-    video_url: str = Field(..., description="URL of the video to analyze")
-    model_name: Optional[str] = Field("slowfast_r50", description="Model to use for detection (default: slowfast_r50)")
-    threshold: Optional[float] = Field(0.5, ge=0.0, le=1.0, description="Detection threshold (0.0-1.0)")
-    top_k: int = Field(5, ge=1, le=10, description="Number of top predictions to return")
-
-    @validator("video_url")
-    def validate_url(cls, v):
-        """Validate that URL starts with http or https."""
-        if not v.startswith(("http://", "https://")):
-            raise ValueError("URL must start with http:// or https://")
-        return v
