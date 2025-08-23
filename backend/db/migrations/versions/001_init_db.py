@@ -1,8 +1,8 @@
-"""Initialize database with simplified schema
+"""Initialize database
 
-Revision ID: 808dd3b24b74
+Revision ID: 001_init_db
 Revises:
-Create Date: 2025-08-21 11:25:59.284912
+Create Date: 2025-08-23 00:00:00.000000
 
 """
 
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "808dd3b24b74"
+revision: str = "001_init_db"
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -41,6 +41,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("post_id"),
     )
     op.create_index(op.f("ix_post_post_id"), "post", ["post_id"], unique=False)
+    
     op.create_table(
         "user_session",
         sa.Column("id", sa.String(length=36), nullable=False),
@@ -51,6 +52,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(op.f("ix_user_session_user_identifier"), "user_session", ["user_identifier"], unique=True)
+    
     op.create_table(
         "chat",
         sa.Column("id", sa.String(length=36), nullable=False),
@@ -67,9 +69,10 @@ def upgrade() -> None:
     )
     op.create_index(op.f("ix_chat_post_id"), "chat", ["post_id"], unique=False)
     op.create_index(op.f("ix_chat_user_session_id"), "chat", ["user_session_id"], unique=False)
+    
     op.create_table(
         "post_media",
-        sa.Column("id", sa.String(length=36), nullable=False),
+        sa.Column("id", sa.String(length=64), nullable=False),  # Combined: length=64 from second migration
         sa.Column("post_id", sa.String(length=255), nullable=False),
         sa.Column("media_type", sa.String(length=20), nullable=False),
         sa.Column("media_url", sa.Text(), nullable=False),
@@ -79,7 +82,8 @@ def upgrade() -> None:
         sa.Column("file_size", sa.BigInteger(), nullable=True),
         sa.Column("mime_type", sa.String(length=100), nullable=True),
         sa.Column("gemini_file_uri", sa.Text(), nullable=True),
-        sa.Column("local_file_path", sa.Text(), nullable=True),
+        sa.Column("storage_path", sa.Text(), nullable=True),  # Combined: renamed from local_file_path
+        sa.Column("storage_type", sa.String(length=10), nullable=True),  # Combined: added from GCS migration
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.ForeignKeyConstraint(["post_id"], ["post.post_id"], ondelete="CASCADE"),
