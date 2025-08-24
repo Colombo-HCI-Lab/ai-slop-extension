@@ -78,7 +78,6 @@ class PostMediaService:
             post_id=request.post_id,
             image_count=len(request.image_urls or []),
             video_count=len(request.video_urls or []),
-            is_update=bool(existing_post),
         )
 
         return post

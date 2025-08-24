@@ -219,8 +219,8 @@ class VideoProcessor:
         # Validate file
         await self._validate_upload_file(upload_file)
 
-        # Create post media directory
-        post_media_dir = settings.tmp_dir / "posts" / post_id / "media"
+        # Create post media directory: tmp/{post_id}/media
+        post_media_dir = settings.tmp_dir / post_id / "media"
         post_media_dir.mkdir(parents=True, exist_ok=True)
 
         # Create unique filename with timestamp
@@ -281,8 +281,8 @@ class VideoProcessor:
         if parsed_url.scheme not in ["http", "https"]:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only HTTP/HTTPS URLs are supported")
 
-        # Create post media directory
-        post_media_dir = settings.tmp_dir / "posts" / post_id / "media"
+        # Create post media directory: tmp/{post_id}/media
+        post_media_dir = settings.tmp_dir / post_id / "media"
         post_media_dir.mkdir(parents=True, exist_ok=True)
 
         # Extract filename from URL or create a default one

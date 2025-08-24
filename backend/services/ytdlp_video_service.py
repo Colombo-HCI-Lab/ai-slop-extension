@@ -21,7 +21,7 @@ class YtDlpVideoService:
 
     def __init__(self):
         """Initialize the yt-dlp video service."""
-        self.base_output_dir = settings.tmp_dir / "posts"
+        self.base_output_dir = settings.tmp_dir
         self.base_output_dir.mkdir(parents=True, exist_ok=True)
 
         # Base yt-dlp options

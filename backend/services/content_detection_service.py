@@ -244,8 +244,8 @@ class ContentDetectionService:
                         # Generate URL hash to match the downloaded file naming convention
                         url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
 
-                        # Construct the expected post media directory
-                        post_media_dir = settings.tmp_dir / "posts" / post_id / "media"
+                        # Construct the expected post media directory: tmp/{post_id}/media
+                        post_media_dir = settings.tmp_dir / post_id / "media"
 
                         # Find the image file with this URL hash in the post directory
                         image_file = None
@@ -456,8 +456,8 @@ class ContentDetectionService:
                         # Generate URL hash to match the downloaded file naming convention
                         url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
 
-                        # Construct the expected post media directory
-                        post_media_dir = settings.tmp_dir / "posts" / post_id / "media"
+                        # Construct the expected post media directory: tmp/{post_id}/media
+                        post_media_dir = settings.tmp_dir / post_id / "media"
 
                         # Find the video file with this URL hash in the post directory
                         video_file = None
@@ -677,8 +677,8 @@ class ContentDetectionService:
         import uuid
         from pathlib import Path
 
-        # Create post-specific folder: TMP_DIR/posts/{post_id}/media/
-        post_folder = settings.tmp_dir / "posts" / post_id / "media"
+        # Create post-specific media folder: tmp/{post_id}/media
+        post_folder = settings.tmp_dir / post_id / "media"
         post_folder.mkdir(parents=True, exist_ok=True)
 
         # Generate unique filename based on URL hash and UUID
