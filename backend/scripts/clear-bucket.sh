@@ -93,10 +93,10 @@ count_objects() {
     
     # Count objects with different prefixes
     local total_count=$(gsutil ls -r "gs://$GCS_BUCKET_NAME/**" 2>/dev/null | grep -v ':$' | wc -l || echo "0")
-    local posts_count=$(gsutil ls -r "gs://$GCS_BUCKET_NAME/posts/**" 2>/dev/null | grep -v ':$' | wc -l || echo "0")
+    local media_count=$(gsutil ls -r "gs://$GCS_BUCKET_NAME/**/media/**" 2>/dev/null | grep -v ':$' | wc -l || echo "0")
     
     echo -e "  Total objects: ${total_count}"
-    echo -e "  Posts objects: ${posts_count}"
+    echo -e "  Post media objects: ${media_count}"
     
     if [ "$total_count" -eq 0 ]; then
         echo -e "${GREEN}✅ Bucket is already empty${NC}"
@@ -135,7 +135,7 @@ clear_bucket() {
     
     # Step 3: Standard object deletion with parallel processing
     echo -e "${YELLOW}🗂️  Removing current objects...${NC}"
-    if gsutil -m rm -r "gs://$GCS_BUCKET_NAME/**" 2>/dev/null; then
+    if gsutil -m rm -r "gs://$GCS_BUCKET_NAME/**" 2>/dev/null && gsutil -m rm -r "gs://$GCS_BUCKET_NAME/*" 2>/dev/null; then
         echo -e "${GREEN}✅ Standard deletion completed${NC}"
     else
         echo -e "${YELLOW}⚠️  Standard deletion had issues, trying comprehensive cleanup...${NC}"

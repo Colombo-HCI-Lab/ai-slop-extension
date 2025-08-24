@@ -19,6 +19,9 @@ echo "🗄️ Resetting database schema..."
 echo "🧹 Cleaning up posts storage..."
 ./scripts/clear-bucket.sh
 
+# Remove tmp data
+rm -rf tmp
+
 # Start the backend server
 echo "🚀 Starting backend server..."
 ./scripts/start.sh
