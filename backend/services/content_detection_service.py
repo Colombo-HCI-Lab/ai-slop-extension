@@ -2,10 +2,11 @@
 
 import asyncio
 from datetime import datetime
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.media_registry import media_registry
 from schemas.content_detection import ContentDetectionRequest, ContentDetectionResponse
 from schemas.text_detection import DetectRequest
 from services.text_detection_service import TextDetectionService
@@ -38,6 +39,7 @@ class ContentDetectionService:
         """
         # Check if post has already been fully processed
         from sqlalchemy import select
+
         from models import Post
 
         result = await db.execute(select(Post).where(Post.post_id == request.post_id))
@@ -114,6 +116,7 @@ class ContentDetectionService:
     async def _get_post_media_info(self, post_id: str, db: AsyncSession) -> Dict[str, Any]:
         """Get media information from database for the post."""
         from sqlalchemy import select
+
         from models import PostMedia
 
         result = await db.execute(select(PostMedia).where(PostMedia.post_id == post_id))
@@ -176,45 +179,68 @@ class ContentDetectionService:
 
         for i, url in enumerate(image_urls):
             try:
-                # Get media info from database
-                media_record = media_info.get(url, {})
-                media_id = media_record.get("media_id")
-                storage_path = media_record.get("storage_path")
-                storage_type = media_record.get("storage_type")
-
-                # Handle different storage types
-                image_file = None
-                if storage_path:
-                    if storage_type == "gcs":
-                        # For GCS storage, we need to download the file temporarily for analysis
-                        logger.warning("GCS storage analysis not yet implemented for images", url=url)
-                        # TODO: Implement GCS download for analysis
-                        # For now, fall back to local file detection
+                # First, check media registry for already processed image
+                if media_registry.is_already_processed(post_id, url, "downloaded"):
+                    # Use existing local file from registry
+                    registry_record = media_registry.get_processed_media_info(post_id, url)
+                    if registry_record and registry_record.local_path and registry_record.local_path.exists():
+                        logger.info("Using already processed media for detection", 
+                                  url=url[:50], local_path=str(registry_record.local_path))
+                        image_file = registry_record.local_path
                     else:
-                        # Local storage
-                        from pathlib import Path
-                        image_file = Path(storage_path)
+                        logger.warning("Registry shows media processed but local file not found", 
+                                     url=url[:50], local_path=str(registry_record.local_path) if registry_record else None)
+                        # Fall through to database/fallback lookup
+                        image_file = None
                 else:
-                    # Fallback to finding file by URL hash if not in database
-                    import hashlib
-                    from core.config import settings
+                    # Registry doesn't have this media, check database
+                    media_record = media_info.get(url, {})
+                    media_id = media_record.get("media_id")
+                    storage_path = media_record.get("storage_path")
+                    storage_type = media_record.get("storage_type")
 
-                    # Generate URL hash to match the downloaded file naming convention
-                    url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
-
-                    # Construct the expected post media directory
-                    post_media_dir = settings.tmp_dir / "posts" / post_id / "media"
-
-                    # Find the image file with this URL hash in the post directory
+                    # Handle different storage types
                     image_file = None
-                    if post_media_dir.exists():
-                        for image_path in post_media_dir.glob(f"*{url_hash}*"):
-                            if image_path.is_file():
-                                image_file = image_path
-                                break
+                    if storage_path:
+                        if storage_type == "gcs":
+                            # For GCS storage, we need to download the file temporarily for analysis
+                            logger.warning("GCS storage analysis not yet implemented for images", url=url)
+                            # TODO: Implement GCS download for analysis
+                            # For now, fall back to local file detection
+                        else:
+                            # Local storage
+                            from pathlib import Path
+                            image_file = Path(storage_path)
+                    else:
+                        # Fallback to finding file by URL hash if not in database
+                        import hashlib
+
+                        from core.config import settings
+
+                        # Generate URL hash to match the downloaded file naming convention
+                        url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
+
+                        # Construct the expected post media directory
+                        post_media_dir = settings.tmp_dir / "posts" / post_id / "media"
+
+                        # Find the image file with this URL hash in the post directory
+                        image_file = None
+                        if post_media_dir.exists():
+                            for image_path in post_media_dir.glob(f"*{url_hash}*"):
+                                if image_path.is_file():
+                                    image_file = image_path
+                                    break
 
                 if not image_file or not image_file.exists():
-                    logger.warning("Downloaded image file not found for analysis", url=url, url_hash=url_hash)
+                    logger.warning("Downloaded image file not found for analysis", url=url[:50])
+                    
+                    # Fallback: attempt to download if not already processed
+                    if not media_registry.is_already_processed(post_id, url, "downloaded"):
+                        logger.warning("Media not found in registry, downloading for detection", url=url[:50])
+                        # This shouldn't happen in normal flow since FileUploadService should have processed it
+                        # but we can handle it as a fallback
+                        # For now, log the issue and continue with error
+                        
                     image_results.append(
                         {
                             "url": url,
@@ -238,6 +264,16 @@ class ContentDetectionService:
                 # Convert to probability (0.0 = human, 1.0 = AI)
                 # ClipBased returns probability directly
                 ai_probability = detection_result.get("probability", 0.5)
+
+                # Get media_id from database fallback if not found in first check
+                media_id = None
+                if not media_registry.is_already_processed(post_id, url, "downloaded"):
+                    media_record = media_info.get(url, {})
+                    media_id = media_record.get("media_id")
+
+                # Update registry to mark as analyzed
+                media_key = f"{post_id}:{url}"
+                media_registry.update_processing_stage(media_key, "analyzed")
 
                 result = {
                     "media_id": media_id,  # Include media ID from database
@@ -331,45 +367,66 @@ class ContentDetectionService:
 
         for i, url in enumerate(video_urls):
             try:
-                # Get media info from database
-                media_record = media_info.get(url, {})
-                media_id = media_record.get("media_id")
-                storage_path = media_record.get("storage_path")
-                storage_type = media_record.get("storage_type")
-
-                # Handle different storage types
-                video_file = None
-                if storage_path:
-                    if storage_type == "gcs":
-                        # For GCS storage, we need to download the file temporarily for analysis
-                        logger.warning("GCS storage analysis not yet implemented for videos", url=url)
-                        # TODO: Implement GCS download for analysis
-                        # For now, fall back to local file detection
+                # First, check media registry for already processed video
+                if media_registry.is_already_processed(post_id, url, "downloaded"):
+                    # Use existing local file from registry
+                    registry_record = media_registry.get_processed_media_info(post_id, url)
+                    if registry_record and registry_record.local_path and registry_record.local_path.exists():
+                        logger.info("Using already processed media for detection", 
+                                  url=url[:50], local_path=str(registry_record.local_path))
+                        video_file = registry_record.local_path
                     else:
-                        # Local storage
-                        from pathlib import Path
-                        video_file = Path(storage_path)
+                        logger.warning("Registry shows media processed but local file not found", 
+                                     url=url[:50], local_path=str(registry_record.local_path) if registry_record else None)
+                        # Fall through to database/fallback lookup
+                        video_file = None
                 else:
-                    # Fallback to finding file by URL hash if not in database
-                    import hashlib
-                    from core.config import settings
+                    # Registry doesn't have this media, check database
+                    media_record = media_info.get(url, {})
+                    media_id = media_record.get("media_id")
+                    storage_path = media_record.get("storage_path")
+                    storage_type = media_record.get("storage_type")
 
-                    # Generate URL hash to match the downloaded file naming convention
-                    url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
-
-                    # Construct the expected post media directory
-                    post_media_dir = settings.tmp_dir / "posts" / post_id / "media"
-
-                    # Find the video file with this URL hash in the post directory
+                    # Handle different storage types
                     video_file = None
-                    if post_media_dir.exists():
-                        for video_path in post_media_dir.glob(f"*{url_hash}*"):
-                            if video_path.is_file() and video_path.suffix.lower() in [".mp4", ".avi", ".mov", ".webm"]:
-                                video_file = video_path
-                                break
+                    if storage_path:
+                        if storage_type == "gcs":
+                            # For GCS storage, we need to download the file temporarily for analysis
+                            logger.warning("GCS storage analysis not yet implemented for videos", url=url)
+                            # TODO: Implement GCS download for analysis
+                            # For now, fall back to local file detection
+                        else:
+                            # Local storage
+                            from pathlib import Path
+                            video_file = Path(storage_path)
+                    else:
+                        # Fallback to finding file by URL hash if not in database
+                        import hashlib
+
+                        from core.config import settings
+
+                        # Generate URL hash to match the downloaded file naming convention
+                        url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
+
+                        # Construct the expected post media directory
+                        post_media_dir = settings.tmp_dir / "posts" / post_id / "media"
+
+                        # Find the video file with this URL hash in the post directory
+                        video_file = None
+                        if post_media_dir.exists():
+                            for video_path in post_media_dir.glob(f"*{url_hash}*"):
+                                if video_path.is_file() and video_path.suffix.lower() in [".mp4", ".avi", ".mov", ".webm"]:
+                                    video_file = video_path
+                                    break
 
                 if not video_file or not video_file.exists():
-                    logger.warning("Downloaded video file not found for analysis", url=url, url_hash=url_hash)
+                    logger.warning("Downloaded video file not found for analysis", url=url[:50])
+                    
+                    # Fallback: attempt to download if not already processed
+                    if not media_registry.is_already_processed(post_id, url, "downloaded"):
+                        logger.warning("Media not found in registry, downloading for detection", url=url[:50])
+                        # This shouldn't happen in normal flow since FileUploadService should have processed it
+                        
                     video_results.append(
                         {
                             "url": url,
@@ -392,6 +449,16 @@ class ContentDetectionService:
 
                 # Convert to probability (0.0 = human, 1.0 = AI)
                 ai_probability = detection_result.get("ai_probability", 0.5)
+
+                # Get media_id from database fallback if not found in first check
+                media_id = None
+                if not media_registry.is_already_processed(post_id, url, "downloaded"):
+                    media_record = media_info.get(url, {})
+                    media_id = media_record.get("media_id")
+
+                # Update registry to mark as analyzed
+                media_key = f"{post_id}:{url}"
+                media_registry.update_processing_stage(media_key, "analyzed")
 
                 result = {
                     "media_id": media_id,  # Include media ID from database
@@ -454,6 +521,7 @@ class ContentDetectionService:
     ) -> None:
         """Update the post in database with image and video analysis results."""
         from sqlalchemy import select
+
         from models import Post
 
         # Find the post that was created by text analysis

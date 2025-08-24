@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
+from core.media_registry import media_registry
 from services.gcs_storage_service import GCSStorageService
 from utils.logging import get_logger
 
@@ -579,6 +580,7 @@ class FileUploadService:
     ) -> Tuple[List[str], List[dict]]:
         """
         Upload both images and videos from URLs to Gemini File API.
+        Updated to use media registry for deduplication.
 
         Args:
             image_urls: List of image URLs to upload
@@ -595,8 +597,15 @@ class FileUploadService:
         if not all_media_urls:
             return [], []
 
+        # Register all media in the processing registry
+        if post_id:
+            for url in image_urls:
+                media_registry.register_media(post_id, url, "image")
+            for url in video_urls:
+                media_registry.register_media(post_id, url, "video")
+
         # Sequential processing: Download ALL files first, then upload ALL files
-        logger.info("Starting sequential media processing", post_id=post_id, images=len(image_urls), videos=len(video_urls))
+        logger.info("Starting sequential media processing with registry", post_id=post_id, images=len(image_urls), videos=len(video_urls))
 
         # Phase 1: Download all media files
         logger.info("Phase 1: Downloading all media files", post_id=post_id)
@@ -605,10 +614,27 @@ class FileUploadService:
         # Download images first
         for i, url in enumerate(image_urls):
             try:
-                # Check if already exists in storage
+                # Check if already processed using registry
+                if post_id and media_registry.is_already_processed(post_id, url, "downloaded"):
+                    existing_record = media_registry.get_processed_media_info(post_id, url)
+                    if existing_record and existing_record.storage_path:
+                        logger.info("Media already processed, reusing", url=url[:50], storage_path=existing_record.storage_path)
+                        downloaded_files.append({
+                            "type": "image",
+                            "url": url,
+                            "storage_path": existing_record.storage_path,
+                            "index": i,
+                            "mime_type": "image/jpeg"
+                        })
+                        continue
+
+                # Fallback: Check database if not in registry
                 if post_id and db:
                     storage_path = await self.check_media_exists(post_id, url, db)
                     if storage_path:
+                        # Update registry with found storage path
+                        media_key = media_registry.register_media(post_id, url, "image")
+                        media_registry.update_processing_stage(media_key, "downloaded", storage_path=storage_path)
                         downloaded_files.append({"type": "image", "url": url, "storage_path": storage_path, "index": i})
                         continue
 
@@ -619,6 +645,17 @@ class FileUploadService:
                     if processed_data and post_id:
                         try:
                             storage_path = await self.save_media(processed_data, post_id, url, "image", mime_type)
+                            
+                            # Update registry
+                            media_key = f"{post_id}:{url}"
+                            local_path = self._get_local_file_path(post_id, url, "image")
+                            media_registry.update_processing_stage(
+                                media_key, 
+                                "downloaded",
+                                local_path=local_path,
+                                storage_path=storage_path
+                            )
+                            
                             downloaded_files.append(
                                 {
                                     "type": "image",
@@ -638,10 +675,27 @@ class FileUploadService:
         # Download videos
         for i, url in enumerate(video_urls):
             try:
-                # Check if already exists in storage
+                # Check if already processed using registry
+                if post_id and media_registry.is_already_processed(post_id, url, "downloaded"):
+                    existing_record = media_registry.get_processed_media_info(post_id, url)
+                    if existing_record and existing_record.storage_path:
+                        logger.info("Media already processed, reusing", url=url[:50], storage_path=existing_record.storage_path)
+                        downloaded_files.append({
+                            "type": "video",
+                            "url": url,
+                            "storage_path": existing_record.storage_path,
+                            "index": i,
+                            "mime_type": "video/mp4"
+                        })
+                        continue
+
+                # Fallback: Check database if not in registry
                 if post_id and db:
                     storage_path = await self.check_media_exists(post_id, url, db)
                     if storage_path:
+                        # Update registry with found storage path
+                        media_key = media_registry.register_media(post_id, url, "video")
+                        media_registry.update_processing_stage(media_key, "downloaded", storage_path=storage_path)
                         downloaded_files.append({"type": "video", "url": url, "storage_path": storage_path, "index": i})
                         continue
 
@@ -652,6 +706,17 @@ class FileUploadService:
                     if mime_type and post_id:
                         try:
                             storage_path = await self.save_media(video_data, post_id, url, "video", mime_type)
+                            
+                            # Update registry
+                            media_key = f"{post_id}:{url}"
+                            local_path = self._get_local_file_path(post_id, url, "video")
+                            media_registry.update_processing_stage(
+                                media_key, 
+                                "downloaded",
+                                local_path=local_path,
+                                storage_path=storage_path
+                            )
+                            
                             downloaded_files.append(
                                 {
                                     "type": "video",
@@ -681,10 +746,22 @@ class FileUploadService:
 
         for file_info in downloaded_files:
             try:
-                # Check for existing Gemini upload
+                # Check registry for existing Gemini upload
+                if post_id and media_registry.is_already_processed(post_id, file_info["url"], "uploaded"):
+                    existing_record = media_registry.get_processed_media_info(post_id, file_info["url"])
+                    if existing_record and existing_record.gemini_uri:
+                        logger.info("Media already uploaded to Gemini, reusing", 
+                                  url=file_info["url"][:50], gemini_uri=existing_record.gemini_uri)
+                        file_uris.append(existing_record.gemini_uri)
+                        continue
+
+                # Fallback: Check database for existing Gemini upload
                 if post_id and db:
                     existing_uri = await self.check_existing_upload(post_id, file_info["url"], db)
                     if existing_uri:
+                        # Update registry with found Gemini URI
+                        media_key = f"{post_id}:{file_info['url']}"
+                        media_registry.update_processing_stage(media_key, "uploaded", gemini_uri=existing_uri)
                         file_uris.append(existing_uri)
                         continue
 
@@ -699,6 +776,11 @@ class FileUploadService:
                     )
 
                 if file_uri:
+                    # Update registry with Gemini URI
+                    if post_id:
+                        media_key = f"{post_id}:{file_info['url']}"
+                        media_registry.update_processing_stage(media_key, "uploaded", gemini_uri=file_uri)
+                    
                     file_uris.append(file_uri)
                     logger.info("Uploaded to Gemini", file_type=file_info["type"], storage_path=file_info["storage_path"], gemini_uri=file_uri)
 
@@ -713,6 +795,7 @@ class FileUploadService:
             uploaded=len(file_uris),
             total=total_media,
             success_rate=f"{len(file_uris)}/{total_media}",
+            registry_stats=media_registry.get_registry_stats()
         )
 
         return file_uris, downloaded_files
