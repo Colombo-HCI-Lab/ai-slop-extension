@@ -36,3 +36,4 @@ slowfast_detection/models/*.ckpt
 
 # GCP credentials
 gcp-credentials.json
+gcs-key.json
