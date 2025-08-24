@@ -1,7 +1,9 @@
 """Service for managing post media storage and Gemini uploads."""
 
+from typing import Any, Dict, List
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.dialects.postgresql import insert
 
 from models import Post, PostMedia
 from schemas.content_detection import ContentDetectionRequest, ContentDetectionResponse
@@ -151,10 +153,7 @@ class PostMediaService:
         request: ContentDetectionRequest,
         db: AsyncSession,
     ) -> None:
-        """Save media URLs to the post_media table and upload to Gemini."""
-        # Delete existing media for this post
-        await db.execute(PostMedia.__table__.delete().where(PostMedia.post_id == post_id))
-
+        """Save media URLs to the post_media table and upload to Gemini using upsert."""
         # Upload media to Gemini first (if service available)
         gemini_file_uris = []
         media_file_info = []
@@ -188,7 +187,7 @@ class PostMediaService:
                     logger.error("Failed to upload media to Gemini during post processing", post_id=post_id, error=str(e))
                 # Continue with database storage even if Gemini upload fails
 
-        media_entries = []
+        media_data = []
         gemini_uri_index = 0
 
         # Create lookup dictionary for storage paths
@@ -196,7 +195,7 @@ class PostMediaService:
         for file_info in media_file_info:
             storage_path_lookup[file_info["url"]] = file_info.get("storage_path")
 
-        # Add image URLs
+        # Prepare image data for upsert
         for image_url in request.image_urls or []:
             gemini_uri = gemini_file_uris[gemini_uri_index] if gemini_uri_index < len(gemini_file_uris) else None
             storage_path = storage_path_lookup.get(image_url)
@@ -209,19 +208,18 @@ class PostMediaService:
             if storage_path:
                 storage_type = "gcs" if storage_path.startswith("gs://") else "local"
 
-            media_entry = PostMedia(
-                id=media_id,
-                post_id=post_id,
-                media_type="image",
-                media_url=image_url,
-                gemini_file_uri=gemini_uri,
-                storage_path=storage_path,
-                storage_type=storage_type,
-            )
-            media_entries.append(media_entry)
+            media_data.append({
+                "id": media_id,
+                "post_id": post_id,
+                "media_type": "image",
+                "media_url": image_url,
+                "gemini_file_uri": gemini_uri,
+                "storage_path": storage_path,
+                "storage_type": storage_type,
+            })
             gemini_uri_index += 1
 
-        # Add video URLs
+        # Prepare video data for upsert
         for video_url in request.video_urls or []:
             gemini_uri = gemini_file_uris[gemini_uri_index] if gemini_uri_index < len(gemini_file_uris) else None
             storage_path = storage_path_lookup.get(video_url)
@@ -234,29 +232,39 @@ class PostMediaService:
             if storage_path:
                 storage_type = "gcs" if storage_path.startswith("gs://") else "local"
 
-            media_entry = PostMedia(
-                id=media_id,
-                post_id=post_id,
-                media_type="video",
-                media_url=video_url,
-                gemini_file_uri=gemini_uri,
-                storage_path=storage_path,
-                storage_type=storage_type,
-            )
-            media_entries.append(media_entry)
+            media_data.append({
+                "id": media_id,
+                "post_id": post_id,
+                "media_type": "video",
+                "media_url": video_url,
+                "gemini_file_uri": gemini_uri,
+                "storage_path": storage_path,
+                "storage_type": storage_type,
+            })
             gemini_uri_index += 1
 
-        # Bulk insert media entries
-        if media_entries:
-            db.add_all(media_entries)
+        # Use upsert (INSERT ON CONFLICT DO UPDATE) to handle duplicates
+        if media_data:
+            stmt = insert(PostMedia).values(media_data)
+            stmt = stmt.on_conflict_do_update(
+                index_elements=["id"],
+                set_={
+                    "media_url": stmt.excluded.media_url,
+                    "gemini_file_uri": stmt.excluded.gemini_file_uri,
+                    "storage_path": stmt.excluded.storage_path,
+                    "storage_type": stmt.excluded.storage_type,
+                    "updated_at": stmt.excluded.updated_at,
+                }
+            )
+            await db.execute(stmt)
             await db.commit()
 
-            successful_gemini_uploads = sum(1 for entry in media_entries if entry.gemini_file_uri)
+            successful_gemini_uploads = sum(1 for data in media_data if data.get("gemini_file_uri"))
             logger.info(
-                "Media URLs saved with Gemini integration",
+                "Media URLs saved with Gemini integration (upsert)",
                 post_id=post_id,
                 image_count=len(request.image_urls or []),
                 video_count=len(request.video_urls or []),
-                total_media=len(media_entries),
+                total_media=len(media_data),
                 gemini_uploads=successful_gemini_uploads,
             )
