@@ -1,0 +1,94 @@
+# .gcloudignore - Exclude files from Cloud Build upload to reduce context size
+# This speeds up the build by not uploading unnecessary files
+
+# Version control
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv
+venv/
+ENV/
+env/
+*.egg-info/
+.pytest_cache
+.coverage
+.tox/
+.mypy_cache/
+.ruff_cache/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build outputs
+dist/
+build/
+*.egg
+.eggs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Documentation
+*.md
+docs/
+README*
+
+# Tests
+tests/
+test_*.py
+*_test.py
+
+# Development files
+.env
+.env.*
+*.log
+
+# ML Model files (if stored locally and not needed for build)
+*.pth
+*.pt
+*.ckpt
+*.h5
+*.pkl
+*.joblib
+
+# Media files (for testing)
+*.mp4
+*.avi
+*.mov
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.bmp
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Backend specific (adjust based on what's needed in Docker build)
+backend/.venv/
+backend/__pycache__/
+backend/test_*.py
+backend/*.log
+backend/.coverage
+backend/.pytest_cache/
+
+# Browser extension build artifacts
+browser-extension/dist/
+browser-extension/node_modules/
+browser-extension/coverage/

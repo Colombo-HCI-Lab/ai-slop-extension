@@ -27,7 +27,17 @@
 # - _DB_HOST: Database host (use /cloudsql/PROJECT:REGION:INSTANCE for Cloud SQL)
 
 steps:
-  # Setup GCS credentials from Secret Manager
+  # Pull cache image early (runs in parallel with credential setup)
+  - name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'sh'
+    args:
+    - '-c'
+    - |
+      docker pull gcr.io/$PROJECT_ID/ai-slop-backend:latest || echo "No cache image found, continuing without cache"
+    id: 'pull-cache'
+    waitFor: ['-']  # Start immediately
+
+  # Setup GCS credentials from Secret Manager (runs in parallel with cache pull)
   - name: 'gcr.io/cloud-builders/gcloud'
     entrypoint: 'bash'
     args:
@@ -37,6 +47,7 @@ steps:
       echo "GCS credentials written to /workspace/gcs-key.json"
     secretEnv: ['GCS_SERVICE_ACCOUNT_KEY']
     id: 'setup-gcs-credentials'
+    waitFor: ['-']  # Start immediately
 
   # Copy credentials to backend directory for Docker build
   - name: 'gcr.io/cloud-builders/gcloud'
@@ -47,13 +58,13 @@ steps:
       cp /workspace/gcs-key.json ./backend/gcs-key.json
       echo "GCS credentials copied to backend directory"
     id: 'copy-credentials'
-    waitFor: ['setup-gcs-credentials']
+    waitFor: ['setup-gcs-credentials']  # Only wait for credentials, not cache
 
-  # Build backend Docker image
+  # Build backend Docker image (waits for both cache and credentials)
   - name: 'gcr.io/cloud-builders/docker'
     args: [ 'build', '--cache-from', 'gcr.io/$PROJECT_ID/ai-slop-backend:latest', '-t', 'gcr.io/$PROJECT_ID/ai-slop-backend:latest', './backend' ]
     id: 'build-backend'
-    waitFor: ['copy-credentials']
+    waitFor: ['copy-credentials', 'pull-cache']  # Wait for both cache and credentials
 
   # Push backend image to Container Registry
   - name: 'gcr.io/cloud-builders/docker'
@@ -61,7 +72,7 @@ steps:
     id: 'push-backend'
     waitFor: [ 'build-backend' ]
 
-  # Clean up credentials from workspace
+  # Clean up credentials from workspace (runs in parallel with deployment)
   - name: 'gcr.io/cloud-builders/gcloud'
     entrypoint: 'bash'
     args:
@@ -70,9 +81,9 @@ steps:
       rm -f /workspace/gcs-key.json ./backend/gcs-key.json
       echo "Credentials cleaned up from workspace"
     id: 'cleanup-credentials'
-    waitFor: ['push-backend']
+    waitFor: ['push-backend']  # Can start as soon as push begins
 
-  # Deploy backend to Cloud Run
+  # Deploy backend to Cloud Run (only waits for push, not cleanup)
   - name: 'gcr.io/cloud-builders/gcloud'
     args:
       - 'run'
@@ -100,7 +111,7 @@ steps:
       - '--timeout'
       - '$_TIMEOUT'
     id: 'deploy-backend'
-    waitFor: [ 'cleanup-credentials' ]
+    waitFor: [ 'push-backend' ]  # Only wait for push to complete, cleanup can continue in parallel
 
 # Set timeout for the entire build
 timeout: 3600s
