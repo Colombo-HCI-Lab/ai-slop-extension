@@ -60,14 +60,40 @@ module.exports = {
     }),
     // Define environment variables
     new webpack.DefinePlugin({
-      'process.env.BACKEND_URL': JSON.stringify(process.env.BACKEND_URL || 'http://localhost:4000')
+      'process.env.BACKEND_URL': JSON.stringify(process.env.BACKEND_URL)
     }),
     // Copy static assets from public to dist
     new CopyPlugin({
       patterns: [
         {
           from: path.resolve('public'),
-          to: path.resolve('dist')
+          to: path.resolve('dist'),
+          globOptions: {
+            ignore: ['**/manifest.json']
+          }
+        },
+        // Handle manifest.json separately to inject BACKEND_URL
+        {
+          from: path.resolve('public/manifest.json'),
+          to: path.resolve('dist/manifest.json'),
+          transform: (content) => {
+            const manifest = JSON.parse(content);
+            const backendUrl = process.env.BACKEND_URL;
+            
+            // Only add backend URL if it's defined
+            if (backendUrl) {
+              // Update host_permissions to include the backend URL
+              const backendHost = new URL(backendUrl).origin + '/*';
+              manifest.host_permissions = manifest.host_permissions.filter(
+                permission => !permission.includes('localhost:4000')
+              );
+              if (!manifest.host_permissions.includes(backendHost)) {
+                manifest.host_permissions.push(backendHost);
+              }
+            }
+            
+            return JSON.stringify(manifest, null, 2);
+          }
         }
       ]
     }),

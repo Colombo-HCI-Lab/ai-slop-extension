@@ -12,8 +12,7 @@
     "tabCapture"
   ],
   "host_permissions": [
-    "*://*.facebook.com/*",
-    "http://localhost:4000/*"
+    "*://*.facebook.com/*"
   ],
   "background": {
     "service_worker": "background.js"

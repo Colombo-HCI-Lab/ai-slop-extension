@@ -53,7 +53,7 @@ type ChatResponse = {
  */
 class BackgroundService {
   /** Base URL for the backend API */
-  private readonly API_BASE_URL = 'http://localhost:4000/api/v1';
+  private readonly API_BASE_URL = `${process.env.BACKEND_URL}/api/v1`;
   /** Endpoint for post processing (detection and analysis) */
   private readonly PROCESS_ENDPOINT = `${this.API_BASE_URL}/posts/process`;
   /** Endpoint for chat functionality */
@@ -210,7 +210,7 @@ class BackgroundService {
       // More detailed error logging
       if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
         console.error('[Background] 🚫 Network error - possible CORS or connection issue');
-        console.error('[Background] 🔍 Check if backend is running on port 4000');
+        console.error('[Background] 🔍 Check if backend is running at:', process.env.BACKEND_URL);
         console.error('[Background] 🔍 Check extension permissions in manifest.json');
       }
 
