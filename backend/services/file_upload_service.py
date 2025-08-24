@@ -486,8 +486,16 @@ class FileUploadService:
                 storage_path = None
                 if post_id:
                     try:
+                        # Save to GCS storage
                         storage_path = await self.save_media(processed_data, post_id, url, "image", mime_type)
-                        logger.info("Saved image to storage", storage_path=storage_path)
+                        
+                        # Also save to local tmp directory for detection
+                        local_path = self._get_local_file_path(post_id, url, "image")
+                        local_path.parent.mkdir(parents=True, exist_ok=True)
+                        local_path.write_bytes(processed_data)
+                        logger.info("Saved image to storage and local tmp directory", 
+                                  storage_path=storage_path, 
+                                  local_path=str(local_path))
                     except Exception as e:
                         logger.warning("Failed to save image to storage", error=str(e))
 
@@ -559,8 +567,16 @@ class FileUploadService:
                 storage_path = None
                 if post_id:
                     try:
+                        # Save to GCS storage
                         storage_path = await self.save_media(video_data, post_id, url, "video", mime_type)
-                        logger.info("Saved video to storage", storage_path=storage_path)
+                        
+                        # Also save to local tmp directory for detection
+                        local_path = self._get_local_file_path(post_id, url, "video")
+                        local_path.parent.mkdir(parents=True, exist_ok=True)
+                        local_path.write_bytes(video_data)
+                        logger.info("Saved video to storage and local tmp directory", 
+                                  storage_path=storage_path, 
+                                  local_path=str(local_path))
                     except Exception as e:
                         logger.warning("Failed to save video to storage", error=str(e))
 
@@ -839,11 +855,19 @@ class FileUploadService:
                             from utils.content_deduplication import deduplication_service
                             content_hash = await deduplication_service.calculate_content_hash(processed_data)
                             
+                            # Save to GCS storage
                             storage_path = await self.save_media(processed_data, post_id, url, "image", mime_type)
+                            
+                            # Also save to local tmp directory for detection
+                            local_path = self._get_local_file_path(post_id, url, "image")
+                            local_path.parent.mkdir(parents=True, exist_ok=True)
+                            local_path.write_bytes(processed_data)
+                            logger.info("Saved image to local tmp directory", 
+                                      url=url[:50], 
+                                      local_path=str(local_path))
                             
                             # Update registry
                             media_key = f"{post_id}:{url}"
-                            local_path = self._get_local_file_path(post_id, url, "image")
                             media_registry.update_processing_stage(
                                 media_key, 
                                 "downloaded",
@@ -929,11 +953,19 @@ class FileUploadService:
                             from utils.content_deduplication import deduplication_service
                             content_hash = await deduplication_service.calculate_content_hash(video_data)
                             
+                            # Save to GCS storage
                             storage_path = await self.save_media(video_data, post_id, url, "video", mime_type)
+                            
+                            # Also save to local tmp directory for detection
+                            local_path = self._get_local_file_path(post_id, url, "video")
+                            local_path.parent.mkdir(parents=True, exist_ok=True)
+                            local_path.write_bytes(video_data)
+                            logger.info("Saved video to local tmp directory", 
+                                      url=url[:50], 
+                                      local_path=str(local_path))
                             
                             # Update registry
                             media_key = f"{post_id}:{url}"
-                            local_path = self._get_local_file_path(post_id, url, "video")
                             media_registry.update_processing_stage(
                                 media_key, 
                                 "downloaded",

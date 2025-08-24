@@ -203,10 +203,34 @@ class ContentDetectionService:
                     image_file = None
                     if storage_path:
                         if storage_type == "gcs":
-                            # For GCS storage, we need to download the file temporarily for analysis
-                            logger.warning("GCS storage analysis not yet implemented for images", url=url)
-                            # TODO: Implement GCS download for analysis
-                            # For now, fall back to local file detection
+                            # Download from GCS to local tmp directory for analysis
+                            try:
+                                from services.gcs_storage_service import GCSStorageService
+                                from pathlib import Path
+                                
+                                gcs_service = GCSStorageService()
+                                gcs_path = gcs_service.gcs_uri_to_path(storage_path)
+                                
+                                # Generate local path for downloaded file
+                                local_path = self._get_local_file_path(post_id, url, "image")
+                                local_path.parent.mkdir(parents=True, exist_ok=True)
+                                
+                                # Download from GCS and save locally
+                                data = await gcs_service.download_media(gcs_path)
+                                local_path.write_bytes(data)
+                                
+                                image_file = local_path
+                                logger.info("Downloaded image from GCS for analysis", 
+                                          url=url[:50], 
+                                          gcs_path=gcs_path, 
+                                          local_path=str(local_path))
+                                          
+                            except Exception as e:
+                                logger.error("Failed to download image from GCS", 
+                                           url=url[:50], 
+                                           storage_path=storage_path, 
+                                           error=str(e))
+                                # Fall through to other fallback methods
                         else:
                             # Local storage
                             from pathlib import Path
@@ -391,10 +415,34 @@ class ContentDetectionService:
                     video_file = None
                     if storage_path:
                         if storage_type == "gcs":
-                            # For GCS storage, we need to download the file temporarily for analysis
-                            logger.warning("GCS storage analysis not yet implemented for videos", url=url)
-                            # TODO: Implement GCS download for analysis
-                            # For now, fall back to local file detection
+                            # Download from GCS to local tmp directory for analysis
+                            try:
+                                from services.gcs_storage_service import GCSStorageService
+                                from pathlib import Path
+                                
+                                gcs_service = GCSStorageService()
+                                gcs_path = gcs_service.gcs_uri_to_path(storage_path)
+                                
+                                # Generate local path for downloaded file
+                                local_path = self._get_local_file_path(post_id, url, "video")
+                                local_path.parent.mkdir(parents=True, exist_ok=True)
+                                
+                                # Download from GCS and save locally
+                                data = await gcs_service.download_media(gcs_path)
+                                local_path.write_bytes(data)
+                                
+                                video_file = local_path
+                                logger.info("Downloaded video from GCS for analysis", 
+                                          url=url[:50], 
+                                          gcs_path=gcs_path, 
+                                          local_path=str(local_path))
+                                          
+                            except Exception as e:
+                                logger.error("Failed to download video from GCS", 
+                                           url=url[:50], 
+                                           storage_path=storage_path, 
+                                           error=str(e))
+                                # Fall through to other fallback methods
                         else:
                             # Local storage
                             from pathlib import Path
@@ -611,3 +659,41 @@ class ContentDetectionService:
                 "from_cache": getattr(text_result, "debug_info", {}).get("from_cache", False),
             },
         )
+
+    def _get_local_file_path(self, post_id: str, media_url: str, media_type: str):
+        """
+        Generate local file path for media storage (same as FileUploadService).
+
+        Args:
+            post_id: Facebook post ID
+            media_url: Original media URL
+            media_type: 'image' or 'video'
+
+        Returns:
+            Path object for local file storage
+        """
+        from core.config import settings
+        import hashlib
+        import uuid
+        from pathlib import Path
+
+        # Create post-specific folder: TMP_DIR/posts/{post_id}/media/
+        post_folder = settings.tmp_dir / "posts" / post_id / "media"
+        post_folder.mkdir(parents=True, exist_ok=True)
+
+        # Generate unique filename based on URL hash and UUID
+        url_hash = hashlib.md5(media_url.encode()).hexdigest()[:8]
+        unique_id = str(uuid.uuid4())[:8]
+
+        # Determine file extension from URL or use default
+        extension = ".jpg" if media_type == "image" else ".mp4"
+        if "." in media_url.split("/")[-1]:
+            try:
+                url_ext = "." + media_url.split(".")[-1].split("?")[0]
+                if len(url_ext) <= 5:  # Reasonable extension length
+                    extension = url_ext
+            except (ValueError, IndexError):
+                pass
+
+        filename = f"{url_hash}_{unique_id}{extension}"
+        return post_folder / filename
