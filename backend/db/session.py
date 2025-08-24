@@ -2,35 +2,28 @@
 
 from typing import AsyncGenerator
 
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import NullPool
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.config import settings
+from db.pool import database_pool
+from utils.logging import get_logger
 
-# Create async engine
-engine = create_async_engine(
-    settings.database_url.replace("postgresql://", "postgresql+asyncpg://"),
-    echo=False,  # Disable SQL query logging to reduce noise
-    poolclass=NullPool,  # Use NullPool for async connections
-)
-
-# Create async session factory
-AsyncSessionLocal = sessionmaker(
-    engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-)
+logger = get_logger(__name__)
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """Get database session."""
-    async with AsyncSessionLocal() as session:
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
-        finally:
-            await session.close()
+    """Get database session from connection pool."""
+    session = await database_pool.get_session()
+    try:
+        yield session
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        raise
+    finally:
+        await session.close()
+
+
+# Legacy compatibility - keep engine accessible for migrations
+def get_engine():
+    """Get the SQLAlchemy engine for migrations and direct access."""
+    return database_pool.get_engine()

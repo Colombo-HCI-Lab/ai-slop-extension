@@ -21,12 +21,19 @@ async def lifespan(app: FastAPI):
     # Startup
     setup_logging()
     logger = get_logger("main", component="application")
+    
+    # Initialize database pool
+    from db.pool import database_pool
+    await database_pool.setup(logger=logger)
+    
     logger.info(
         "Starting AI Detection API",
         available_models=settings.available_models,
         default_model=settings.default_model,
         device=settings.device,
         debug_mode=settings.debug,
+        database_pool_size=settings.database_pool_size,
+        database_max_overflow=settings.database_max_overflow,
     )
 
     # Create tmp directories
@@ -37,6 +44,7 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info("Shutting down AI Detection API")
+    await database_pool.close()
 
 
 # Create FastAPI app

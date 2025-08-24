@@ -107,6 +107,8 @@ class Settings(BaseSettings):
     database_echo: bool = False
     database_pool_size: int = 5
     database_max_overflow: int = 10
+    database_pool_timeout: float = 30.0
+    database_pool_recycle: int = 3600
     
     @property
     def database_url(self) -> str:
