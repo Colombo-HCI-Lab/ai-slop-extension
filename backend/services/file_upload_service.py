@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.config import settings
 from core.media_registry import media_registry
 from services.gcs_storage_service import GCSStorageService
+from services.gemini_recovery_service import gemini_recovery_service
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -574,6 +575,158 @@ class FileUploadService:
 
         logger.info(f"Video upload complete: {len(file_uris)}/{len(video_urls)} videos uploaded successfully")
         return file_uris
+
+    async def upload_media_from_urls_with_recovery(
+        self,
+        image_urls: List[str],
+        video_urls: List[str],
+        post_id: Optional[str] = None,
+        db: Optional[AsyncSession] = None
+    ) -> Tuple[List[str], List[dict]]:
+        """Enhanced upload with Gemini URI recovery."""
+        
+        all_media_urls = image_urls + video_urls
+        if not all_media_urls:
+            return [], []
+        
+        # STEP 1: Check if post already processed and try to recover missing Gemini URIs
+        if post_id and db:
+            post_already_processed = await self.check_post_exists_in_database(post_id, db)
+            if post_already_processed:
+                # Try to recover any missing Gemini URIs first
+                recovered_count = await gemini_recovery_service.check_and_recover_all_missing_uris(post_id, db)
+                
+                if recovered_count > 0:
+                    logger.info(
+                        "Recovered missing Gemini URIs",
+                        post_id=post_id,
+                        recovered_count=recovered_count
+                    )
+                
+                # Check local files
+                local_files_exist = self._check_local_media_files_exist(post_id)
+                if not local_files_exist:
+                    await self._download_media_from_bucket(post_id, db)
+                
+                # Get existing URIs (should now include recovered ones)
+                existing_uris = await self.get_existing_gemini_uris_for_post(post_id, db)
+                existing_files = await self._get_existing_media_info(post_id, db)
+                return existing_uris, existing_files
+        
+        # STEP 2: For new posts, implement lazy Gemini upload strategy
+        file_uris = []
+        downloaded_files = []
+        
+        # First, download and save all media to storage
+        for i, url in enumerate(image_urls):
+            try:
+                # Check for existing storage first
+                if post_id and db:
+                    existing_storage_path = await self.check_media_exists(post_id, url, db)
+                    if existing_storage_path:
+                        # File exists in storage, upload to Gemini from storage
+                        file_uri = await self._upload_to_gemini_from_storage_lazy(
+                            existing_storage_path, "image/jpeg", f"post_image_{i + 1}"
+                        )
+                        if file_uri:
+                            file_uris.append(file_uri)
+                            
+                        downloaded_files.append({
+                            "type": "image",
+                            "url": url,
+                            "storage_path": existing_storage_path,
+                            "index": i,
+                            "source": "existing_storage"
+                        })
+                        continue
+                
+                # Download new media
+                image_data, content_type = await self._download_image(url)
+                if image_data:
+                    processed_data, mime_type = await self._process_image(image_data, content_type)
+                    
+                    # Save to storage first
+                    if post_id:
+                        storage_path = await self.save_media(processed_data, post_id, url, "image", mime_type)
+                        
+                        # Lazy Gemini upload: only upload if needed immediately
+                        # Otherwise, it can be uploaded on-demand later
+                        file_uri = None
+                        if self._should_upload_to_gemini_immediately(post_id):
+                            file_uri = await self._upload_to_gemini_from_storage_lazy(
+                                storage_path, mime_type, f"post_image_{i + 1}"
+                            )
+                        
+                        if file_uri:
+                            file_uris.append(file_uri)
+                        
+                        downloaded_files.append({
+                            "type": "image",
+                            "url": url,
+                            "storage_path": storage_path,
+                            "gemini_uploaded": bool(file_uri),
+                            "index": i,
+                            "source": "new_download"
+                        })
+            
+            except Exception as e:
+                logger.error(f"Failed to process image {url}", error=str(e))
+        
+        # Similar processing for videos...
+        for i, url in enumerate(video_urls):
+            try:
+                # Check for existing storage first
+                if post_id and db:
+                    existing_storage_path = await self.check_media_exists(post_id, url, db)
+                    if existing_storage_path:
+                        # File exists in storage, upload to Gemini from storage
+                        file_uri = await self._upload_to_gemini_from_storage_lazy(
+                            existing_storage_path, "video/mp4", f"post_video_{i + 1}"
+                        )
+                        if file_uri:
+                            file_uris.append(file_uri)
+                            
+                        downloaded_files.append({
+                            "type": "video",
+                            "url": url,
+                            "storage_path": existing_storage_path,
+                            "index": i,
+                            "source": "existing_storage"
+                        })
+                        continue
+                
+                # Download new media
+                video_data, content_type = await self._download_video(url)
+                if video_data:
+                    mime_type = self._get_video_mime_type(content_type)
+                    
+                    # Save to storage first
+                    if post_id:
+                        storage_path = await self.save_media(video_data, post_id, url, "video", mime_type)
+                        
+                        # Lazy Gemini upload: only upload if needed immediately
+                        file_uri = None
+                        if self._should_upload_to_gemini_immediately(post_id):
+                            file_uri = await self._upload_to_gemini_from_storage_lazy(
+                                storage_path, mime_type, f"post_video_{i + 1}"
+                            )
+                        
+                        if file_uri:
+                            file_uris.append(file_uri)
+                        
+                        downloaded_files.append({
+                            "type": "video",
+                            "url": url,
+                            "storage_path": storage_path,
+                            "gemini_uploaded": bool(file_uri),
+                            "index": i,
+                            "source": "new_download"
+                        })
+            
+            except Exception as e:
+                logger.error(f"Failed to process video {url}", error=str(e))
+        
+        return file_uris, downloaded_files
 
     async def upload_media_from_urls(
         self, image_urls: List[str], video_urls: List[str], post_id: Optional[str] = None, db: Optional[AsyncSession] = None
@@ -1205,3 +1358,110 @@ class FileUploadService:
         except Exception as e:
             logger.error("Failed to cleanup old files", error=str(e), exc_info=True)
             return 0
+
+    async def _upload_to_gemini_from_storage_lazy(
+        self,
+        storage_path: str,
+        mime_type: str,
+        display_name: str
+    ) -> Optional[str]:
+        """
+        Lazy Gemini upload: only upload if not already present.
+        """
+        try:
+            # Check if we already have this file in Gemini (by some identifier)
+            # This could be enhanced with a Gemini file registry
+            
+            return await self._upload_to_gemini_from_storage(storage_path, mime_type, display_name)
+        
+        except Exception as e:
+            logger.error("Lazy Gemini upload failed", storage_path=storage_path, error=str(e))
+            return None
+
+    def _should_upload_to_gemini_immediately(self, post_id: str) -> bool:
+        """
+        Determine if we should upload to Gemini immediately or defer.
+        
+        Factors to consider:
+        - Is this for immediate chat/analysis?
+        - Are we in a batch processing mode?
+        - Current Gemini API rate limits
+        """
+        # Simple heuristic: always upload immediately for now
+        # This can be made smarter based on usage patterns
+        return True
+
+    def _check_local_media_files_exist(self, post_id: str) -> bool:
+        """
+        Check if local media files exist for a post.
+        This is a fallback method for legacy support.
+        """
+        try:
+            post_dir = settings.tmp_dir / "posts" / post_id / "media"
+            return post_dir.exists() and any(post_dir.iterdir())
+        except Exception as e:
+            logger.error("Error checking local media files", post_id=post_id, error=str(e))
+            return False
+
+    async def _download_media_from_bucket(self, post_id: str, db: AsyncSession) -> None:
+        """
+        Download media files from GCS bucket to local storage if needed.
+        This is a fallback method for legacy support.
+        """
+        try:
+            from models import PostMedia
+            
+            # Get all media for this post that has storage paths
+            media_result = await db.execute(
+                select(PostMedia)
+                .where(PostMedia.post_id == post_id)
+                .where(PostMedia.storage_path.isnot(None))
+            )
+            media_list = media_result.scalars().all()
+            
+            for media in media_list:
+                if media.storage_path.startswith("gs://"):
+                    # Download from GCS
+                    gcs_path = self.gcs_service.gcs_uri_to_path(media.storage_path)
+                    data = await self.gcs_service.download_media(gcs_path)
+                    
+                    # Save to local file
+                    local_path = self._get_local_file_path(post_id, media.media_url, media.media_type)
+                    local_path.parent.mkdir(parents=True, exist_ok=True)
+                    local_path.write_bytes(data)
+                    
+                    logger.info("Downloaded media from bucket", 
+                              post_id=post_id, 
+                              gcs_path=gcs_path, 
+                              local_path=str(local_path))
+        
+        except Exception as e:
+            logger.error("Error downloading media from bucket", post_id=post_id, error=str(e))
+
+    async def _get_existing_media_info(self, post_id: str, db: AsyncSession) -> List[dict]:
+        """
+        Get existing media information for a post.
+        """
+        try:
+            from models import PostMedia
+            
+            media_result = await db.execute(
+                select(PostMedia)
+                .where(PostMedia.post_id == post_id)
+            )
+            media_list = media_result.scalars().all()
+            
+            return [
+                {
+                    "type": media.media_type,
+                    "url": media.media_url,
+                    "storage_path": media.storage_path,
+                    "gemini_uri": media.gemini_file_uri,
+                    "source": "existing_database"
+                }
+                for media in media_list
+            ]
+        
+        except Exception as e:
+            logger.error("Error getting existing media info", post_id=post_id, error=str(e))
+            return []

@@ -13,6 +13,7 @@ from core.config import settings
 from models import Chat, Post, PostMedia, UserSession
 from schemas.chat import ChatRequest, ChatResponse, Message
 from services.file_upload_service import FileUploadService
+from services.gemini_on_demand_service import gemini_on_demand_service
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -58,20 +59,24 @@ class ChatService:
         # Get user-specific chat history
         chat_history = await self._get_user_chat_history(post.post_id, user_session.id, db)
 
-        # Get pre-uploaded Gemini file URIs for first message in conversation
+        # Ensure all media has Gemini URIs (on-demand upload)
         file_uris = []
         if not chat_history:
-            # First message in conversation - get pre-uploaded Gemini file URIs from database
-            file_uris = await self._get_post_gemini_file_uris(post.post_id, db)
-            if file_uris:
-                logger.info(f"Using {len(file_uris)} pre-uploaded Gemini file URIs for new conversation", post_id=post.post_id)
+            # First message in conversation - ensure all media is available in Gemini
+            media_urls = await self._get_all_media_urls_for_post(post.post_id, db)
+            if media_urls:
+                file_uris = await gemini_on_demand_service.batch_ensure_gemini_uris(
+                    post.post_id, media_urls, db
+                )
+                
+                logger.info(
+                    "Media prepared for chat",
+                    post_id=post.post_id,
+                    total_media=len(media_urls),
+                    gemini_ready=len(file_uris)
+                )
             else:
-                # Check if post media exists but Gemini URIs are not set
-                media_count = await self._get_post_media_count(post.post_id, db)
-                if media_count > 0:
-                    logger.warning(f"Post has {media_count} media files but no Gemini file URIs found", post_id=post.post_id)
-                else:
-                    logger.info("No media found for this post", post_id=post.post_id)
+                logger.info("No media found for this post", post_id=post.post_id)
         else:
             # Reuse file URIs from previous messages in this conversation
             for chat in chat_history:
@@ -202,6 +207,14 @@ class ChatService:
         image_urls = await self._get_post_image_urls(post_id, db)
         video_urls = await self._get_post_video_urls(post_id, db)
         return image_urls, video_urls
+
+    async def _get_all_media_urls_for_post(self, post_id: str, db: AsyncSession) -> List[str]:
+        """Get all media URLs for a post (both images and videos)."""
+        result = await db.execute(
+            select(PostMedia.media_url)
+            .where(PostMedia.post_id == post_id)
+        )
+        return [url for (url,) in result.fetchall()]
 
     async def _get_post_gemini_file_uris(self, post_id: str, db: AsyncSession) -> List[str]:
         """Get pre-uploaded Gemini file URIs from post media table."""
