@@ -1,0 +1,65 @@
+name: Release Extension
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: browser-extension/package-lock.json
+        
+    - name: Build extension
+      run: |
+        cd browser-extension
+        npm ci
+        BACKEND_URL=https://ai-slop-backend-662130349150.us-central1.run.app npm run build
+        
+    - name: Package extension
+      run: |
+        cd browser-extension/dist
+        zip -r ../../ai-slop-extension.zip . -x "*.DS_Store" "*.map"
+        
+    - name: Delete previous release
+      run: |
+        gh release delete latest --yes || true
+        git push --delete origin latest || true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Create latest release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: latest
+        name: "AI Slop Extension (Latest)"
+        files: ai-slop-extension.zip
+        body: |
+          ## Installation
+          
+          1. Download `ai-slop-extension.zip`
+          2. Extract the ZIP file
+          3. Go to `chrome://extensions/`
+          4. Enable "Developer mode" 
+          5. Click "Load unpacked" and select the extracted folder
+          
+          ## Features
+          - Real-time AI detection on Facebook posts
+          - Multi-modal analysis (text, images, videos)
+          - Intelligent chat about results
+          
+          *This release is automatically updated with the latest code from the main branch.*
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

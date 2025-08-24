@@ -2,21 +2,29 @@
 
 Browser extension for detecting AI-generated content on Facebook with real-time analysis and intelligent chat.
 
-## Quick Start
+## Installation
 
-### Backend
+### Option 1: Download from Releases (Recommended)
+1. Go to [Releases](../../releases) and download `ai-slop-extension.zip`
+2. Extract the ZIP file to a folder
+3. Open Chrome and go to `chrome://extensions/`
+4. Enable "Developer mode" (toggle in top right)
+5. Click "Load unpacked" and select the extracted folder
+
+### Option 2: Build from Source
+```bash
+cd browser-extension
+npm install && npm run build
+# Load 'dist/' folder in Chrome extensions
+```
+
+## Backend Setup (Optional)
+For advanced features like chat and analytics:
 ```bash
 cd backend
 uv venv --python 3.10 && uv sync
 ./migrate.sh upgrade
 uv run python -m uvicorn main:app --reload --port 4000
-```
-
-### Extension
-```bash
-cd browser-extension
-npm install && npm start
-# Load 'dist/' folder in Chrome extensions
 ```
 
 ## Features

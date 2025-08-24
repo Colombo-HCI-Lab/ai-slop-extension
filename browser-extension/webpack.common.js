@@ -15,6 +15,7 @@ const CopyPlugin = require('copy-webpack-plugin');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const { CleanWebpackPlugin } = require('clean-webpack-plugin');
 const MiniCssExtractPlugin = require('mini-css-extract-plugin');
+const webpack = require('webpack');
 
 module.exports = {
   // Entry points for the extension's different scripts
@@ -56,6 +57,10 @@ module.exports = {
     // Clean output directory before each build
     new CleanWebpackPlugin({
       cleanStaleWebpackAssets: false
+    }),
+    // Define environment variables
+    new webpack.DefinePlugin({
+      'process.env.BACKEND_URL': JSON.stringify(process.env.BACKEND_URL || 'http://localhost:4000')
     }),
     // Copy static assets from public to dist
     new CopyPlugin({
