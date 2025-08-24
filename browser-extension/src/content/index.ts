@@ -1574,6 +1574,9 @@ export class FacebookPostObserver {
     this.setupChatWindowEventListeners(chatWindow);
 
     document.body.appendChild(chatWindow);
+
+    // Load previous chat history for this user and post
+    this.loadChatHistory(chatWindow, postId);
   }
 
   /**
@@ -1718,6 +1721,83 @@ export class FacebookPostObserver {
 
     // Scroll to bottom
     messagesContainer?.scrollTo(0, messagesContainer.scrollHeight);
+  }
+
+  /**
+   * Loads and displays previous chat history for a post
+   * @param chatWindow - The chat window element
+   * @param postId - The Facebook post ID
+   */
+  private async loadChatHistory(chatWindow: HTMLElement, postId: string): Promise<void> {
+    const messagesContainer = chatWindow.querySelector('.chat-messages');
+    if (!messagesContainer) return;
+
+    try {
+      const userId = getUserIdentifier();
+      const API_BASE_URL = 'http://localhost:4000/api/v1';
+      
+      console.log(`[AI-Slop] Loading chat history for post ${postId}, user ${userId}`);
+      
+      const response = await fetch(`${API_BASE_URL}/chat/history/${postId}?user_id=${userId}`);
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          // No chat history found, this is normal for new conversations
+          console.log(`[AI-Slop] No previous chat history found for post ${postId}`);
+          return;
+        }
+        throw new Error(`HTTP ${response.status}`);
+      }
+      
+      const historyData = await response.json();
+      console.log(`[AI-Slop] Loaded ${historyData.total_messages} previous messages`);
+      
+      // Clear existing messages (except loading indicators)
+      const existingMessages = messagesContainer.querySelectorAll('.message-bubble');
+      existingMessages.forEach(msg => msg.remove());
+      
+      // Add each previous message
+      historyData.messages.forEach((message: any) => {
+        const messageElement = document.createElement('div');
+        messageElement.className = `message-bubble ${message.role === 'user' ? 'user-message' : 'bot-message'}`;
+        
+        if (message.role === 'user') {
+          messageElement.innerHTML = `
+            <div class="message-content">
+              <strong>You:</strong> ${this.escapeHtml(message.message)}
+            </div>
+            <div class="message-time">${new Date(message.created_at).toLocaleTimeString()}</div>
+          `;
+        } else {
+          messageElement.innerHTML = `
+            <div class="message-content">
+              <strong>AI:</strong> ${this.escapeHtml(message.message)}
+            </div>
+            <div class="message-time">${new Date(message.created_at).toLocaleTimeString()}</div>
+          `;
+        }
+        
+        messagesContainer.appendChild(messageElement);
+      });
+      
+      // Scroll to bottom to show most recent messages
+      messagesContainer.scrollTo(0, messagesContainer.scrollHeight);
+      
+    } catch (error) {
+      console.error(`[AI-Slop] Error loading chat history:`, error);
+      // Don't show error to user, just continue without history
+    }
+  }
+
+  /**
+   * Escapes HTML to prevent XSS attacks
+   * @param text - Text to escape
+   * @returns Escaped HTML string
+   */
+  private escapeHtml(text: string): string {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
   }
 
   /**

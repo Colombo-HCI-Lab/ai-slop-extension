@@ -134,7 +134,7 @@ class ChatService:
         db: AsyncSession,
     ) -> List[Message]:
         """
-        Get chat history for a post.
+        Get chat history for a post (all users - legacy method).
 
         Args:
             post_id: Facebook post ID
@@ -150,6 +150,47 @@ class ChatService:
 
         # Get chat history
         chats = await self._get_chat_history(post.post_id, db)
+
+        return [
+            Message(
+                id=chat.id,
+                role=chat.role,
+                message=chat.message,
+                created_at=chat.created_at.isoformat(),
+            )
+            for chat in chats
+        ]
+
+    async def get_user_chat_history(
+        self,
+        post_id: str,
+        user_identifier: str,
+        db: AsyncSession,
+    ) -> List[Message]:
+        """
+        Get user-specific chat history for a post.
+
+        Args:
+            post_id: Facebook post ID
+            user_identifier: Browser user identifier
+            db: Database session
+
+        Returns:
+            List of chat messages for this specific user
+        """
+        # Get post from database
+        post = await self._get_post(post_id, db)
+        if not post:
+            raise ValueError(f"Post with ID {post_id} not found")
+
+        # Get or create user session (but don't update last_active for history retrieval)
+        user_session = await self._get_user_session_readonly(user_identifier, db)
+        if not user_session:
+            # No user session exists, so no chat history
+            return []
+
+        # Get user-specific chat history
+        chats = await self._get_user_chat_history(post.post_id, user_session.id, db)
 
         return [
             Message(
@@ -180,6 +221,11 @@ class ChatService:
         await db.commit()
         await db.refresh(user_session)
         return user_session
+
+    async def _get_user_session_readonly(self, user_identifier: str, db: AsyncSession) -> Optional[UserSession]:
+        """Get user session without creating or updating it (for history retrieval)."""
+        result = await db.execute(select(UserSession).where(UserSession.user_identifier == user_identifier))
+        return result.scalar_one_or_none()
 
     async def _get_user_chat_history(self, post_id: str, user_session_id: str, db: AsyncSession, limit: int = 20) -> List[Chat]:
         """Get chat history for a specific user and post."""

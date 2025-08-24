@@ -2,7 +2,7 @@
 
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -71,18 +71,20 @@ async def send_message(
 @router.get("/history/{post_id}", response_model=ChatHistoryResponse)
 async def get_chat_history(
     post_id: str,
+    user_id: str = Query(..., description="User identifier to get user-specific chat history"),
     db: AsyncSession = Depends(get_db),
 ) -> ChatHistoryResponse:
     """
-    Get chat history for a post.
+    Get user-specific chat history for a post.
 
-    Returns all chat messages associated with a specific post,
-    ordered chronologically.
+    Returns chat messages from the specific user's conversation with the AI
+    about this post, ordered chronologically. Each user has their own
+    isolated chat history per post.
     """
     try:
-        logger.info("Getting chat history", post_id=post_id)
+        logger.info("Getting user-specific chat history", post_id=post_id, user_id=user_id)
 
-        messages = await chat_service.get_chat_history(post_id, db)
+        messages = await chat_service.get_user_chat_history(post_id, user_id, db)
 
         return ChatHistoryResponse(
             post_id=post_id,
@@ -91,8 +93,8 @@ async def get_chat_history(
         )
 
     except ValueError as e:
-        logger.warning("Post not found for chat history", post_id=post_id, error=str(e))
+        logger.warning("Post not found for chat history", post_id=post_id, user_id=user_id, error=str(e))
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except Exception as e:
-        logger.error("Error getting chat history", post_id=post_id, error=str(e), exc_info=True)
+        logger.error("Error getting chat history", post_id=post_id, user_id=user_id, error=str(e), exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to get chat history: {str(e)}")
