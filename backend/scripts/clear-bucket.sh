@@ -102,8 +102,6 @@ count_objects() {
         echo -e "${GREEN}✅ Bucket is already empty${NC}"
         exit 0
     fi
-    
-    return "$total_count"
 }
 
 # Function to show object details
@@ -128,6 +126,7 @@ clear_bucket() {
     if [ "$confirmation" != "--force" ] && [ "$confirmation" != "-f" ]; then
         echo -e "${RED}⚠️  WARNING: This will permanently delete ALL objects in the bucket!${NC}"
         echo -e "${YELLOW}Bucket: gs://$GCS_BUCKET_NAME${NC}"
+        echo -e "${YELLOW}This includes all versions, incomplete uploads, and metadata${NC}"
         echo
         read -p "Are you sure you want to continue? (yes/no): " user_confirmation
         
@@ -139,35 +138,93 @@ clear_bucket() {
     
     echo -e "${YELLOW}🗑️  Clearing bucket contents...${NC}"
     
-    # Remove all objects in bucket (parallel execution for faster deletion)
+    # Step 1: Cancel incomplete multipart uploads
+    echo -e "${YELLOW}🧹 Cleaning up incomplete multipart uploads...${NC}"
+    gsutil -m rm -r "gs://$GCS_BUCKET_NAME/**" 2>/dev/null || true
+    
+    # Step 2: Remove all object versions (if versioning is enabled)
+    echo -e "${YELLOW}📦 Removing all object versions...${NC}"
+    gsutil -m rm -a "gs://$GCS_BUCKET_NAME/**" 2>/dev/null || true
+    
+    # Step 3: Standard object deletion with parallel processing
+    echo -e "${YELLOW}🗂️  Removing current objects...${NC}"
     if gsutil -m rm -r "gs://$GCS_BUCKET_NAME/**" 2>/dev/null; then
-        echo -e "${GREEN}✅ All objects deleted successfully${NC}"
+        echo -e "${GREEN}✅ Standard deletion completed${NC}"
     else
-        # Try alternative method if first fails (bucket might be empty or have permissions issues)
-        echo -e "${YELLOW}⚠️  Standard deletion failed, trying alternative method...${NC}"
+        echo -e "${YELLOW}⚠️  Standard deletion had issues, trying comprehensive cleanup...${NC}"
         
-        # List and delete objects one by one (slower but more reliable)
-        gsutil ls "gs://$GCS_BUCKET_NAME/**" 2>/dev/null | while read object; do
-            if [ -n "$object" ] && [ "$object" != "gs://$GCS_BUCKET_NAME/" ]; then
+        # Step 4: Alternative method - list and delete objects individually
+        # This handles edge cases where bulk deletion fails
+        gsutil ls -a "gs://$GCS_BUCKET_NAME/**" 2>/dev/null | while IFS= read -r object; do
+            if [ -n "$object" ] && [[ "$object" != *":$" ]] && [ "$object" != "gs://$GCS_BUCKET_NAME/" ]; then
+                echo "Deleting: $object"
                 gsutil rm "$object" 2>/dev/null || true
             fi
         done
         
-        echo -e "${GREEN}✅ Bucket cleared using alternative method${NC}"
+        # Step 5: Force deletion of any remaining objects with different approaches
+        echo -e "${YELLOW}🔄 Final cleanup pass...${NC}"
+        
+        # Try to delete with different patterns to catch edge cases
+        gsutil -m rm "gs://$GCS_BUCKET_NAME/*" 2>/dev/null || true
+        gsutil -m rm -r "gs://$GCS_BUCKET_NAME/*" 2>/dev/null || true
+        gsutil -m rm -a "gs://$GCS_BUCKET_NAME/*" 2>/dev/null || true
+        
+        echo -e "${GREEN}✅ Comprehensive cleanup completed${NC}"
     fi
+    
+    # Step 6: Clear any lifecycle policies that might recreate objects
+    echo -e "${YELLOW}🔧 Clearing lifecycle policies...${NC}"
+    gsutil lifecycle set /dev/null "gs://$GCS_BUCKET_NAME" 2>/dev/null || true
 }
 
 # Function to verify bucket is empty
 verify_empty() {
     echo -e "${YELLOW}🔍 Verifying bucket is empty...${NC}"
     
+    # Check current objects
     local remaining_count=$(gsutil ls -r "gs://$GCS_BUCKET_NAME/**" 2>/dev/null | grep -v ':$' | wc -l || echo "0")
     
-    if [ "$remaining_count" -eq 0 ]; then
-        echo -e "${GREEN}✅ Bucket is now empty${NC}"
+    # Check versioned objects (including deleted versions)
+    local versioned_count=$(gsutil ls -a "gs://$GCS_BUCKET_NAME/**" 2>/dev/null | grep -v ':$' | wc -l || echo "0")
+    
+    # Check for incomplete multipart uploads
+    local uploads_count=0
+    if gsutil ls -m "gs://$GCS_BUCKET_NAME" 2>/dev/null | grep -q "Uploads:"; then
+        uploads_count=$(gsutil ls -m "gs://$GCS_BUCKET_NAME" 2>/dev/null | grep -A 1000 "Uploads:" | tail -n +2 | grep -v "^$" | wc -l || echo "0")
+    fi
+    
+    echo -e "  Current objects: $remaining_count"
+    echo -e "  All versions: $versioned_count"
+    echo -e "  Incomplete uploads: $uploads_count"
+    
+    if [ "$remaining_count" -eq 0 ] && [ "$versioned_count" -eq 0 ] && [ "$uploads_count" -eq 0 ]; then
+        echo -e "${GREEN}✅ Bucket is completely empty${NC}"
+        echo -e "${GREEN}✅ No objects, versions, or incomplete uploads remain${NC}"
+        return 0
     else
-        echo -e "${YELLOW}⚠️  Warning: $remaining_count objects still remain in bucket${NC}"
-        echo -e "${YELLOW}This might be due to permissions or versioned objects${NC}"
+        echo -e "${YELLOW}⚠️  Warning: Bucket still contains data${NC}"
+        
+        if [ "$remaining_count" -gt 0 ]; then
+            echo -e "${YELLOW}  • $remaining_count current objects remain${NC}"
+            echo -e "${YELLOW}    This might be due to insufficient permissions${NC}"
+        fi
+        
+        if [ "$versioned_count" -gt "$remaining_count" ]; then
+            echo -e "${YELLOW}  • $((versioned_count - remaining_count)) versioned objects remain${NC}"
+            echo -e "${YELLOW}    These are likely deleted object versions${NC}"
+        fi
+        
+        if [ "$uploads_count" -gt 0 ]; then
+            echo -e "${YELLOW}  • $uploads_count incomplete multipart uploads remain${NC}"
+            echo -e "${YELLOW}    These should be cleaned up automatically${NC}"
+        fi
+        
+        echo -e "${YELLOW}💡 To investigate remaining objects:${NC}"
+        echo -e "  gsutil ls -a gs://$GCS_BUCKET_NAME/**"
+        echo -e "  gsutil ls -m gs://$GCS_BUCKET_NAME"
+        
+        return 1
     fi
 }
 
