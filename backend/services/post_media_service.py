@@ -33,6 +33,7 @@ class PostMediaService:
     ) -> Post:
         """
         Save post with its media to the database BEFORE detection processing.
+        Uses upsert to handle concurrent requests safely.
 
         Args:
             request: Detection request with post content and media URLs
@@ -41,30 +42,33 @@ class PostMediaService:
         Returns:
             Created or updated Post object
         """
-        # Check if post already exists
-        result = await db.execute(select(Post).where(Post.post_id == request.post_id))
-        existing_post = result.scalar_one_or_none()
-
-        if existing_post:
-            # Update existing post content
-            existing_post.content = request.content
-            existing_post.author = request.author
-            existing_post.post_metadata = request.metadata
-            post = existing_post
-        else:
-            # Create new post with placeholder values for detection results
-            post = Post(
-                post_id=request.post_id,
-                content=request.content,
-                author=request.author,
-                verdict="pending",  # Will be updated after detection
-                confidence=0.0,  # Will be updated after detection
-                post_metadata=request.metadata,
+        # Use upsert to handle race conditions
+        stmt = insert(Post).values(
+            post_id=request.post_id,
+            content=request.content,
+            author=request.author,
+            verdict="pending",
+            confidence=0.0,
+            post_metadata=request.metadata,
+        )
+        
+        # On conflict, update the existing record
+        stmt = stmt.on_conflict_do_update(
+            index_elements=['post_id'],
+            set_=dict(
+                content=stmt.excluded.content,
+                author=stmt.excluded.author,
+                post_metadata=stmt.excluded.post_metadata,
+                updated_at=stmt.excluded.updated_at,
             )
-            db.add(post)
-
+        )
+        
+        await db.execute(stmt)
         await db.commit()
-        await db.refresh(post)
+        
+        # Fetch the post to return
+        result = await db.execute(select(Post).where(Post.post_id == request.post_id))
+        post = result.scalar_one()
 
         # Always check for media changes with the new smart diffing approach
         await self._save_media_urls(post.post_id, request, db)
