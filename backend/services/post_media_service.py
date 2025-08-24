@@ -220,22 +220,23 @@ class PostMediaService:
         media_file_info: List[dict],
         db: AsyncSession
     ) -> None:
-        """Create PostMedia entries only for new URLs using upsert."""
+        """Create PostMedia entries only for new URLs using upsert with deduplication fields."""
         
         media_data = []
         gemini_uri_index = 0
         
-        # Create lookup dictionary for storage paths
-        storage_path_lookup = {}
+        # Create lookup dictionary for media info
+        media_info_lookup = {}
         for file_info in media_file_info:
-            storage_path_lookup[file_info["url"]] = file_info.get("storage_path")
+            media_info_lookup[file_info["url"]] = file_info
         
         # Process new image URLs
         for image_url in image_urls:
+            file_info = media_info_lookup.get(image_url, {})
             gemini_uri = gemini_file_uris[gemini_uri_index] if gemini_uri_index < len(gemini_file_uris) else None
-            storage_path = storage_path_lookup.get(image_url)
             
             media_id = generate_composite_media_id(post_id, image_url, "image")
+            storage_path = file_info.get("storage_path")
             storage_type = None
             if storage_path:
                 storage_type = "gcs" if storage_path.startswith("gs://") else "local"
@@ -248,15 +249,18 @@ class PostMediaService:
                 "gemini_file_uri": gemini_uri,
                 "storage_path": storage_path,
                 "storage_type": storage_type,
+                "content_hash": file_info.get("content_hash"),
+                "normalized_url": file_info.get("normalized_url"),
             })
             gemini_uri_index += 1
         
         # Process new video URLs
         for video_url in video_urls:
+            file_info = media_info_lookup.get(video_url, {})
             gemini_uri = gemini_file_uris[gemini_uri_index] if gemini_uri_index < len(gemini_file_uris) else None
-            storage_path = storage_path_lookup.get(video_url)
             
             media_id = generate_composite_media_id(post_id, video_url, "video")
+            storage_path = file_info.get("storage_path")
             storage_type = None
             if storage_path:
                 storage_type = "gcs" if storage_path.startswith("gs://") else "local"
@@ -269,6 +273,8 @@ class PostMediaService:
                 "gemini_file_uri": gemini_uri,
                 "storage_path": storage_path,
                 "storage_type": storage_type,
+                "content_hash": file_info.get("content_hash"),
+                "normalized_url": file_info.get("normalized_url"),
             })
             gemini_uri_index += 1
         
@@ -282,6 +288,8 @@ class PostMediaService:
                     "gemini_file_uri": stmt.excluded.gemini_file_uri,
                     "storage_path": stmt.excluded.storage_path,
                     "storage_type": stmt.excluded.storage_type,
+                    "content_hash": stmt.excluded.content_hash,
+                    "normalized_url": stmt.excluded.normalized_url,
                     "updated_at": stmt.excluded.updated_at,
                 }
             )

@@ -580,7 +580,7 @@ class FileUploadService:
     ) -> Tuple[List[str], List[dict]]:
         """
         Upload both images and videos from URLs to Gemini File API.
-        Updated to use media registry for deduplication.
+        Updated to use content deduplication service.
 
         Args:
             image_urls: List of image URLs to upload
@@ -597,6 +597,22 @@ class FileUploadService:
         if not all_media_urls:
             return [], []
 
+        # STEP 1: Check for duplicate content using deduplication service
+        duplicates = {}
+        if post_id and db:
+            from utils.content_deduplication import deduplication_service
+            duplicates = await deduplication_service.find_duplicate_content(
+                post_id, all_media_urls, db
+            )
+            
+            if duplicates:
+                logger.info(
+                    "Found duplicate content, reusing existing files",
+                    post_id=post_id,
+                    duplicate_count=len(duplicates),
+                    bandwidth_saved=True
+                )
+
         # Register all media in the processing registry
         if post_id:
             for url in image_urls:
@@ -605,7 +621,7 @@ class FileUploadService:
                 media_registry.register_media(post_id, url, "video")
 
         # Sequential processing: Download ALL files first, then upload ALL files
-        logger.info("Starting sequential media processing with registry", post_id=post_id, images=len(image_urls), videos=len(video_urls))
+        logger.info("Starting sequential media processing with deduplication", post_id=post_id, images=len(image_urls), videos=len(video_urls), duplicates=len(duplicates))
 
         # Phase 1: Download all media files
         logger.info("Phase 1: Downloading all media files", post_id=post_id)
@@ -614,6 +630,28 @@ class FileUploadService:
         # Download images first
         for i, url in enumerate(image_urls):
             try:
+                # Check if this is duplicate content
+                if url in duplicates:
+                    existing_storage_path = duplicates[url]
+                    
+                    # Reuse existing file
+                    file_uri = await self._upload_to_gemini_from_storage(
+                        existing_storage_path, "image/jpeg", f"post_image_{i + 1}"
+                    )
+                    
+                    downloaded_files.append({
+                        "type": "image",
+                        "url": url,
+                        "storage_path": existing_storage_path,
+                        "index": i,
+                        "mime_type": "image/jpeg",
+                        "is_duplicate": True,
+                        "gemini_uri": file_uri
+                    })
+                    
+                    logger.info("Reused duplicate content", url=url[:50], storage_path=existing_storage_path)
+                    continue
+
                 # Check if already processed using registry
                 if post_id and media_registry.is_already_processed(post_id, url, "downloaded"):
                     existing_record = media_registry.get_processed_media_info(post_id, url)
@@ -644,6 +682,10 @@ class FileUploadService:
                     processed_data, mime_type = await self._process_image(image_data, content_type)
                     if processed_data and post_id:
                         try:
+                            # Calculate content hash for deduplication
+                            from utils.content_deduplication import deduplication_service
+                            content_hash = await deduplication_service.calculate_content_hash(processed_data)
+                            
                             storage_path = await self.save_media(processed_data, post_id, url, "image", mime_type)
                             
                             # Update registry
@@ -664,6 +706,9 @@ class FileUploadService:
                                     "index": i,
                                     "data": processed_data,
                                     "mime_type": mime_type,
+                                    "content_hash": content_hash,
+                                    "normalized_url": deduplication_service.normalize_facebook_url(url),
+                                    "is_duplicate": False
                                 }
                             )
                             logger.info("Downloaded image", url=url[:50], storage_path=storage_path)
@@ -675,6 +720,28 @@ class FileUploadService:
         # Download videos
         for i, url in enumerate(video_urls):
             try:
+                # Check if this is duplicate content
+                if url in duplicates:
+                    existing_storage_path = duplicates[url]
+                    
+                    # Reuse existing file
+                    file_uri = await self._upload_to_gemini_from_storage(
+                        existing_storage_path, "video/mp4", f"post_video_{i + 1}"
+                    )
+                    
+                    downloaded_files.append({
+                        "type": "video",
+                        "url": url,
+                        "storage_path": existing_storage_path,
+                        "index": i,
+                        "mime_type": "video/mp4",
+                        "is_duplicate": True,
+                        "gemini_uri": file_uri
+                    })
+                    
+                    logger.info("Reused duplicate content", url=url[:50], storage_path=existing_storage_path)
+                    continue
+
                 # Check if already processed using registry
                 if post_id and media_registry.is_already_processed(post_id, url, "downloaded"):
                     existing_record = media_registry.get_processed_media_info(post_id, url)
@@ -705,6 +772,10 @@ class FileUploadService:
                     mime_type = self._get_video_mime_type(content_type)
                     if mime_type and post_id:
                         try:
+                            # Calculate content hash for deduplication
+                            from utils.content_deduplication import deduplication_service
+                            content_hash = await deduplication_service.calculate_content_hash(video_data)
+                            
                             storage_path = await self.save_media(video_data, post_id, url, "video", mime_type)
                             
                             # Update registry
@@ -725,6 +796,9 @@ class FileUploadService:
                                     "index": i,
                                     "data": video_data,
                                     "mime_type": mime_type,
+                                    "content_hash": content_hash,
+                                    "normalized_url": deduplication_service.normalize_facebook_url(url),
+                                    "is_duplicate": False
                                 }
                             )
                             logger.info("Downloaded video", url=url[:50], storage_path=storage_path)
@@ -746,6 +820,13 @@ class FileUploadService:
 
         for file_info in downloaded_files:
             try:
+                # Handle duplicates that were already uploaded to Gemini in Phase 1
+                if file_info.get("is_duplicate") and file_info.get("gemini_uri"):
+                    file_uris.append(file_info["gemini_uri"])
+                    logger.info("Using Gemini URI from duplicate processing", 
+                              url=file_info["url"][:50], gemini_uri=file_info["gemini_uri"])
+                    continue
+
                 # Check registry for existing Gemini upload
                 if post_id and media_registry.is_already_processed(post_id, file_info["url"], "uploaded"):
                     existing_record = media_registry.get_processed_media_info(post_id, file_info["url"])
