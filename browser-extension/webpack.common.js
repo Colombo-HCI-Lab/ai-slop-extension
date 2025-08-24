@@ -16,6 +16,7 @@ const HtmlWebpackPlugin = require('html-webpack-plugin');
 const { CleanWebpackPlugin } = require('clean-webpack-plugin');
 const MiniCssExtractPlugin = require('mini-css-extract-plugin');
 const webpack = require('webpack');
+require('dotenv').config();
 
 module.exports = {
   // Entry points for the extension's different scripts
@@ -84,9 +85,19 @@ module.exports = {
             if (backendUrl) {
               // Update host_permissions to include the backend URL
               const backendHost = new URL(backendUrl).origin + '/*';
-              manifest.host_permissions = manifest.host_permissions.filter(
-                permission => !permission.includes('localhost:4000')
-              );
+              
+              // Remove any existing backend API permissions while preserving Facebook permissions
+              manifest.host_permissions = manifest.host_permissions.filter(permission => {
+                // Keep Facebook permissions
+                if (permission.includes('facebook.com')) return true;
+                
+                // Remove any backend API URLs (localhost, deployed domains, etc.)
+                // This matches patterns like "http://localhost:4000/*", "https://api.example.com/*", etc.
+                const isBackendUrl = permission.match(/^https?:\/\/[^\/]+\/?\*$/);
+                return !isBackendUrl;
+              });
+              
+              // Add the current backend URL
               if (!manifest.host_permissions.includes(backendHost)) {
                 manifest.host_permissions.push(backendHost);
               }
