@@ -303,7 +303,7 @@ Your role:
 Keep responses informative but concise (2-4 sentences typically)."""
 
             # Initialize model with the specific post context
-            model = genai.GenerativeModel("gemini-2.5-flash", system_instruction=system_instruction)
+            model = genai.GenerativeModel("gemini-2.5-flash-lite", system_instruction=system_instruction)
             chat_session = model.start_chat()
 
             # Add previous conversation history
@@ -369,7 +369,7 @@ Your role:
 Keep responses informative but concise (2-4 sentences typically)."""
 
             # Initialize model with multimodal capability
-            model = genai.GenerativeModel("gemini-2.5-flash", system_instruction=system_instruction)
+            model = genai.GenerativeModel("gemini-2.5-flash-lite", system_instruction=system_instruction)
             chat_session = model.start_chat()
 
             # Create multimodal prompt with images
@@ -488,7 +488,7 @@ Generate 3 short, concise follow-up questions that:
 Return ONLY the 3 questions, each on a separate line, without numbers or bullet points."""
 
             # Initialize model
-            model = genai.GenerativeModel("gemini-2.5-flash", system_instruction=system_instruction)
+            model = genai.GenerativeModel("gemini-2.5-flash-lite", system_instruction=system_instruction)
 
             # Generate suggestions
             response = model.generate_content("Generate 3 intelligent follow-up questions based on the context above.")
