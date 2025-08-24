@@ -1,10 +1,8 @@
 """Google Cloud Storage service for handling media file storage."""
 
 import hashlib
-import io
 import uuid
-from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional
 
 from google.cloud import storage
 from google.cloud.exceptions import GoogleCloudError
@@ -72,7 +70,7 @@ class GCSStorageService:
             media_type: 'image' or 'video'
             
         Returns:
-            GCS object path: posts/{post_id}/media/{hash}_{uuid}.ext
+            GCS object path: {post_id}/media/{hash}_{uuid}.ext
         """
         # Generate unique filename based on URL hash and UUID
         url_hash = hashlib.md5(media_url.encode()).hexdigest()[:8]
@@ -89,7 +87,7 @@ class GCSStorageService:
                 pass
         
         filename = f"{url_hash}_{unique_id}{extension}"
-        return f"posts/{post_id}/media/{filename}"
+        return f"{post_id}/media/{filename}"
 
     async def upload_media(self, data: bytes, gcs_path: str, content_type: str) -> str:
         """
@@ -263,8 +261,8 @@ class GCSStorageService:
             cutoff_time = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
             deleted_count = 0
             
-            # List all blobs in the posts/ prefix
-            blobs = self.client.list_blobs(self.bucket, prefix="posts/")
+            # List all blobs (no prefix needed since post_id is now at root)
+            blobs = self.client.list_blobs(self.bucket)
             
             for blob in blobs:
                 if blob.time_created < cutoff_time:

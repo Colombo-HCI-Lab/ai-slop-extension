@@ -60,8 +60,8 @@ class FileUploadService:
         Returns:
             Path object for local file storage
         """
-        # Create post-specific folder: TMP_DIR/posts/{post_id}/media/
-        post_folder = settings.tmp_dir / "posts" / post_id / "media"
+        # Create post-specific folder: TMP_DIR/{post_id}/media/
+        post_folder = settings.tmp_dir / post_id / "media"
         post_folder.mkdir(parents=True, exist_ok=True)
 
         # Generate unique filename based on URL hash and UUID
@@ -279,8 +279,8 @@ class FileUploadService:
             True if post directory exists (indicating post was processed), False otherwise
         """
         try:
-            # Check for the post directory structure: TMP_DIR/posts/{post_id}/
-            post_dir = settings.tmp_dir / "posts" / post_id
+            # Check for the post directory structure: TMP_DIR/{post_id}/
+            post_dir = settings.tmp_dir / post_id
             post_media_dir = post_dir / "media"
 
             # If the post directory structure exists, consider it processed
@@ -1397,7 +1397,7 @@ class FileUploadService:
         This is a fallback method for legacy support.
         """
         try:
-            post_dir = settings.tmp_dir / "posts" / post_id / "media"
+            post_dir = settings.tmp_dir / post_id / "media"
             return post_dir.exists() and any(post_dir.iterdir())
         except Exception as e:
             logger.error("Error checking local media files", post_id=post_id, error=str(e))
