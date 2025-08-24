@@ -123,19 +123,6 @@ show_objects() {
 clear_bucket() {
     local confirmation="$1"
     
-    if [ "$confirmation" != "--force" ] && [ "$confirmation" != "-f" ]; then
-        echo -e "${RED}⚠️  WARNING: This will permanently delete ALL objects in the bucket!${NC}"
-        echo -e "${YELLOW}Bucket: gs://$GCS_BUCKET_NAME${NC}"
-        echo -e "${YELLOW}This includes all versions, incomplete uploads, and metadata${NC}"
-        echo
-        read -p "Are you sure you want to continue? (yes/no): " user_confirmation
-        
-        if [ "$user_confirmation" != "yes" ]; then
-            echo -e "${YELLOW}❌ Operation cancelled${NC}"
-            exit 0
-        fi
-    fi
-    
     echo -e "${YELLOW}🗑️  Clearing bucket contents...${NC}"
     
     # Step 1: Cancel incomplete multipart uploads
