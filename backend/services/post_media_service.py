@@ -66,9 +66,8 @@ class PostMediaService:
         await db.commit()
         await db.refresh(post)
 
-        # Save media URLs if this is a new post or if media URLs have changed
-        if not existing_post or await self._should_update_media(post.post_id, request, db):
-            await self._save_media_urls(post.post_id, request, db)
+        # Always check for media changes with the new smart diffing approach
+        await self._save_media_urls(post.post_id, request, db)
 
         logger.info(
             "Post saved before detection",
@@ -127,87 +126,120 @@ class PostMediaService:
 
         return post
 
-    async def _should_update_media(
+    async def _detect_media_changes(
+        self, 
+        post_id: str, 
+        new_image_urls: List[str], 
+        new_video_urls: List[str], 
+        db: AsyncSession
+    ) -> Dict[str, Any]:
+        """
+        Detect what media URLs have actually changed.
+        
+        Returns:
+            {
+                'unchanged_media': List[PostMedia],  # Keep these as-is
+                'urls_to_remove': List[str],         # Delete these
+                'urls_to_add': List[str],           # Add these
+                'needs_update': bool                # Whether any changes detected
+            }
+        """
+        try:
+            # Get existing media URLs
+            existing_result = await db.execute(
+                select(PostMedia)
+                .where(PostMedia.post_id == post_id)
+            )
+            existing_media = existing_result.scalars().all()
+            
+            # Separate existing URLs by type
+            existing_image_urls = {
+                media.media_url for media in existing_media 
+                if media.media_type == "image"
+            }
+            existing_video_urls = {
+                media.media_url for media in existing_media 
+                if media.media_type == "video"
+            }
+            
+            # Convert new URLs to sets
+            new_image_set = set(new_image_urls or [])
+            new_video_set = set(new_video_urls or [])
+            
+            # Find differences
+            all_existing_urls = existing_image_urls | existing_video_urls
+            all_new_urls = new_image_set | new_video_set
+            
+            urls_to_remove = all_existing_urls - all_new_urls
+            urls_to_add = all_new_urls - all_existing_urls
+            unchanged_urls = all_existing_urls & all_new_urls
+            
+            # Get unchanged media objects to preserve
+            unchanged_media = [
+                media for media in existing_media 
+                if media.media_url in unchanged_urls
+            ]
+            
+            needs_update = bool(urls_to_remove or urls_to_add)
+            
+            logger.info(
+                "Media change detection completed",
+                post_id=post_id,
+                total_existing=len(all_existing_urls),
+                total_new=len(all_new_urls),
+                unchanged=len(unchanged_urls),
+                to_remove=len(urls_to_remove),
+                to_add=len(urls_to_add),
+                needs_update=needs_update
+            )
+            
+            return {
+                'unchanged_media': unchanged_media,
+                'urls_to_remove': list(urls_to_remove),
+                'urls_to_add': list(urls_to_add),
+                'needs_update': needs_update
+            }
+        
+        except Exception as e:
+            logger.error("Error detecting media changes", post_id=post_id, error=str(e))
+            # Fallback to full update if detection fails
+            return {
+                'unchanged_media': [],
+                'urls_to_remove': [],
+                'urls_to_add': new_image_urls + new_video_urls,
+                'needs_update': True
+            }
+
+
+    async def _create_media_entries_for_new_urls(
         self,
         post_id: str,
-        request: ContentDetectionRequest,
-        db: AsyncSession,
-    ) -> bool:
-        """Check if media URLs have changed and need updating."""
-        # Get existing media URLs
-        result = await db.execute(select(PostMedia.media_url, PostMedia.media_type).where(PostMedia.post_id == post_id))
-        existing_media = result.fetchall()
-
-        existing_images = {url for url, media_type in existing_media if media_type == "image"}
-        existing_videos = {url for url, media_type in existing_media if media_type == "video"}
-
-        request_images = set(request.image_urls or [])
-        request_videos = set(request.video_urls or [])
-
-        # Return True if any media URLs have changed
-        return existing_images != request_images or existing_videos != request_videos
-
-    async def _save_media_urls(
-        self,
-        post_id: str,
-        request: ContentDetectionRequest,
-        db: AsyncSession,
+        image_urls: List[str],
+        video_urls: List[str],
+        gemini_file_uris: List[str],
+        media_file_info: List[dict],
+        db: AsyncSession
     ) -> None:
-        """Save media URLs to the post_media table and upload to Gemini using upsert."""
-        # Upload media to Gemini first (if service available)
-        gemini_file_uris = []
-        media_file_info = []
-        if self.file_service and (request.image_urls or request.video_urls):
-            try:
-                logger.info(
-                    "Uploading media to Gemini during post processing",
-                    post_id=post_id,
-                    image_count=len(request.image_urls or []),
-                    video_count=len(request.video_urls or []),
-                )
-                gemini_file_uris, media_file_info = await self.file_service.upload_media_from_urls(
-                    request.image_urls or [], request.video_urls or [], post_id=post_id, db=db
-                )
-                logger.info(
-                    "Gemini upload completed",
-                    post_id=post_id,
-                    successful_uploads=len(gemini_file_uris),
-                    total_media=len((request.image_urls or []) + (request.video_urls or [])),
-                )
-            except Exception as e:
-                error_msg = str(e).lower()
-                if any(keyword in error_msg for keyword in ["signature", "expired", "invalid", "forbidden", "403"]):
-                    logger.warning(
-                        "Media upload failed due to expired/invalid URLs",
-                        post_id=post_id,
-                        error=str(e),
-                        suggestion="Facebook URLs may have expired - this is normal for older posts",
-                    )
-                else:
-                    logger.error("Failed to upload media to Gemini during post processing", post_id=post_id, error=str(e))
-                # Continue with database storage even if Gemini upload fails
-
+        """Create PostMedia entries only for new URLs using upsert."""
+        
         media_data = []
         gemini_uri_index = 0
-
+        
         # Create lookup dictionary for storage paths
         storage_path_lookup = {}
         for file_info in media_file_info:
             storage_path_lookup[file_info["url"]] = file_info.get("storage_path")
-
-        # Prepare image data for upsert
-        for image_url in request.image_urls or []:
+        
+        # Process new image URLs
+        for image_url in image_urls:
             gemini_uri = gemini_file_uris[gemini_uri_index] if gemini_uri_index < len(gemini_file_uris) else None
             storage_path = storage_path_lookup.get(image_url)
-
-            # Generate composite media ID using Facebook media ID if available
+            
             media_id = generate_composite_media_id(post_id, image_url, "image")
-
-            # Determine storage type
             storage_type = None
             if storage_path:
                 storage_type = "gcs" if storage_path.startswith("gs://") else "local"
-
+            
             media_data.append({
                 "id": media_id,
                 "post_id": post_id,
@@ -218,20 +250,17 @@ class PostMediaService:
                 "storage_type": storage_type,
             })
             gemini_uri_index += 1
-
-        # Prepare video data for upsert
-        for video_url in request.video_urls or []:
+        
+        # Process new video URLs
+        for video_url in video_urls:
             gemini_uri = gemini_file_uris[gemini_uri_index] if gemini_uri_index < len(gemini_file_uris) else None
             storage_path = storage_path_lookup.get(video_url)
-
-            # Generate composite media ID using Facebook media ID if available
+            
             media_id = generate_composite_media_id(post_id, video_url, "video")
-
-            # Determine storage type
             storage_type = None
             if storage_path:
                 storage_type = "gcs" if storage_path.startswith("gs://") else "local"
-
+            
             media_data.append({
                 "id": media_id,
                 "post_id": post_id,
@@ -242,8 +271,8 @@ class PostMediaService:
                 "storage_type": storage_type,
             })
             gemini_uri_index += 1
-
-        # Use upsert (INSERT ON CONFLICT DO UPDATE) to handle duplicates
+        
+        # Use upsert to insert new entries
         if media_data:
             stmt = insert(PostMedia).values(media_data)
             stmt = stmt.on_conflict_do_update(
@@ -259,12 +288,83 @@ class PostMediaService:
             await db.execute(stmt)
             await db.commit()
 
-            successful_gemini_uploads = sum(1 for data in media_data if data.get("gemini_file_uri"))
-            logger.info(
-                "Media URLs saved with Gemini integration (upsert)",
-                post_id=post_id,
-                image_count=len(request.image_urls or []),
-                video_count=len(request.video_urls or []),
-                total_media=len(media_data),
-                gemini_uploads=successful_gemini_uploads,
+    async def _save_media_urls(
+        self,
+        post_id: str,
+        request: ContentDetectionRequest,
+        db: AsyncSession,
+    ) -> None:
+        """Optimized media URL saving with smart diffing."""
+        
+        # Step 1: Detect what actually changed
+        changes = await self._detect_media_changes(
+            post_id, 
+            request.image_urls or [], 
+            request.video_urls or [], 
+            db
+        )
+        
+        # Step 2: Skip processing if nothing changed
+        if not changes['needs_update']:
+            logger.info("No media changes detected, skipping media processing", post_id=post_id)
+            return
+        
+        # Step 3: Remove only URLs that are no longer needed
+        if changes['urls_to_remove']:
+            await db.execute(
+                PostMedia.__table__.delete()
+                .where(PostMedia.post_id == post_id)
+                .where(PostMedia.media_url.in_(changes['urls_to_remove']))
             )
+            logger.info(
+                "Removed obsolete media records",
+                post_id=post_id,
+                removed_count=len(changes['urls_to_remove'])
+            )
+        
+        # Step 4: Process only new URLs
+        if changes['urls_to_add']:
+            new_image_urls = [url for url in (request.image_urls or []) if url in changes['urls_to_add']]
+            new_video_urls = [url for url in (request.video_urls or []) if url in changes['urls_to_add']]
+            
+            # Upload only new media to Gemini
+            gemini_file_uris = []
+            media_file_info = []
+            if self.file_service and (new_image_urls or new_video_urls):
+                try:
+                    logger.info(
+                        "Processing only new media URLs",
+                        post_id=post_id,
+                        new_images=len(new_image_urls),
+                        new_videos=len(new_video_urls),
+                        unchanged_preserved=len(changes['unchanged_media'])
+                    )
+                    
+                    gemini_file_uris, media_file_info = await self.file_service.upload_media_from_urls(
+                        new_image_urls, new_video_urls, post_id=post_id, db=db
+                    )
+                except Exception as e:
+                    error_msg = str(e).lower()
+                    if any(keyword in error_msg for keyword in ["signature", "expired", "invalid", "forbidden", "403"]):
+                        logger.warning(
+                            "Media upload failed due to expired/invalid URLs",
+                            post_id=post_id,
+                            error=str(e),
+                            suggestion="Facebook URLs may have expired - this is normal for older posts",
+                        )
+                    else:
+                        logger.error("Failed to process new media URLs", post_id=post_id, error=str(e))
+            
+            # Step 5: Create media entries only for new URLs
+            await self._create_media_entries_for_new_urls(
+                post_id, new_image_urls, new_video_urls, 
+                gemini_file_uris, media_file_info, db
+            )
+        
+        logger.info(
+            "Smart media update completed",
+            post_id=post_id,
+            preserved_records=len(changes['unchanged_media']),
+            added_records=len(changes['urls_to_add']),
+            removed_records=len(changes['urls_to_remove'])
+        )
