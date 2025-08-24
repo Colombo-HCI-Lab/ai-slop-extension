@@ -96,9 +96,41 @@ async def process_post(
             author=request.author,
         )
 
-        # Step 1: Save post and download/upload media to Gemini
+        # STEP 0: Check if post already has detection results (MOVED TO FRONT)
+        result = await db.execute(select(Post).where(Post.post_id == request.post_id))
+        existing_post = result.scalar_one_or_none()
+
+        # If post exists and has been processed (verdict != "pending"), return cached results
+        if existing_post and existing_post.verdict != "pending":
+            logger.info(
+                "Returning cached detection results - no media download needed",
+                post_id=request.post_id,
+                verdict=existing_post.verdict,
+                confidence=existing_post.confidence,
+                bandwidth_saved=True,
+            )
+
+            # Build cached response from database
+            return ContentDetectionResponse(
+                post_id=request.post_id,
+                verdict=existing_post.verdict,
+                confidence=existing_post.confidence,
+                explanation=existing_post.explanation,
+                text_ai_probability=existing_post.text_ai_probability,
+                text_confidence=existing_post.text_confidence,
+                image_ai_probability=existing_post.image_ai_probability,
+                image_confidence=existing_post.image_confidence,
+                video_ai_probability=existing_post.video_ai_probability,
+                video_confidence=existing_post.video_confidence,
+                image_analysis=[],  # Could retrieve from post_media if needed
+                video_analysis=[],  # Could retrieve from post_media if needed
+                debug_info={"from_cache": True, "media_downloads_skipped": True},
+                timestamp=datetime.now().isoformat(),
+            )
+
+        # Step 1: Save post and download/upload media to Gemini (ONLY FOR NEW POSTS)
         # This completes ALL media operations before proceeding
-        logger.info("Step 1: Saving post and processing media", post_id=request.post_id)
+        logger.info("New post detected - proceeding with media download and analysis", post_id=request.post_id)
         post = await post_media_service.save_post_before_detection(request, db)
 
         # Step 1.5: Download videos using yt-dlp if post contains videos
