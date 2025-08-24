@@ -1,11 +1,12 @@
 import asyncio
+import os
 import sys
 from logging.config import fileConfig
 from pathlib import Path
 
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import async_engine_from_config
+from sqlalchemy.ext.asyncio import async_engine_from_config, create_async_engine
 
 # Add parent directory to path to import models
 sys.path.append(str(Path(__file__).parent.parent.parent))
@@ -45,7 +46,8 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    url = config.get_main_option("sqlalchemy.url")
+    # Use DATABASE_URL environment variable if available
+    url = os.environ.get("DATABASE_URL") or config.get_main_option("sqlalchemy.url")
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -69,12 +71,20 @@ async def run_async_migrations() -> None:
     and associate a connection with the context.
 
     """
-
-    connectable = async_engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    # Use DATABASE_URL environment variable if available
+    database_url = os.environ.get("DATABASE_URL")
+    
+    if database_url:
+        connectable = create_async_engine(
+            database_url,
+            poolclass=pool.NullPool,
+        )
+    else:
+        connectable = async_engine_from_config(
+            config.get_section(config.config_ini_section, {}),
+            prefix="sqlalchemy.",
+            poolclass=pool.NullPool,
+        )
 
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)

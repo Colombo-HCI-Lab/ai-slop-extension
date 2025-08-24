@@ -34,6 +34,7 @@ echo -e "${YELLOW}Database Configuration:${NC}"
 echo -e "  Host: ${DB_HOST}:${DB_PORT}"
 echo -e "  User: ${DB_USER}"
 echo -e "  Database: ${DB_NAME}"
+echo -e "  Port: ${DB_PORT}"
 echo -e "  Password: [${#DB_PASSWORD} characters]"
 echo
 
@@ -74,7 +75,15 @@ if [ ! -f "alembic.ini" ]; then
     exit 1
 fi
 
-# Run migrations
+# Clear any existing alembic version table that might have stale data
+echo -e "${YELLOW}  Clearing alembic version table...${NC}"
+execute_psql_db "$DB_NAME" "DROP TABLE IF EXISTS alembic_version;" > /dev/null || true
+
+# Set up DATABASE_URL environment variable for alembic
+export DATABASE_URL="postgresql+asyncpg://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
+
+# Run migrations - upgrade to head (this will create the alembic_version table)
+echo -e "${YELLOW}  Running upgrade to head...${NC}"
 uv run alembic upgrade head || {
     echo -e "${RED}Failed to run migrations!${NC}"
     exit 1
