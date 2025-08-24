@@ -512,9 +512,30 @@ export class FacebookPostObserver {
         // The post URL will be sent with the detection request
       }
 
-      if (!content || content.trim().length < 10) {
-        console.log(`[AI-Slop] ⏭️ Post ${postId} has insufficient content, skipping analysis`);
+      // Enhanced content validation to skip posts with repetitive content
+      const trimmedContent = content.trim();
+      const hasMedia = mediaUrls.images.length > 0 || mediaUrls.hasVideos;
+      
+      // Allow posts with no text content if they have media (media-only posts)
+      if (trimmedContent.length === 0 && !hasMedia) {
+        console.log(`[AI-Slop] ⏭️ Post ${postId} has no content and no media, skipping analysis`);
         return;
+      }
+      
+      // For posts with text content, check for repetitive Facebook patterns
+      if (trimmedContent.length > 0) {
+        const facebookCount = (trimmedContent.toLowerCase().match(/(facebook)/gi) || []).length;
+        const hasConsecutiveFacebook = trimmedContent.toLowerCase().match(/(facebook){3,}/gi);
+        const facebookRatio = trimmedContent.length > 0 ? facebookCount / (trimmedContent.length / 8) : 0; // Rough word ratio
+        
+        const isInvalidTextContent = trimmedContent.length < 10 || 
+          hasConsecutiveFacebook || 
+          (facebookCount > 10 && facebookRatio > 0.3); // Too many Facebook occurrences
+          
+        if (isInvalidTextContent) {
+          console.log(`[AI-Slop] ⏭️ Post ${postId} has repetitive text content (${trimmedContent.length} chars, ${facebookCount} "Facebook" occurrences), skipping analysis`);
+          return;
+        }
       }
 
       console.log(`[AI-Slop] 🔍 Analyzing post ${postId} with backend API...`);
@@ -608,7 +629,11 @@ export class FacebookPostObserver {
 
     // Check if content is generic (Facebook repetition pattern)
     const isGenericContent =
-      content.length > 200 && content.toLowerCase().includes('facebook'.repeat(10));
+      content.length > 200 && (
+        content.toLowerCase().includes('facebook'.repeat(10)) ||
+        (content.toLowerCase().match(/(facebook)/gi) || []).length > 15 || // Too many "Facebook" occurrences
+        content.toLowerCase().match(/(facebook){5,}/gi) // Consecutive "Facebook" repetitions
+      );
 
     let uniqueString: string;
 
@@ -763,58 +788,9 @@ export class FacebookPostObserver {
       }
     }
 
-    // 3. For group posts, try to find text content that's not in headers or buttons
-    if (!content.trim()) {
-      // Clone the element to avoid modifying the original
-      const clone = postElement.cloneNode(true) as HTMLElement;
-
-      // Remove elements that shouldn't be part of the post content
-      const elementsToRemove = clone.querySelectorAll(
-        [
-          'h1',
-          'h2',
-          'h3',
-          'h4',
-          'h5',
-          'h6', // Headers (author names, etc.)
-          'button', // Interaction buttons
-          'nav',
-          '[role="button"]', // Navigation and button roles
-          '[aria-label*="Like"]',
-          '[aria-label*="Comment"]',
-          '[aria-label*="Share"]', // Interaction elements
-          'img',
-          'svg', // Images and icons
-          'time', // Timestamps
-          'a[href*="/user/"]', // User profile links
-          '[data-testid]', // Facebook test IDs
-          '.timestamp', // Timestamp classes (if any)
-        ].join(', ')
-      );
-
-      elementsToRemove.forEach(el => el.remove());
-
-      // Get the remaining text content
-      content = clone.textContent || '';
-      extractionMethod = 'Fallback text extraction';
-    }
-
-    // 4. Final fallback: get all text content and filter out common non-content patterns
-    if (!content.trim()) {
-      const allText = postElement.textContent || '';
-      // Filter out common patterns that aren't post content
-      const filteredText = allText
-        .replace(/\b(Like|Comment|Share|React)\b/gi, '') // Remove interaction words
-        .replace(/\d+\s*(likes?|comments?|shares?)/gi, '') // Remove count text
-        .replace(/\b\d+[a-z]\b/gi, '') // Remove timestamps like "3w", "2h"
-        .replace(/Moderator|Author/gi, '') // Remove role indicators
-        .trim();
-
-      if (filteredText.length > 20) {
-        content = filteredText;
-        extractionMethod = 'Text filtering fallback';
-      }
-    }
+    // 3. If no content found with primary selectors, leave it empty
+    // Posts without text content (media-only posts) should have empty content
+    // and rely on media analysis in the backend
 
     // Clean up the content
     content = content.trim().replace(/\s+/g, ' ');
@@ -1485,7 +1461,7 @@ export class FacebookPostObserver {
     const contentPresent = {
       hasText: Boolean(postContent && postContent.trim().length > 0),
       hasImages: mediaUrls.images.length > 0,
-      hasVideos: mediaUrls.videos.length > 0,
+      hasVideos: mediaUrls.hasVideos,
     };
 
     const chatWindow = document.createElement('div');
@@ -1509,6 +1485,8 @@ export class FacebookPostObserver {
       !postContent.trim() ||
       postContent.length < 10 ||
       postContent.toLowerCase().includes('facebook'.repeat(5)) ||
+      (postContent.toLowerCase().match(/(facebook)/gi) || []).length > 10 || // Too many "Facebook" occurrences
+      postContent.toLowerCase().match(/(facebook){3,}/gi) || // Consecutive "Facebook" repetitions
       postContent.toLowerCase().includes('like comment share') ||
       /^[\s\n]*$/.test(postContent); // Only whitespace/newlines
 
