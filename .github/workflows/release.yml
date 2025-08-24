@@ -46,6 +46,8 @@ jobs:
         tag_name: latest
         name: "AI Slop Extension (Latest)"
         files: ai-slop-extension.zip
+        draft: false
+        prerelease: false
         body: |
           ## Installation
           
