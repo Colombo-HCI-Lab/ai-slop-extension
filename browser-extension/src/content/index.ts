@@ -828,8 +828,36 @@ export class FacebookPostObserver {
     imageElements.forEach(img => {
       // Skip small images (likely icons or avatars)
       if (img.width > 100 || img.height > 100 || (!img.width && !img.height)) {
+        // Skip images that are part of video elements (video thumbnails/posters)
+        const isVideoThumbnail = img.closest('video') || 
+                                img.closest('[data-video-id]') || 
+                                img.closest('[role="button"][aria-label*="video"]') ||
+                                img.closest('[role="button"][aria-label*="Video"]') ||
+                                img.closest('[role="button"][aria-label*="Play"]') ||
+                                img.closest('[data-testid*="video"]') ||
+                                img.closest('.videoContainer') ||
+                                img.closest('[class*="video"]') ||
+                                img.getAttribute('data-video') ||
+                                img.hasAttribute('poster') ||
+                                // Check if parent post contains video controls/elements
+                                postElement.querySelector('button[aria-label*="Play video"]') ||
+                                postElement.querySelector('button[aria-label*="Play"]') ||
+                                postElement.querySelector('video') ||
+                                postElement.querySelector('[data-testid*="video"]');
+        
+        if (isVideoThumbnail) {
+          console.log('[AI-Slop] 🎬 Skipping video thumbnail/poster image:', img.src?.substring(0, 100));
+          return;
+        }
+
         const src = img.getAttribute('src') || img.getAttribute('data-src');
         if (src && !src.includes('emoji') && !src.includes('icon') && !src.includes('avatar')) {
+          // Skip Facebook video thumbnail URLs (pattern: t15.xxxx-xx)
+          if (src.includes('t15.') && src.includes('-10/')) {
+            console.log('[AI-Slop] 🎬 Skipping Facebook video thumbnail by URL pattern:', src.substring(0, 100));
+            return;
+          }
+          
           // Don't clean Facebook URLs - preserve all authentication parameters
           if (!images.includes(src)) {
             images.push(src);
@@ -841,6 +869,27 @@ export class FacebookPostObserver {
     // Also check for background images in divs (Facebook sometimes uses these)
     const divElements = postElement.querySelectorAll('div[style*="background-image"]');
     divElements.forEach(div => {
+      // Skip background images that are part of video elements
+      const isVideoThumbnail = div.closest('video') || 
+                              div.closest('[data-video-id]') || 
+                              div.closest('[role="button"][aria-label*="video"]') ||
+                              div.closest('[role="button"][aria-label*="Video"]') ||
+                              div.closest('[role="button"][aria-label*="Play"]') ||
+                              div.closest('[data-testid*="video"]') ||
+                              div.closest('.videoContainer') ||
+                              div.closest('[class*="video"]') ||
+                              div.getAttribute('data-video') ||
+                              // Check if parent post contains video controls/elements
+                              postElement.querySelector('button[aria-label*="Play video"]') ||
+                              postElement.querySelector('button[aria-label*="Play"]') ||
+                              postElement.querySelector('video') ||
+                              postElement.querySelector('[data-testid*="video"]');
+      
+      if (isVideoThumbnail) {
+        console.log('[AI-Slop] 🎬 Skipping video background image');
+        return;
+      }
+
       const style = div.getAttribute('style') || '';
       const match = style.match(/url\(["']?([^"')]+)["']?\)/);
       if (match && match[1]) {
