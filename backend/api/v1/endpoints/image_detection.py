@@ -6,12 +6,13 @@ import os
 import tempfile
 from typing import List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile, status, Depends
 from pydantic import BaseModel, Field
 
 from core.config import settings
 from schemas.image_detection import ImageDetectionResponse
-from services.image_detection_service import ImageDetectionService
+from services.detections.interfaces import ImageDetectionServiceProtocol
+from core.dependencies import get_image_detection_service
 from utils.logging import get_logger
 
 
@@ -77,6 +78,7 @@ async def detect_image_upload(
         le=1.0,
         description="Detection threshold (0.0-1.0; model-specific)",
     ),
+    service: ImageDetectionServiceProtocol = Depends(get_image_detection_service),
 ):
     """
     Upload and analyze an image file for AI generation detection.
@@ -104,10 +106,8 @@ async def detect_image_upload(
             tmp_file_path = tmp_file.name
 
         try:
-            # Create service and process image
+            # Process image using DI-provided service
             effective_model_name = model_name if model_name is not None else "auto"
-            service = ImageDetectionService.get_instance()
-            # Switch model for singleton if needed (best-effort)
             if effective_model_name and effective_model_name != service.model_name:
                 service.model_name = effective_model_name
             response = await service.process_image_file_async(tmp_file_path, threshold=threshold)

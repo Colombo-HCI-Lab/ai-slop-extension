@@ -9,7 +9,14 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer
 
 from core.config import settings
-from services.video_detection_service import DetectionService
+from services.detections.interfaces import (
+    ImageDetectionServiceProtocol,
+    VideoDetectionServiceProtocol,
+)
+from services.detections.registry import (
+    get_image_detection_service as _resolve_image_service,
+    get_video_detection_service as _resolve_video_service,
+)
 
 # Security
 security = HTTPBearer(auto_error=False)
@@ -25,10 +32,12 @@ async def get_current_user(token: Optional[str] = Depends(security)):
 
 
 # Service dependencies
-_detection_services: Dict[str, DetectionService] = {}
+_detection_services: Dict[str, VideoDetectionServiceProtocol] = {}
 
 
-def get_detection_service(model_name: Optional[str] = None, current_user=Depends(get_current_user)) -> DetectionService:
+def get_detection_service(
+    model_name: Optional[str] = None, current_user=Depends(get_current_user)
+) -> VideoDetectionServiceProtocol:
     """
     Get or create a detection service instance.
     Uses caching to avoid reloading models.
@@ -43,14 +52,25 @@ def get_detection_service(model_name: Optional[str] = None, current_user=Depends
 
     # Use singleton detection service to centralize resources/concurrency.
     try:
-        service = DetectionService.get_instance()
-        # Ensure default model matches settings for initial load
-        if service.model_name != settings.default_model:
-            service.model_name = settings.default_model
-        return service
+        return _resolve_video_service(model_name=model_name)
     except Exception as e:
         logging.error(f"Failed to initialize detection service: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to initialize detection service")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to initialize detection service"
+        )
+
+
+def get_image_detection_service(
+    model_name: Optional[str] = None, current_user=Depends(get_current_user)
+) -> ImageDetectionServiceProtocol:
+    """Dependency: image detection service via registry."""
+    try:
+        return _resolve_image_service(model_name=model_name)
+    except Exception as e:
+        logging.error(f"Failed to initialize image detection service: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to initialize image detection service"
+        )
 
 
 def get_logger() -> logging.Logger:

@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from core.config import settings
 from core.dependencies import get_detection_service
+from services.detections.interfaces import VideoDetectionServiceProtocol
 from schemas.video_detection import DetectionResponse
 from services.video_detection_service import DetectionService
 from services.video_processor import VideoProcessor
@@ -62,7 +63,7 @@ async def detect_video_upload(
     ),
     threshold: float = Form(0.5, ge=0.0, le=1.0, description="Detection threshold (0.0-1.0)"),
     post_id: Optional[str] = Form(None, description="Facebook post ID (optional, for organized storage)"),
-    service: DetectionService = Depends(get_detection_service),
+    service: VideoDetectionServiceProtocol = Depends(get_detection_service),
 ):
     """
     Upload and analyze a video file for AI generation detection.

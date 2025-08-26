@@ -14,7 +14,6 @@ uv sync
 
 # Start development server
 uv run python -m uvicorn main:app --reload --port 4000
-```
 
 ## Environment
 

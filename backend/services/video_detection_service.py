@@ -238,6 +238,28 @@ class DetectionService:
         self.detector.set_threshold(threshold)
         logger.info("Detection threshold updated", threshold=threshold)
 
+    # --- Singleton support ---
+    _instance: Optional["DetectionService"] = None
+
+    @classmethod
+    def get_instance(cls) -> "DetectionService":
+        if cls._instance is None:
+            cls._instance = DetectionService()
+        return cls._instance
+
+    def cleanup(self):
+        """Clean up executors and underlying detector if supported."""
+        try:
+            if hasattr(self.detector, "cleanup"):
+                self.detector.cleanup()
+        except Exception:
+            pass
+        try:
+            self._heavy_executor.shutdown(wait=False, cancel_futures=True)
+            self._light_executor.shutdown(wait=False, cancel_futures=True)
+        except Exception:
+            pass
+
     def cleanup(self):
         """Clean up service resources."""
         if hasattr(self, "detector"):
