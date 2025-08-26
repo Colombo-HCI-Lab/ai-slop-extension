@@ -12,4 +12,14 @@ export default defineConfig([
   tseslint.configs.recommended,
   { files: ["**/*.json"], plugins: { json }, language: "json/json", extends: ["json/recommended"] },
   { files: ["**/*.css"], plugins: { css }, language: "css/css", extends: ["css/recommended"] },
+  // TypeScript-specific rules
+  {
+    files: ["src/**/*.ts"],
+    rules: {
+      // Soften initially to avoid blocking on legacy large files
+      'max-lines': ["warn", { max: 2000, skipBlankLines: true, skipComments: true }],
+      'complexity': ["warn", { max: 20 }],
+      'max-depth': ["warn", 5],
+    },
+  },
 ]);

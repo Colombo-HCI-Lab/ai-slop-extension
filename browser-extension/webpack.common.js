@@ -21,7 +21,6 @@ require('dotenv').config();
 module.exports = {
   // Entry points for the extension's different scripts
   entry: {
-    popup: path.resolve('src/popup/index.ts'),
     background: path.resolve('src/background/index.ts'),
     content: path.resolve('src/content/index.ts'),
   },
@@ -66,7 +65,8 @@ module.exports = {
     }),
     // Define environment variables
     new webpack.DefinePlugin({
-      'process.env.BACKEND_URL': JSON.stringify(process.env.BACKEND_URL)
+      'process.env.BACKEND_URL': JSON.stringify(process.env.BACKEND_URL),
+      __DEV__: JSON.stringify(process.env.NODE_ENV !== 'production'),
     }),
     // Copy static assets from public to dist
     new CopyPlugin({
@@ -108,22 +108,11 @@ module.exports = {
               }
             }
 
-            // Ensure the popup is wired to the toolbar action
-            manifest.action = manifest.action || {};
-            if (!manifest.action.default_popup) {
-              manifest.action.default_popup = 'popup.html';
-            }
             
             return JSON.stringify(manifest, null, 2);
           }
         }
       ]
-    }),
-    // Generate popup.html with required scripts
-    new HtmlWebpackPlugin({
-      template: path.resolve('src/popup/index.html'),
-      filename: 'popup.html',
-      chunks: ['popup']
     }),
     // Extract CSS into separate files
     new MiniCssExtractPlugin({

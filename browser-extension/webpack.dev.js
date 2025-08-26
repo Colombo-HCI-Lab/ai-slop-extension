@@ -14,8 +14,8 @@ const common = require('./webpack.common.js');
 module.exports = merge(common, {
   // Set webpack to development mode for better debugging
   mode: 'development',
-  // Enable source maps for debugging
-  devtool: 'inline-source-map',
+  // Use external source maps to keep background SW small (MV3 4MB limit)
+  devtool: 'source-map',
   // Enable watch mode for automatic rebuilds during development
   watch: true
 });
