@@ -29,4 +29,3 @@ def test_create_test_video_and_preprocessor(tmp_path):
     assert info["fps"] > 0
     slowfast_input, meta = pre.process_video(video_path)
     assert isinstance(slowfast_input, list) and len(slowfast_input) == 2
-

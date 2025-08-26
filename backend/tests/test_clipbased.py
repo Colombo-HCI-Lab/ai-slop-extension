@@ -29,4 +29,3 @@ def test_clipbased_utils_and_preprocessing(tmp_path):
     # Basic shape checks: (C, H, W) or (1, C, H, W) depending on impl
     assert hasattr(tensor, "shape")
     assert len(tensor.shape) in (3, 4)
-

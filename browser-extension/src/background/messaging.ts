@@ -1,4 +1,4 @@
-import { normalizeApiResponse, requestAiSlop, sendChat, getChatHistory } from './api';
+import { normalizeApiResponse, requestAiSlop, sendChat, getChatHistory, sendMetricsBatch as sendMetricsBatchApi } from './api';
 import { clearInFlight, getInFlight, makePostKey, setInFlight } from './state';
 import { MessageType, AnyMessage } from '@/shared/messages';
 import { createLogger } from '@/shared/logger';
@@ -55,6 +55,14 @@ export function setupBackgroundMessaging(): void {
       logger.log('CHAT_HISTORY_REQUEST received', { postId: message.postId });
       getChatHistory(message.postId, message.userId)
         .then(sendResponse)
+        .catch(err => sendResponse({ error: String(err?.message || err) }));
+      return true;
+    }
+
+    if (message.type === MessageType.MetricsBatch) {
+      logger.log('METRICS_BATCH received', { eventCount: message.events.length });
+      sendMetricsBatchApi(message.sessionId, message.events)
+        .then(() => sendResponse({ status: 'accepted' }))
         .catch(err => sendResponse({ error: String(err?.message || err) }));
       return true;
     }

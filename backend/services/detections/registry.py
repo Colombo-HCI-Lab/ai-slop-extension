@@ -28,4 +28,3 @@ def get_image_detection_service(model_name: Optional[str] = None) -> ImageDetect
     service = ImageDetectionService.get_instance()
     service.model_name = model_name or settings.default_image_model
     return service
-

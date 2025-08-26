@@ -111,3 +111,28 @@ export async function getChatHistory(postId: string, userId: string): Promise<Ch
   logger.log('GET', url);
   return fetchJsonWithRetry<ChatHistoryResponse>(url, { method: 'GET' });
 }
+
+export async function sendMetricsBatch(
+  sessionId: string, 
+  events: Array<{
+    type: string;
+    category: string;
+    value?: number;
+    label?: string;
+    metadata?: Record<string, unknown>;
+    clientTimestamp: string;
+  }>
+): Promise<void> {
+  const url = `${API_BASE_URL}/analytics/events/batch`;
+  const body = {
+    session_id: sessionId,
+    events: events
+  };
+  
+  logger.log('POST', url, { eventCount: events.length, sessionId });
+  await fetchJsonWithRetry<{ status: string }>(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}

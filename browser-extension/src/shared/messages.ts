@@ -5,6 +5,7 @@ export enum MessageType {
   ChatRequest = 'CHAT_REQUEST',
   ChatHistoryRequest = 'CHAT_HISTORY_REQUEST',
   ToggleChatWindow = 'TOGGLE_CHAT_WINDOW',
+  MetricsBatch = 'METRICS_BATCH',
 }
 
 export type AiSlopRequest = {
@@ -38,7 +39,20 @@ export type ToggleChatWindow = {
   type: MessageType.ToggleChatWindow;
 };
 
-export type AnyMessage = AiSlopRequest | ChatRequest | ChatHistoryRequest | ToggleChatWindow;
+export type MetricsBatch = {
+  type: MessageType.MetricsBatch;
+  sessionId: string;
+  events: Array<{
+    type: string;
+    category: string;
+    value?: number;
+    label?: string;
+    metadata?: Record<string, unknown>;
+    clientTimestamp: string;
+  }>;
+};
+
+export type AnyMessage = AiSlopRequest | ChatRequest | ChatHistoryRequest | ToggleChatWindow | MetricsBatch;
 
 export const isMessage = (msg: unknown): msg is AnyMessage =>
   !!msg && typeof msg === 'object' && msg !== null && 'type' in (msg as Record<string, unknown>);

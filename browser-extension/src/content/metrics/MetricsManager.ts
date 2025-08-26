@@ -1,0 +1,261 @@
+/**
+ * MetricsManager - Manages metrics collection lifecycle and user session
+ */
+
+import { log, error } from '../../shared/logger';
+import { MetricsCollector } from './MetricsCollector';
+import { MetricsConfig, UserSession } from '../../shared/types';
+import { getUserId } from '../../shared/storage';
+
+export class MetricsManager {
+  private collector: MetricsCollector | null = null;
+  private session: UserSession | null = null;
+  private isInitialized: boolean = false;
+
+  private readonly defaultConfig: MetricsConfig = {
+    batchSize: 25,
+    flushInterval: 30000, // 30 seconds
+    enableDebugLogging: false, // Will be overridden by environment
+    privacyMode: 'full' // Research mode: Full data collection
+  };
+
+  public async initialize(): Promise<void> {
+    if (this.isInitialized) return;
+
+    try {
+      // Get or create user session
+      const userId = await getUserId();
+      const sessionId = this.generateSessionId();
+      
+      this.session = {
+        userId,
+        sessionId,
+        startTime: Date.now(),
+        lastActivity: Date.now()
+      };
+
+      // Initialize metrics collector with full data collection
+      const config: MetricsConfig = {
+        ...this.defaultConfig,
+        enableDebugLogging: process.env.NODE_ENV === 'development',
+        privacyMode: 'full' as const // Research mode: Always full collection
+      };
+
+      this.collector = new MetricsCollector(config);
+      this.collector.setSession(userId, sessionId);
+
+      // Track page load and session start
+      this.trackEvent({
+        type: 'page_load',
+        category: 'navigation',
+        metadata: {
+          url: window.location.href,
+          userAgent: navigator.userAgent,
+          viewport: {
+            width: window.innerWidth,
+            height: window.innerHeight
+          },
+          timestamp: new Date().toISOString()
+        }
+      });
+
+      this.trackEvent({
+        type: 'session_start',
+        category: 'session',
+        metadata: {
+          sessionId,
+          userId
+        }
+      });
+
+      // Set up scroll tracking
+      this.setupScrollTracking();
+      
+      // Set up page lifecycle tracking
+      this.setupPageLifecycle();
+
+      this.isInitialized = true;
+      log('MetricsManager initialized', { userId, sessionId });
+
+    } catch (err) {
+      error('Failed to initialize MetricsManager:', err);
+    }
+  }
+
+  public trackEvent(event: {
+    type: string;
+    category: string;
+    value?: number;
+    label?: string;
+    metadata?: Record<string, unknown>;
+  }): void {
+    if (!this.collector || !this.session) {
+      log('MetricsManager not initialized, skipping event:', event.type);
+      return;
+    }
+
+    this.updateLastActivity();
+    this.collector.trackEvent(event);
+  }
+
+  public trackPostView(postId: string, postElement: Element): void {
+    if (!this.collector) return;
+
+    // Observe post for viewport tracking
+    this.collector.observePost(postElement);
+
+    this.trackEvent({
+      type: 'post_view',
+      category: 'interaction',
+      metadata: {
+        postId,
+        elementBounds: {
+          width: postElement.getBoundingClientRect().width,
+          height: postElement.getBoundingClientRect().height
+        }
+      }
+    });
+  }
+
+  public trackPostInteraction(postId: string, interactionType: string, metadata?: Record<string, unknown>): void {
+    this.trackEvent({
+      type: 'post_interaction',
+      category: 'interaction',
+      label: interactionType,
+      metadata: {
+        postId,
+        interactionType,
+        ...metadata
+      }
+    });
+  }
+
+  public trackIconInteraction(postId: string, interactionType: 'click' | 'hover' | 'visible'): void {
+    this.trackEvent({
+      type: `icon_${interactionType}`,
+      category: 'interaction',
+      metadata: {
+        postId,
+        timestamp: Date.now()
+      }
+    });
+  }
+
+  public trackChatStart(postId: string): void {
+    this.trackEvent({
+      type: 'chat_start',
+      category: 'chat',
+      metadata: {
+        postId,
+        sessionId: this.session?.sessionId
+      }
+    });
+  }
+
+  public trackDetectionPerformance(postId: string, processingTimeMs: number, verdict: string): void {
+    this.trackEvent({
+      type: 'detection_performance',
+      category: 'performance',
+      value: processingTimeMs,
+      metadata: {
+        postId,
+        verdict,
+        processingTimeMs
+      }
+    });
+  }
+
+  public async destroy(): Promise<void> {
+    if (!this.isInitialized) return;
+
+    if (this.session) {
+      const sessionDuration = Date.now() - this.session.startTime;
+      
+      this.trackEvent({
+        type: 'session_end',
+        category: 'session',
+        value: sessionDuration,
+        metadata: {
+          sessionId: this.session.sessionId,
+          durationMs: sessionDuration,
+          endReason: 'page_unload'
+        }
+      });
+    }
+
+    if (this.collector) {
+      await this.collector.flushEvents(); // Final flush
+      this.collector.destroy();
+    }
+
+    this.isInitialized = false;
+    log('MetricsManager destroyed');
+  }
+
+  private setupScrollTracking(): void {
+    let ticking = false;
+
+    const handleScroll = () => {
+      if (!this.collector) return;
+      
+      this.updateLastActivity();
+      
+      if (!ticking) {
+        requestAnimationFrame(() => {
+          this.collector?.trackScrollBehavior({
+            scrollY: window.scrollY,
+            timestamp: Date.now()
+          });
+          ticking = false;
+        });
+        ticking = true;
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+  }
+
+  private setupPageLifecycle(): void {
+    // Track page visibility changes
+    document.addEventListener('visibilitychange', () => {
+      this.trackEvent({
+        type: document.hidden ? 'page_hidden' : 'page_visible',
+        category: 'navigation',
+        metadata: {
+          timestamp: Date.now()
+        }
+      });
+    });
+
+    // Track page unload
+    window.addEventListener('beforeunload', () => {
+      this.destroy();
+    });
+
+    // Track user activity
+    const activityEvents = ['click', 'keypress', 'mousemove'];
+    activityEvents.forEach(eventType => {
+      document.addEventListener(eventType, () => {
+        this.updateLastActivity();
+      }, { passive: true });
+    });
+  }
+
+  private updateLastActivity(): void {
+    if (this.session) {
+      this.session.lastActivity = Date.now();
+    }
+  }
+
+  private getPrivacyMode(): 'strict' | 'balanced' | 'full' {
+    // Research mode: Always full data collection
+    return 'full';
+  }
+
+  private generateSessionId(): string {
+    return `sess_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+}
+
+// Singleton instance for the content script
+export const metricsManager = new MetricsManager();

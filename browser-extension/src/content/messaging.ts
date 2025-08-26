@@ -1,4 +1,5 @@
 import { MessageType, ChatRequest, ChatHistoryRequest, AiSlopRequest } from '@/shared/messages';
+import { AnalyticsEvent } from '@/shared/types';
 
 export type AiSlopResponse = {
   isAiSlop: boolean;
@@ -51,5 +52,23 @@ export async function fetchChatHistory(payload: Omit<ChatHistoryRequest, 'type'>
       if (response && response.error) return reject(new Error(response.error));
       resolve(response);
     });
+  });
+}
+
+export interface MetricsBatchRequest {
+  sessionId: string;
+  events: AnalyticsEvent[];
+}
+
+export async function sendMetricsBatch(request: MetricsBatchRequest): Promise<void> {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(
+      { type: MessageType.MetricsBatch, ...request },
+      response => {
+        if (chrome.runtime.lastError) return reject(chrome.runtime.lastError);
+        if (response && response.error) return reject(new Error(response.error));
+        resolve();
+      }
+    );
   });
 }
