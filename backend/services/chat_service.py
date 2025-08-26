@@ -1,37 +1,92 @@
-"""Chat service for Google Gemini integration."""
+"""Chat service for Google Gemini integration with concurrency control and retries."""
 
+import asyncio
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
+from enum import Enum
 from typing import List, Optional, Tuple
 
 import google.generativeai as genai
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from core.config import settings
 from models import Chat, Post, PostMedia, UserSession
 from schemas.chat import ChatRequest, ChatResponse, Message
-from services.file_upload_service import FileUploadService
 from services.gemini_on_demand_service import gemini_on_demand_service
+from tenacity import AsyncRetrying, stop_after_attempt, wait_exponential
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+class Role(str, Enum):
+    user = "user"
+    assistant = "assistant"
 
 
 class ChatService:
     """Service for managing chat conversations about posts using Google Gemini."""
 
     def __init__(self):
-        """Initialize the chat service."""
+        """Initialize the chat service and concurrency controls."""
         if not settings.gemini_api_key:
             raise ValueError("GEMINI_API_KEY is required for chat functionality")
 
         # Configure Gemini API
         genai.configure(api_key=settings.gemini_api_key)
 
-        # Initialize file upload service
-        self.file_service = FileUploadService()
+        # Concurrency limiter for Gemini calls
+        self._sem = asyncio.Semaphore(settings.gemini_max_concurrency)
+
+    # --- Singleton support ---
+    _instance: Optional["ChatService"] = None
+    _instance_lock: asyncio.Lock = asyncio.Lock()
+
+    @classmethod
+    async def get_instance_async(cls) -> "ChatService":
+        async with cls._instance_lock:
+            if cls._instance is None:
+                cls._instance = ChatService()
+        return cls._instance
+
+    @classmethod
+    def get_instance(cls) -> "ChatService":
+        # Synchronous accessor for modules that import at startup
+        if cls._instance is None:
+            cls._instance = ChatService()
+        return cls._instance
+
+    # --- Internal helpers: retries, concurrency, history building ---
+
+    async def _with_limit_and_timeout(self, func, *args, **kwargs):
+        async with self._sem:
+            return await asyncio.wait_for(
+                asyncio.to_thread(func, *args, **kwargs),
+                timeout=settings.gemini_timeout_seconds,
+            )
+
+    async def _retry(self, coro_fn, *args, **kwargs):
+        async for attempt in AsyncRetrying(
+            stop=stop_after_attempt(settings.gemini_retry_max_attempts),
+            wait=wait_exponential(multiplier=settings.gemini_retry_backoff_base, min=0.5, max=8),
+            reraise=True,
+        ):
+            with attempt:
+                return await coro_fn(*args, **kwargs)
+
+    async def _gemini_send_message(self, chat_session, content):
+        return await self._with_limit_and_timeout(chat_session.send_message, content)
+
+    async def _gemini_get_file(self, file_name: str):
+        return await self._with_limit_and_timeout(genai.get_file, file_name)
+
+    def _to_gemini_history(self, chats: List[Chat]) -> List[dict]:
+        history = []
+        for chat in chats:
+            role = "model" if chat.role == Role.assistant.value else "user"
+            history.append({"role": role, "parts": [chat.message]})
+        return history
 
     async def send_message(
         self,
@@ -48,6 +103,10 @@ class ChatService:
         Returns:
             Chat response with AI-generated reply
         """
+        # Validate message
+        if not request.message or not request.message.strip():
+            raise ValueError("Message must not be empty")
+
         # Get or create user session
         user_session = await self._get_or_create_user_session(request.user_id, db)
 
@@ -59,30 +118,27 @@ class ChatService:
         # Get user-specific chat history
         chat_history = await self._get_user_chat_history(post.post_id, user_session.id, db)
 
-        # Ensure all media has Gemini URIs (on-demand upload)
-        file_uris = []
-        if not chat_history:
-            # First message in conversation - ensure all media is available in Gemini
-            media_urls = await self._get_all_media_urls_for_post(post.post_id, db)
-            if media_urls:
-                file_uris = await gemini_on_demand_service.batch_ensure_gemini_uris(
-                    post.post_id, media_urls, db
-                )
-                
-                logger.info(
-                    "Media prepared for chat",
-                    post_id=post.post_id,
-                    total_media=len(media_urls),
-                    gemini_ready=len(file_uris)
-                )
+        # Ensure media Gemini URIs, preferring stored URIs first
+        file_uris: List[str] = await self._get_post_gemini_file_uris(post.post_id, db)
+        if not file_uris:
+            if not chat_history:
+                media_urls = await self._get_all_media_urls_for_post(post.post_id, db)
+                if media_urls:
+                    file_uris = await gemini_on_demand_service.batch_ensure_gemini_uris(post.post_id, media_urls, db)
+                    logger.info(
+                        "Media prepared for chat",
+                        post_id=post.post_id,
+                        total_media=len(media_urls),
+                        gemini_ready=len(file_uris),
+                    )
+                else:
+                    logger.info("No media found for this post", post_id=post.post_id)
             else:
-                logger.info("No media found for this post", post_id=post.post_id)
-        else:
-            # Reuse file URIs from previous messages in this conversation
-            for chat in chat_history:
-                if chat.file_uris:
-                    file_uris = chat.file_uris
-                    break
+                # Reuse file URIs from previous messages in this conversation
+                for chat in chat_history:
+                    if chat.file_uris:
+                        file_uris = chat.file_uris
+                        break
 
         # Save user message with file references
         await self._save_message(post.post_id, user_session.id, "user", request.message, file_uris, db)
@@ -92,7 +148,9 @@ class ChatService:
 
         # Generate AI response (multimodal if images available)
         if file_uris:
-            response_text = await self._generate_multimodal_response(post, request.message, chat_history, file_uris)
+            # Cap media parts to control latency/cost
+            capped_uris = file_uris[: settings.gemini_max_media_files]
+            response_text = await self._generate_multimodal_response(post, request.message, chat_history, capped_uris)
         else:
             response_text = await self._generate_response(post, request.message, chat_history)
 
@@ -211,12 +269,12 @@ class ChatService:
             user_session = UserSession(
                 id=str(uuid.uuid4()),
                 user_identifier=user_identifier,
-                last_active=datetime.now(),
+                last_active=datetime.now(timezone.utc),
             )
             db.add(user_session)
         else:
             # Update last active timestamp
-            await db.execute(update(UserSession).where(UserSession.id == user_session.id).values(last_active=datetime.now()))
+            user_session.last_active = datetime.now(timezone.utc)
 
         await db.commit()
         await db.refresh(user_session)
@@ -256,10 +314,7 @@ class ChatService:
 
     async def _get_all_media_urls_for_post(self, post_id: str, db: AsyncSession) -> List[str]:
         """Get all media URLs for a post (both images and videos)."""
-        result = await db.execute(
-            select(PostMedia.media_url)
-            .where(PostMedia.post_id == post_id)
-        )
+        result = await db.execute(select(PostMedia.media_url).where(PostMedia.post_id == post_id))
         return [url for (url,) in result.fetchall()]
 
     async def _get_post_gemini_file_uris(self, post_id: str, db: AsyncSession) -> List[str]:
@@ -278,7 +333,7 @@ class ChatService:
 
     async def _get_post(self, post_id: str, db: AsyncSession) -> Optional[Post]:
         """Get post by Facebook post ID."""
-        result = await db.execute(select(Post).where(Post.post_id == post_id).options(selectinload(Post.chats)))
+        result = await db.execute(select(Post).where(Post.post_id == post_id))
         return result.scalar_one_or_none()
 
     async def _get_chat_history(self, post_id: str, db: AsyncSession, limit: int = 20) -> List[Chat]:
@@ -349,21 +404,21 @@ Your role:
 Keep responses informative but concise (2-4 sentences typically)."""
 
             # Initialize model with the specific post context
-            model = genai.GenerativeModel("gemini-2.5-flash-lite", system_instruction=system_instruction)
-            chat_session = model.start_chat()
+            model = genai.GenerativeModel(
+                "gemini-2.5-flash-lite",
+                system_instruction=system_instruction,
+                generation_config={
+                    "temperature": 0.6,
+                    "top_p": 0.95,
+                    "max_output_tokens": 512,
+                },
+            )
+            # Build history excluding the just-saved current message
+            history = self._to_gemini_history(chat_history[:-1])
+            chat_session = model.start_chat(history=history)
 
-            # Add previous conversation history
-            for chat in chat_history[:-1]:  # Exclude the current message we just saved
-                if chat.role == "user":
-                    # Send user message
-                    chat_session.send_message(chat.message)
-                elif chat.role == "assistant":
-                    # For assistant messages, we need to simulate the response
-                    # Since Gemini tracks assistant responses automatically, we skip this
-                    pass
-
-            # Send the current user message and get response
-            response = chat_session.send_message(user_message)
+            # Send the current user message and get response (with retries/timeout/concurrency)
+            response = await self._retry(self._gemini_send_message, chat_session, user_message)
             return response.text
 
         except Exception as e:
@@ -415,8 +470,19 @@ Your role:
 Keep responses informative but concise (2-4 sentences typically)."""
 
             # Initialize model with multimodal capability
-            model = genai.GenerativeModel("gemini-2.5-flash-lite", system_instruction=system_instruction)
-            chat_session = model.start_chat()
+            model = genai.GenerativeModel(
+                "gemini-2.5-flash-lite",
+                system_instruction=system_instruction,
+                generation_config={
+                    "temperature": 0.6,
+                    "top_p": 0.95,
+                    "max_output_tokens": 512,
+                },
+            )
+
+            # Build history excluding the current message
+            history = self._to_gemini_history(chat_history[:-1])
+            chat_session = model.start_chat(history=history)
 
             # Create multimodal prompt with images
             prompt_parts = []
@@ -430,22 +496,17 @@ Keep responses informative but concise (2-4 sentences typically)."""
                     else:
                         file_name = uri
 
-                    file = genai.get_file(file_name)
+                    file = await self._retry(self._gemini_get_file, file_name)
                     prompt_parts.append(file)
                     logger.info("Successfully loaded media file for multimodal prompt", uri=uri, file_name=file_name)
                 except Exception as e:
                     logger.warning("Failed to load media file for multimodal prompt", uri=uri, error=str(e))
 
-            # Add conversation history
-            for chat in chat_history[:-1]:  # Exclude the current message we just saved
-                if chat.role == "user":
-                    chat_session.send_message(chat.message)
-
             # Add current user message
             prompt_parts.append(f"User question: {user_message}")
 
             # Generate response with multimodal content
-            response = chat_session.send_message(prompt_parts)
+            response = await self._retry(self._gemini_send_message, chat_session, prompt_parts)
             return response.text
 
         except Exception as e:
@@ -534,10 +595,22 @@ Generate 3 short, concise follow-up questions that:
 Return ONLY the 3 questions, each on a separate line, without numbers or bullet points."""
 
             # Initialize model
-            model = genai.GenerativeModel("gemini-2.5-flash-lite", system_instruction=system_instruction)
+            model = genai.GenerativeModel(
+                "gemini-2.5-flash-lite",
+                system_instruction=system_instruction,
+                generation_config={
+                    "temperature": 0.6,
+                    "top_p": 0.95,
+                    "max_output_tokens": 128,
+                },
+            )
 
-            # Generate suggestions
-            response = model.generate_content("Generate 3 intelligent follow-up questions based on the context above.")
+            # Generate suggestions with concurrency limit, timeout, and retries
+            response = await self._retry(
+                self._with_limit_and_timeout,
+                model.generate_content,
+                "Generate 3 intelligent follow-up questions based on the context above.",
+            )
 
             # Parse response into individual questions
             questions = [q.strip() for q in response.text.strip().split("\n") if q.strip()]
@@ -590,3 +663,7 @@ Return ONLY the 3 questions, each on a separate line, without numbers or bullet 
     def _generate_suggested_questions(self, post: Post, chat_history: List[Chat]) -> List[str]:
         """Generate suggested follow-up questions (legacy method, kept for compatibility)."""
         return self._generate_fallback_suggestions(post, chat_history)
+
+
+# Module-level singleton for injection in routes
+chat_service = ChatService.get_instance()

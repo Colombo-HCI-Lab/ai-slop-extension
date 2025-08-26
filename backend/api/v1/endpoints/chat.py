@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.session import get_db
 from schemas.chat import ChatRequest, ChatResponse, Message
-from services.chat_service import ChatService
+from services.chat_service import chat_service as chat_service_singleton
 from utils.logging import get_logger
 
 
@@ -24,8 +24,8 @@ logger = get_logger(__name__)
 
 router = APIRouter(tags=["chat"])
 
-# Initialize service
-chat_service = ChatService()
+# Use singleton service instance with concurrency limits
+chat_service = chat_service_singleton
 
 
 @router.post("/send", response_model=ChatResponse)

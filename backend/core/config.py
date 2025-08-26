@@ -63,7 +63,7 @@ class Settings(BaseSettings):
 
     # Directory settings (for local processing only)
     tmp_dir: Path = Field(default_factory=lambda: Path("tmp"))
-    
+
     # Google Cloud Storage settings (required for media storage)
     gcs_bucket_name: str = ""  # GCS bucket for media storage (required)
     gcs_project_id: Optional[str] = None  # Auto-detect if None
@@ -102,14 +102,14 @@ class Settings(BaseSettings):
     db_password: str = "cats"
     db_host: str = "localhost"
     db_port: int = 5432
-    
+
     # Database connection settings
     database_echo: bool = False
     database_pool_size: int = 5
     database_max_overflow: int = 10
     database_pool_timeout: float = 30.0
     database_pool_recycle: int = 3600
-    
+
     @property
     def database_url(self) -> str:
         """Construct database URL from individual components."""
@@ -117,7 +117,12 @@ class Settings(BaseSettings):
 
     # Google Gemini settings
     gemini_api_key: str = ""
-    
+    gemini_max_concurrency: int = 4  # Limit concurrent Gemini calls
+    gemini_timeout_seconds: float = 30.0  # Timeout per Gemini call
+    gemini_retry_max_attempts: int = 3  # Retry attempts for Gemini operations
+    gemini_retry_backoff_base: float = 0.5  # Exponential backoff base
+    gemini_max_media_files: int = 10  # Cap media parts per prompt
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 

@@ -58,6 +58,7 @@ dependencies = [
     "colorama>=0.4.6",
     "yt-dlp>=2025.8.22",
     "google-cloud-storage>=3.3.0",
+    "tenacity>=8.2.2",
 ]
 
 [project.optional-dependencies]
