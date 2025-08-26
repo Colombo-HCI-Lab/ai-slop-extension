@@ -41,24 +41,16 @@ def get_detection_service(model_name: Optional[str] = None, current_user=Depends
             detail=f"Model {model_name} not available. Available models: {settings.available_models}",
         )
 
-    # Check cache
-    if model_name not in _detection_services:
-        # Implement LRU cache logic if needed
-        if len(_detection_services) >= settings.model_cache_size:
-            # Remove oldest service (simple FIFO for now)
-            oldest_key = next(iter(_detection_services))
-            del _detection_services[oldest_key]
-            logging.info(f"Removed cached model: {oldest_key}")
-
-        # Create new service
-        try:
-            _detection_services[model_name] = DetectionService(model_name=model_name, device=settings.device)
-            logging.info(f"Loaded model: {model_name}")
-        except Exception as e:
-            logging.error(f"Failed to load model {model_name}: {e}")
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to load model: {model_name}")
-
-    return _detection_services[model_name]
+    # Use singleton detection service to centralize resources/concurrency.
+    try:
+        service = DetectionService.get_instance()
+        # Ensure default model matches settings for initial load
+        if service.model_name != settings.default_model:
+            service.model_name = settings.default_model
+        return service
+    except Exception as e:
+        logging.error(f"Failed to initialize detection service: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to initialize detection service")
 
 
 def get_logger() -> logging.Logger:

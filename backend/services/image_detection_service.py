@@ -1,11 +1,15 @@
 """
 High-level image detection service that orchestrates image processing and model inference.
+Adds singleton, concurrency limits, timeouts, and retries.
 """
 
+import asyncio
 import time
 from pathlib import Path
 from typing import Dict, List, Union, Optional, Tuple
 from uuid import UUID, uuid4
+
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from core.config import settings
 from schemas.image_detection import ImageDetectionResult, ImageInfo, ImageDetectionResponse
@@ -29,6 +33,7 @@ class ImageDetectionService:
         self.device = device or settings.device
         self.detector = None
         self.actual_model = None
+        self._sem = asyncio.Semaphore(settings.image_max_concurrency)
 
         logger.info("ImageDetectionService initialized", model=self.model_name, device=self.device)
 
@@ -59,7 +64,7 @@ class ImageDetectionService:
             logger.error("Failed to import image detector", model_name=model_name, error=str(e), exc_info=True)
             raise RuntimeError("Image detection models not available")
 
-    def process_image_file(
+    async def process_image_file_async(
         self, image_path: Union[str, Path], threshold: Optional[float] = None, job_id: UUID = None
     ) -> ImageDetectionResponse:
         """
@@ -95,11 +100,22 @@ class ImageDetectionService:
                 format=image_path.suffix.lower() if image_path.suffix else None,
             )
 
-            # Run detection
-            if hasattr(detector, "detect_image"):
-                result = detector.detect_image(str(image_path), threshold=threshold)
-            else:
-                result = detector.detect(str(image_path))
+            # Run detection with concurrency + timeout + retry in thread
+            @retry(
+                stop=stop_after_attempt(settings.detection_retry_max_attempts),
+                wait=wait_exponential(multiplier=settings.detection_retry_backoff_base, min=0.5, max=8),
+                reraise=True,
+            )
+            def _infer():
+                if hasattr(detector, "detect_image"):
+                    return detector.detect_image(str(image_path), threshold=threshold)
+                return detector.detect(str(image_path))
+
+            async with self._sem:
+                result = await asyncio.wait_for(
+                    asyncio.to_thread(_infer),
+                    timeout=settings.detection_timeout_seconds,
+                )
 
             # Update image info with detection metadata
             if result.get("metadata", {}).get("image_size"):
@@ -158,7 +174,9 @@ class ImageDetectionService:
                 created_at=time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(start_time)),
             )
 
-    def process_image_from_url(self, image_url: str, threshold: Optional[float] = None, job_id: UUID = None) -> ImageDetectionResponse:
+    async def process_image_from_url_async(
+        self, image_url: str, threshold: Optional[float] = None, job_id: UUID = None
+    ) -> ImageDetectionResponse:
         """
         Process an image from URL for AI generation detection.
 
@@ -183,28 +201,35 @@ class ImageDetectionService:
             self.actual_model = actual_model
 
             # Run detection from URL
-            if hasattr(detector, "detect_from_url"):
-                result = detector.detect_from_url(image_url, threshold=threshold)
-            else:
+            @retry(
+                stop=stop_after_attempt(settings.detection_retry_max_attempts),
+                wait=wait_exponential(multiplier=settings.detection_retry_backoff_base, min=0.5, max=8),
+                reraise=True,
+            )
+            def _infer_url():
+                if hasattr(detector, "detect_from_url"):
+                    return detector.detect_from_url(image_url, threshold=threshold)
                 # Fallback: download manually
                 from clipbased_detection.utils import download_image_from_url
                 import tempfile
                 import os
 
                 image = download_image_from_url(image_url)
-
-                # Save temporarily and detect
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_file:
                     image.save(tmp_file, format="JPEG")
                     tmp_file_path = tmp_file.name
-
                 try:
                     if hasattr(detector, "detect_image"):
-                        result = detector.detect_image(tmp_file_path, threshold=threshold)
-                    else:
-                        result = detector.detect(tmp_file_path)
+                        return detector.detect_image(tmp_file_path, threshold=threshold)
+                    return detector.detect(tmp_file_path)
                 finally:
                     os.unlink(tmp_file_path)
+
+            async with self._sem:
+                result = await asyncio.wait_for(
+                    asyncio.to_thread(_infer_url),
+                    timeout=settings.detection_timeout_seconds,
+                )
 
             processing_time = time.time() - start_time
 
@@ -357,3 +382,12 @@ class ImageDetectionService:
         if hasattr(self.detector, "cleanup"):
             self.detector.cleanup()
         logger.info("ImageDetectionService cleaned up", model=self.model_name)
+
+    # --- Singleton support ---
+    _instance: Optional["ImageDetectionService"] = None
+
+    @classmethod
+    def get_instance(cls) -> "ImageDetectionService":
+        if cls._instance is None:
+            cls._instance = ImageDetectionService()
+        return cls._instance

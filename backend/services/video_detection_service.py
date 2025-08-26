@@ -1,11 +1,15 @@
 """
 High-level detection service that orchestrates video processing and model inference.
+Adds singleton, concurrency limits, timeouts, and retries.
 """
 
+import asyncio
 import time
 from pathlib import Path
-from typing import Dict, List, Union
+from typing import Dict, List, Optional, Union
 from uuid import UUID, uuid4
+
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 from core.config import settings
 from schemas.video_detection import DetectionResult, Prediction, VideoInfo, DetectionResponse
@@ -32,10 +36,18 @@ class DetectionService:
         # Initialize components
         self.preprocessor = VideoPreprocessor()
         self.detector = AIVideoDetector(model_name=self.model_name, device=self.device)
+        self._sem = asyncio.Semaphore(settings.video_max_concurrency)
 
         logger.info("DetectionService initialized", model=self.model_name, device=self.device)
 
-    def process_video_file(self, video_path: Union[str, Path], top_k: int = None, job_id: UUID = None) -> DetectionResponse:
+    async def process_video_file_async(
+        self,
+        video_path: Union[str, Path],
+        top_k: Optional[int] = None,
+        job_id: UUID = None,
+        model_name: Optional[str] = None,
+        threshold: Optional[float] = None,
+    ) -> DetectionResponse:
         """
         Process a video file for AI generation detection.
 
@@ -56,8 +68,14 @@ class DetectionService:
         try:
             logger.info("Starting video processing", video_path=str(video_path), job_id=str(job_id), model=self.model_name)
 
-            # Get video metadata
-            video_info_dict = self.preprocessor.get_video_info(video_path)
+            # Switch model for this call if requested
+            if model_name and model_name != self.model_name:
+                temp_detector = AIVideoDetector(model_name=model_name, device=self.device)
+            else:
+                temp_detector = self.detector
+
+            # Get video metadata (CPU-bound), run in thread
+            video_info_dict = await asyncio.to_thread(self.preprocessor.get_video_info, video_path)
             video_info = VideoInfo(
                 filename=video_path.name,
                 duration=video_info_dict.get("duration"),
@@ -66,11 +84,23 @@ class DetectionService:
                 file_size=video_path.stat().st_size if video_path.exists() else None,
             )
 
-            # Process video
-            slowfast_input, _ = self.preprocessor.process_video(video_path)
+            # Process video (CPU-intensive I/O) and run detection with concurrency + timeout + retry
+            @retry(
+                stop=stop_after_attempt(settings.detection_retry_max_attempts),
+                wait=wait_exponential(multiplier=settings.detection_retry_backoff_base, min=0.5, max=8),
+                reraise=True,
+            )
+            def _infer():
+                slowfast_input, _ = self.preprocessor.process_video(video_path)
+                if threshold is not None and hasattr(temp_detector, "set_threshold"):
+                    temp_detector.set_threshold(threshold)
+                return temp_detector.predict(slowfast_input)
 
-            # Run detection
-            raw_result = self.detector.predict(slowfast_input)
+            async with self._sem:
+                raw_result = await asyncio.wait_for(
+                    asyncio.to_thread(_infer),
+                    timeout=settings.detection_timeout_seconds,
+                )
 
             # Adapt result format for service compatibility
             ai_result = {
@@ -97,7 +127,7 @@ class DetectionService:
             detection_result = DetectionResult(
                 is_ai_generated=ai_result["is_ai_generated"],
                 confidence=ai_result["confidence"],
-                model_used=self.model_name,
+                model_used=model_name or self.model_name,
                 processing_time=processing_time,
                 top_predictions=predictions,
             )
@@ -203,3 +233,12 @@ class DetectionService:
         if hasattr(self, "detector"):
             self.detector.cleanup()
         logger.info("DetectionService cleaned up", model=self.model_name)
+
+    # --- Singleton support ---
+    _instance: Optional["DetectionService"] = None
+
+    @classmethod
+    def get_instance(cls) -> "DetectionService":
+        if cls._instance is None:
+            cls._instance = DetectionService()
+        return cls._instance

@@ -101,16 +101,7 @@ async def detect_video_upload(
 
     try:
         # Process video with specified model and threshold
-        if model_name != service.model_name:
-            # Create new service instance with the specified model
-            model_service = DetectionService(model_name=model_name, device=service.device)
-            model_service.set_threshold(threshold)
-            result = model_service.process_video_file(file_path)
-            # Clean up the temporary service
-            model_service.cleanup()
-        else:
-            service.set_threshold(threshold)
-            result = service.process_video_file(file_path)
+        result = await service.process_video_file_async(file_path, model_name=model_name, threshold=threshold)
 
         # Clean up file only if not saving to post directory
         if not post_id:
@@ -159,16 +150,7 @@ async def detect_video_from_url(
 
     try:
         # Process video with specified model and threshold
-        if request.model_name != service.model_name:
-            # Create new service instance with the specified model
-            model_service = DetectionService(model_name=request.model_name, device=service.device)
-            model_service.set_threshold(threshold)
-            result = model_service.process_video_file(file_path)
-            # Clean up the temporary service
-            model_service.cleanup()
-        else:
-            service.set_threshold(threshold)
-            result = service.process_video_file(file_path)
+        result = await service.process_video_file_async(file_path, model_name=request.model_name, threshold=threshold)
 
         # Clean up downloaded file only if not saving to post directory
         if not request.post_id:

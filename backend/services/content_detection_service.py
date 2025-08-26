@@ -20,7 +20,7 @@ class ContentDetectionService:
 
     def __init__(self):
         """Initialize the content detection service."""
-        self.text_service = TextDetectionService()
+        self.text_service = TextDetectionService.get_instance()
 
     async def detect(
         self,

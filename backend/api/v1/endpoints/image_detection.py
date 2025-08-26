@@ -65,7 +65,7 @@ async def get_available_models():
     """
 
     try:
-        service = ImageDetectionService()
+        service = ImageDetectionService.get_instance()
         image_models = service.get_available_models()
 
         return ImageModelsResponse(
@@ -112,12 +112,11 @@ async def detect_image_upload(
         try:
             # Create service and process image
             effective_model_name = model_name if model_name is not None else "auto"
-            service = ImageDetectionService(model_name=effective_model_name)
-
-            response = service.process_image_file(tmp_file_path, threshold=threshold)
-
-            # Clean up service if needed
-            background_tasks.add_task(service.cleanup)
+            service = ImageDetectionService.get_instance()
+            # Switch model for singleton if needed (best-effort)
+            if effective_model_name and effective_model_name != service.model_name:
+                service.model_name = effective_model_name
+            response = await service.process_image_file_async(tmp_file_path, threshold=threshold)
 
             return response
 
@@ -143,12 +142,10 @@ async def detect_image_from_url(request: URLImageDetectionRequest, background_ta
     try:
         # Create service and process image from URL
         effective_model_name = request.model_name if request.model_name is not None else "auto"
-        service = ImageDetectionService(model_name=effective_model_name)
-
-        response = service.process_image_from_url(request.image_url, threshold=request.threshold)
-
-        # Clean up service if needed
-        background_tasks.add_task(service.cleanup)
+        service = ImageDetectionService.get_instance()
+        if effective_model_name and effective_model_name != service.model_name:
+            service.model_name = effective_model_name
+        response = await service.process_image_from_url_async(request.image_url, threshold=request.threshold)
 
         return response
 

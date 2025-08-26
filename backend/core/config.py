@@ -92,6 +92,14 @@ class Settings(BaseSettings):
     confidence_threshold: float = 0.5
     top_k_predictions: int = 5
 
+    # Concurrency and retry settings (services)
+    text_max_concurrency: int = 2
+    image_max_concurrency: int = 2
+    video_max_concurrency: int = 2
+    detection_timeout_seconds: float = 180.0
+    detection_retry_max_attempts: int = 2
+    detection_retry_backoff_base: float = 0.5
+
     # Logging settings
     log_level: str = "INFO"
     log_format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"

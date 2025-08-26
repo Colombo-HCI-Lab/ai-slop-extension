@@ -1,11 +1,14 @@
-"""Text content AI detection service."""
+"""Text content AI detection service with singleton, concurrency limits, and retries."""
 
+import asyncio
 from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from tenacity import AsyncRetrying, stop_after_attempt, wait_exponential
 
+from core.config import settings
 from models import Post
 from schemas.text_detection import DetectRequest, DetectResponse
 from utils.logging import get_logger
@@ -19,6 +22,7 @@ class TextDetectionService:
     def __init__(self):
         """Initialize the text detection service."""
         self.request_counter = 0
+        self._sem = asyncio.Semaphore(settings.text_max_concurrency)
         self.ai_indicators = [
             "it is important to note",
             "in conclusion",
@@ -41,6 +45,15 @@ class TextDetectionService:
             "robust solution",
             "leveraging",
         ]
+
+    # --- Singleton support ---
+    _instance: Optional["TextDetectionService"] = None
+
+    @classmethod
+    def get_instance(cls) -> "TextDetectionService":
+        if cls._instance is None:
+            cls._instance = TextDetectionService()
+        return cls._instance
 
     async def detect(
         self,
@@ -65,8 +78,18 @@ class TextDetectionService:
             logger.info("Returning cached result", post_id=request.post_id)
             return self._create_response_from_post(cached_result, from_cache=True)
 
-        # Perform detection
-        verdict, confidence, explanation, ai_probability, analysis_confidence = self._analyze_content(request.content)
+        # Perform detection with concurrency limit + retry
+        async def _run_analysis():
+            return self._analyze_content(request.content)
+
+        async for attempt in AsyncRetrying(
+            stop=stop_after_attempt(settings.detection_retry_max_attempts),
+            wait=wait_exponential(multiplier=settings.detection_retry_backoff_base, min=0.5, max=6),
+            reraise=True,
+        ):
+            with attempt:
+                async with self._sem:
+                    verdict, confidence, explanation, ai_probability, analysis_confidence = await _run_analysis()
 
         # Save to database
         post = await self._save_to_database(request, verdict, confidence, explanation, ai_probability, analysis_confidence, db)
