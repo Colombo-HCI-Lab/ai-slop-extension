@@ -367,6 +367,7 @@ dev = [
 dev = [
     { name = "httpx" },
     { name = "isort" },
+    { name = "pytest" },
     { name = "ruff" },
 ]
 
@@ -435,6 +436,7 @@ provides-extras = ["dev"]
 dev = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "isort", specifier = ">=6.0.1" },
+    { name = "pytest", specifier = ">=8.4.1" },
     { name = "ruff", specifier = ">=0.12.8" },
 ]
 

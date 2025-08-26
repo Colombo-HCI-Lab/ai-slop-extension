@@ -7,7 +7,7 @@ video metadata, prediction results, and API request/response models.
 
 from typing import List, Optional
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class VideoInfo(BaseModel):
@@ -37,7 +37,7 @@ class DetectionResult(BaseModel):
     processing_time: float = Field(..., ge=0.0, description="Processing time in seconds")
     top_predictions: List[Prediction] = Field(..., description="Top K predictions from the model")
 
-    @validator("top_predictions")
+    @field_validator("top_predictions")
     def validate_predictions(cls, v):
         """Ensure at least one prediction is provided."""
         if not v:

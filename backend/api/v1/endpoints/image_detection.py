@@ -7,26 +7,12 @@ import tempfile
 from typing import List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile, status
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field
 
 from core.config import settings
 from schemas.image_detection import ImageDetectionResponse
 from services.image_detection_service import ImageDetectionService
 from utils.logging import get_logger
-
-
-class URLImageDetectionRequest(BaseModel):
-    """Request for detecting image from URL."""
-
-    image_url: str = Field(..., description="URL of the image to analyze")
-    model_name: Optional[str] = Field("auto", description="Model to use for detection (default: auto, options: auto, ssp, clipbased)")
-    threshold: Optional[float] = Field(None, description="Detection threshold")
-
-    @validator("image_url")
-    def validate_url(cls, v):
-        if not v.startswith(("http://", "https://")):
-            raise ValueError("URL must start with http:// or https://")
-        return v
 
 
 class ImageModelsResponse(BaseModel):
@@ -85,7 +71,12 @@ async def detect_image_upload(
     model_name: Optional[str] = Form(
         default="auto", description="Model to use for detection (default: auto, options: auto, ssp, clipbased)"
     ),
-    threshold: Optional[float] = Form(default=0.0, description="Detection threshold (default: 0.0, model-specific)"),
+    threshold: Optional[float] = Form(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description="Detection threshold (0.0-1.0; model-specific)",
+    ),
 ):
     """
     Upload and analyze an image file for AI generation detection.
@@ -100,8 +91,11 @@ async def detect_image_upload(
 
     # Check file size
     contents = await file.read()
-    if len(contents) > settings.max_file_size:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"File too large. Maximum size: {settings.max_file_size} bytes")
+    if len(contents) > settings.max_image_size:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"File too large. Maximum size: {settings.max_image_size} bytes",
+        )
 
     try:
         # Create temporary file
@@ -129,26 +123,4 @@ async def detect_image_upload(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Image detection failed: {str(e)}")
 
 
-@router.post("/image/detect-url", response_model=ImageDetectionResponse)
-async def detect_image_from_url(request: URLImageDetectionRequest, background_tasks: BackgroundTasks):
-    """
-    Analyze an image from URL for AI generation detection.
-
-    - **image_url**: URL of the image to analyze
-    - **model_name**: Model to use for detection (default: auto, options: auto, ssp, clipbased)
-    - **threshold**: Detection threshold (default: 0.0, model-specific)
-    """
-
-    try:
-        # Create service and process image from URL
-        effective_model_name = request.model_name if request.model_name is not None else "auto"
-        service = ImageDetectionService.get_instance()
-        if effective_model_name and effective_model_name != service.model_name:
-            service.model_name = effective_model_name
-        response = await service.process_image_from_url_async(request.image_url, threshold=request.threshold)
-
-        return response
-
-    except Exception as e:
-        logger.error("URL image detection failed", image_url=request.image_url, error=str(e), exc_info=True)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"URL image detection failed: {str(e)}")
+# Note: URL-based image detection has been removed by design.

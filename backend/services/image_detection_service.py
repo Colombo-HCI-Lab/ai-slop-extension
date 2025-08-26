@@ -36,8 +36,12 @@ class ImageDetectionService:
         self.actual_model = None
         self._sem = asyncio.Semaphore(settings.image_max_concurrency)
         # Dedicated executors so heavy jobs don't block light tasks
-        self._heavy_executor = concurrent.futures.ThreadPoolExecutor(max_workers=settings.image_heavy_threads, thread_name_prefix="img-heavy")
-        self._light_executor = concurrent.futures.ThreadPoolExecutor(max_workers=settings.detection_light_threads, thread_name_prefix="img-light")
+        self._heavy_executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=settings.image_heavy_threads, thread_name_prefix="img-heavy"
+        )
+        self._light_executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=settings.detection_light_threads, thread_name_prefix="img-light"
+        )
 
         logger.info("ImageDetectionService initialized", model=self.model_name, device=self.device)
 
@@ -171,125 +175,6 @@ class ImageDetectionService:
 
             # Create error response
             image_info = ImageInfo(filename=image_path.name, file_size=image_path.stat().st_size if image_path.exists() else None)
-
-            return ImageDetectionResponse(
-                status="failed",
-                image_info=image_info,
-                detection_result=None,
-                created_at=time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(start_time)),
-            )
-
-    async def process_image_from_url_async(
-        self, image_url: str, threshold: Optional[float] = None, job_id: UUID = None
-    ) -> ImageDetectionResponse:
-        """
-        Process an image from URL for AI generation detection.
-
-        Args:
-            image_url: URL of the image to analyze
-            threshold: Detection threshold
-            job_id: Optional job ID for tracking
-
-        Returns:
-            Detection response with results
-        """
-        start_time = time.time()
-        job_id = job_id or uuid4()
-        threshold = threshold if threshold is not None else 0.0
-
-        try:
-            logger.info("Starting URL image processing", image_url=image_url, job_id=str(job_id), model=self.model_name)
-
-            # Get detector
-            detector, actual_model = self._get_detector(self.model_name)
-            self.detector = detector
-            self.actual_model = actual_model
-
-            # Run detection from URL
-            @retry(
-                stop=stop_after_attempt(settings.detection_retry_max_attempts),
-                wait=wait_exponential(multiplier=settings.detection_retry_backoff_base, min=0.5, max=8),
-                reraise=True,
-            )
-            def _infer_url():
-                if hasattr(detector, "detect_from_url"):
-                    return detector.detect_from_url(image_url, threshold=threshold)
-                # Fallback: download manually
-                from clipbased_detection.utils import download_image_from_url
-                import tempfile
-                import os
-
-                image = download_image_from_url(image_url)
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_file:
-                    image.save(tmp_file, format="JPEG")
-                    tmp_file_path = tmp_file.name
-                try:
-                    if hasattr(detector, "detect_image"):
-                        return detector.detect_image(tmp_file_path, threshold=threshold)
-                    return detector.detect(tmp_file_path)
-                finally:
-                    os.unlink(tmp_file_path)
-
-            async with self._sem:
-                loop = asyncio.get_running_loop()
-                result = await asyncio.wait_for(
-                    loop.run_in_executor(self._heavy_executor, _infer_url),
-                    timeout=settings.detection_timeout_seconds,
-                )
-
-            processing_time = time.time() - start_time
-
-            # Create image info
-            image_info = ImageInfo(
-                filename=image_url.split("/")[-1] or "url_image",
-                size=str(result.get("metadata", {}).get("image_size", "unknown")),
-                format="unknown",
-                file_size=None,
-            )
-
-            # Create detection result
-            detection_result = ImageDetectionResult(
-                is_ai_generated=result.get("is_ai_generated", False),
-                confidence=result.get("confidence", 0.0),
-                model_used=actual_model,
-                processing_time=processing_time,
-                llr_score=result.get("llr_score"),
-                probability=result.get("probability"),
-                threshold=result.get("threshold"),
-                metadata=result.get("metadata", {}),
-            )
-
-            response = ImageDetectionResponse(
-                status="completed",
-                image_info=image_info,
-                detection_result=detection_result,
-                created_at=time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(start_time)),
-            )
-
-            logger.info(
-                "URL image detection completed",
-                image_url=image_url,
-                processing_time=round(processing_time, 2),
-                is_ai_generated=result.get("is_ai_generated", False),
-                confidence=round(result.get("confidence", 0.0), 3),
-                job_id=str(job_id),
-            )
-
-            return response
-
-        except Exception as e:
-            processing_time = time.time() - start_time
-            logger.error(
-                "URL image detection failed",
-                image_url=image_url,
-                error=str(e),
-                processing_time=round(processing_time, 2),
-                job_id=str(job_id),
-                exc_info=True,
-            )
-
-            # Create error response
-            image_info = ImageInfo(filename=image_url.split("/")[-1] or "url_image", file_size=None)
 
             return ImageDetectionResponse(
                 status="failed",

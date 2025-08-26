@@ -39,8 +39,12 @@ class DetectionService:
         self.detector = AIVideoDetector(model_name=self.model_name, device=self.device)
         self._sem = asyncio.Semaphore(settings.video_max_concurrency)
         # Dedicated executors so CPU-heavy decode doesn't block light ops
-        self._heavy_executor = concurrent.futures.ThreadPoolExecutor(max_workers=settings.video_heavy_threads, thread_name_prefix="vid-heavy")
-        self._light_executor = concurrent.futures.ThreadPoolExecutor(max_workers=settings.detection_light_threads, thread_name_prefix="vid-light")
+        self._heavy_executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=settings.video_heavy_threads, thread_name_prefix="vid-heavy"
+        )
+        self._light_executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=settings.detection_light_threads, thread_name_prefix="vid-light"
+        )
 
         logger.info("DetectionService initialized", model=self.model_name, device=self.device)
 

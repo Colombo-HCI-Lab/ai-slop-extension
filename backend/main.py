@@ -87,7 +87,8 @@ app.add_middleware(
 async def http_exception_handler(request: Request, exc: HTTPException):
     """Handle HTTP exceptions."""
     return JSONResponse(
-        status_code=exc.status_code, content=ErrorResponse(error="http_error", message=exc.detail, status_code=exc.status_code).dict()
+        status_code=exc.status_code,
+        content=ErrorResponse(error="http_error", message=exc.detail, status_code=exc.status_code).model_dump(),
     )
 
 
@@ -98,7 +99,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         content=ValidationErrorResponse(
             errors=[{"loc": error["loc"], "msg": error["msg"], "type": error["type"]} for error in exc.errors()]
-        ).dict(),
+        ).model_dump(),
     )
 
 
@@ -122,7 +123,7 @@ async def general_exception_handler(request: Request, exc: Exception):
             message="An internal server error occurred",
             detail=str(exc) if settings.debug else None,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        ).dict(),
+        ).model_dump(),
     )
 
 

@@ -5,7 +5,7 @@ Configuration management for the FastAPI application.
 from pathlib import Path
 from typing import List, Optional
 
-from pydantic import Field, computed_field
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -51,15 +51,12 @@ class Settings(BaseSettings):
 
     # File upload settings
     max_file_size: int = 100 * 1024 * 1024  # 100MB
-    max_file_size_async: int = 1024 * 1024 * 1024  # 1GB for async processing
     allowed_video_types: List[str] = ["video/mp4", "video/avi", "video/mov", "video/webm", "video/quicktime", "video/x-msvideo"]
     allowed_extensions: List[str] = [".mp4", ".avi", ".mov", ".webm"]
 
     # Image upload settings
     max_image_size: int = 10 * 1024 * 1024  # 10MB for images
     max_batch_size: int = 10  # Maximum images in batch request
-    allowed_image_types: List[str] = ["image/jpeg", "image/jpg", "image/png", "image/bmp", "image/tiff", "image/webp"]
-    allowed_image_extensions: List[str] = [".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".webp"]
 
     # Directory settings (for local processing only)
     tmp_dir: Path = Field(default_factory=lambda: Path("tmp"))
@@ -68,7 +65,6 @@ class Settings(BaseSettings):
     gcs_bucket_name: str = ""  # GCS bucket for media storage (required)
     gcs_project_id: Optional[str] = None  # Auto-detect if None
     gcs_credentials_path: Optional[str] = None  # Service account key file path
-    enable_local_fallback: bool = False  # Disabled - GCS storage is required
 
     # Video Model settings
     default_model: str = "slowfast_r50"
@@ -77,16 +73,7 @@ class Settings(BaseSettings):
     device: Optional[str] = None  # Auto-detect if None
 
     # Image Model settings
-    default_image_model: str = "clipbased"  # clipbased
-    available_image_models: List[str] = ["clipbased"]
-    image_detection_device: Optional[str] = None  # Auto-detect if None
-
-    # Video processing settings
-    default_num_frames: int = 32
-    default_crop_size: int = 224
-    default_side_size: int = 256
-    default_sampling_rate: int = 2
-    default_alpha: int = 4  # SlowFast alpha parameter
+    default_image_model: str = "clipbased"
 
     # Detection settings
     confidence_threshold: float = 0.5
@@ -148,11 +135,7 @@ class Settings(BaseSettings):
 
             self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
-        # Auto-detect image detection device
-        if self.image_detection_device is None or self.image_detection_device.lower() == "auto":
-            import torch
-
-            self.image_detection_device = "cuda" if torch.cuda.is_available() else "cpu"
+        # No separate image_detection_device; using common device
 
 
 # Global settings instance

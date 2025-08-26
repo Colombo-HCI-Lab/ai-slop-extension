@@ -95,5 +95,6 @@ target-version = "py310"
 dev = [
     "httpx>=0.28.1",
     "isort>=6.0.1",
+    "pytest>=8.4.1",
     "ruff>=0.12.8",
 ]
