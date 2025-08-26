@@ -12,7 +12,7 @@ from core.config import settings
 
 class DatabasePool:
     """Singleton database connection pool manager."""
-    
+
     _instance: Optional["DatabasePool"] = None
     _engine = None
     _session_factory = None
@@ -25,12 +25,12 @@ class DatabasePool:
 
     @classmethod
     async def setup(
-        cls, 
-        pool_size: Optional[int] = None, 
-        max_overflow: Optional[int] = None, 
+        cls,
+        pool_size: Optional[int] = None,
+        max_overflow: Optional[int] = None,
         pool_timeout: Optional[float] = None,
         pool_recycle: Optional[int] = None,
-        logger: Optional[logging.Logger] = None
+        logger: Optional[logging.Logger] = None,
     ):
         """Initialize the database connection pool."""
         if logger is not None:
@@ -58,22 +58,22 @@ class DatabasePool:
                 pool_pre_ping=True,  # Validate connections before use
                 pool_recycle=pool_recycle,
             )
-            
+
             # Create session factory
             cls._session_factory = async_sessionmaker(
                 cls._engine,
                 class_=AsyncSession,
                 expire_on_commit=False,
             )
-            
+
             cls._logger.info(
                 "Database pool created successfully",
                 pool_size=pool_size,
                 max_overflow=max_overflow,
                 pool_timeout=pool_timeout,
-                database_url=settings.database_url.split('@')[1]  # Log without credentials
+                database_url=settings.database_url.split("@")[1],  # Log without credentials
             )
-            
+
         except Exception as e:
             cls._logger.error(f"Error during database pool setup: {e}")
             raise
@@ -89,10 +89,10 @@ class DatabasePool:
             # Test the engine connection
             async with cls._engine.begin() as conn:
                 await conn.execute(text("SELECT 1"))
-                
+
             # Return new session from factory
             return cls._session_factory()
-            
+
         except Exception as e:
             cls._logger.error(f"Database connection validation failed: {e}")
             raise
@@ -103,13 +103,13 @@ class DatabasePool:
         if not cls._engine:
             cls._logger.warning("Database pool was not initialized")
             return
-            
+
         try:
             await cls._engine.dispose()
             cls._logger.info("Database pool closed successfully")
             cls._engine = None
             cls._session_factory = None
-            
+
         except Exception as e:
             cls._logger.error(f"Error during database pool teardown: {e}")
             raise

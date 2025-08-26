@@ -21,11 +21,12 @@ async def lifespan(app: FastAPI):
     # Startup
     setup_logging()
     logger = get_logger("main", component="application")
-    
+
     # Initialize database pool
     from db.pool import database_pool
+
     await database_pool.setup(logger=logger)
-    
+
     logger.info(
         "Starting AI Detection API",
         available_models=settings.available_models,

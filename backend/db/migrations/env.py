@@ -73,7 +73,7 @@ async def run_async_migrations() -> None:
     """
     # Use DATABASE_URL environment variable if available
     database_url = os.environ.get("DATABASE_URL")
-    
+
     if database_url:
         connectable = create_async_engine(
             database_url,

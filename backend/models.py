@@ -215,14 +215,14 @@ class PostMedia(Base):
 
     # Storage path for downloaded media (GCS URI or local file path)
     storage_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    
+
     # Storage type: 'gcs' or 'local'
     storage_type: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
 
     # Content hash for deduplication
     content_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
-    
-    # Normalized URL for Facebook URL deduplication  
+
+    # Normalized URL for Facebook URL deduplication
     normalized_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True, index=True)
 
     # Relationship to post

@@ -184,12 +184,14 @@ class ContentDetectionService:
                     # Use existing local file from registry
                     registry_record = media_registry.get_processed_media_info(post_id, url)
                     if registry_record and registry_record.local_path and registry_record.local_path.exists():
-                        logger.info("Using already processed media for detection", 
-                                  url=url[:50], local_path=str(registry_record.local_path))
+                        logger.info("Using already processed media for detection", url=url[:50], local_path=str(registry_record.local_path))
                         image_file = registry_record.local_path
                     else:
-                        logger.warning("Registry shows media processed but local file not found", 
-                                     url=url[:50], local_path=str(registry_record.local_path) if registry_record else None)
+                        logger.warning(
+                            "Registry shows media processed but local file not found",
+                            url=url[:50],
+                            local_path=str(registry_record.local_path) if registry_record else None,
+                        )
                         # Fall through to database/fallback lookup
                         image_file = None
                 else:
@@ -207,33 +209,30 @@ class ContentDetectionService:
                             try:
                                 from services.gcs_storage_service import GCSStorageService
                                 from pathlib import Path
-                                
+
                                 gcs_service = GCSStorageService()
                                 gcs_path = gcs_service.gcs_uri_to_path(storage_path)
-                                
+
                                 # Generate local path for downloaded file
                                 local_path = self._get_local_file_path(post_id, url, "image")
                                 local_path.parent.mkdir(parents=True, exist_ok=True)
-                                
+
                                 # Download from GCS and save locally
                                 data = await gcs_service.download_media(gcs_path)
                                 local_path.write_bytes(data)
-                                
+
                                 image_file = local_path
-                                logger.info("Downloaded image from GCS for analysis", 
-                                          url=url[:50], 
-                                          gcs_path=gcs_path, 
-                                          local_path=str(local_path))
-                                          
+                                logger.info(
+                                    "Downloaded image from GCS for analysis", url=url[:50], gcs_path=gcs_path, local_path=str(local_path)
+                                )
+
                             except Exception as e:
-                                logger.error("Failed to download image from GCS", 
-                                           url=url[:50], 
-                                           storage_path=storage_path, 
-                                           error=str(e))
+                                logger.error("Failed to download image from GCS", url=url[:50], storage_path=storage_path, error=str(e))
                                 # Fall through to other fallback methods
                         else:
                             # Local storage
                             from pathlib import Path
+
                             image_file = Path(storage_path)
                     else:
                         # Fallback to finding file by URL hash if not in database
@@ -257,14 +256,14 @@ class ContentDetectionService:
 
                 if not image_file or not image_file.exists():
                     logger.warning("Downloaded image file not found for analysis", url=url[:50])
-                    
+
                     # Fallback: attempt to download if not already processed
                     if not media_registry.is_already_processed(post_id, url, "downloaded"):
                         logger.warning("Media not found in registry, downloading for detection", url=url[:50])
                         # This shouldn't happen in normal flow since FileUploadService should have processed it
                         # but we can handle it as a fallback
                         # For now, log the issue and continue with error
-                        
+
                     image_results.append(
                         {
                             "url": url,
@@ -396,12 +395,14 @@ class ContentDetectionService:
                     # Use existing local file from registry
                     registry_record = media_registry.get_processed_media_info(post_id, url)
                     if registry_record and registry_record.local_path and registry_record.local_path.exists():
-                        logger.info("Using already processed media for detection", 
-                                  url=url[:50], local_path=str(registry_record.local_path))
+                        logger.info("Using already processed media for detection", url=url[:50], local_path=str(registry_record.local_path))
                         video_file = registry_record.local_path
                     else:
-                        logger.warning("Registry shows media processed but local file not found", 
-                                     url=url[:50], local_path=str(registry_record.local_path) if registry_record else None)
+                        logger.warning(
+                            "Registry shows media processed but local file not found",
+                            url=url[:50],
+                            local_path=str(registry_record.local_path) if registry_record else None,
+                        )
                         # Fall through to database/fallback lookup
                         video_file = None
                 else:
@@ -419,33 +420,30 @@ class ContentDetectionService:
                             try:
                                 from services.gcs_storage_service import GCSStorageService
                                 from pathlib import Path
-                                
+
                                 gcs_service = GCSStorageService()
                                 gcs_path = gcs_service.gcs_uri_to_path(storage_path)
-                                
+
                                 # Generate local path for downloaded file
                                 local_path = self._get_local_file_path(post_id, url, "video")
                                 local_path.parent.mkdir(parents=True, exist_ok=True)
-                                
+
                                 # Download from GCS and save locally
                                 data = await gcs_service.download_media(gcs_path)
                                 local_path.write_bytes(data)
-                                
+
                                 video_file = local_path
-                                logger.info("Downloaded video from GCS for analysis", 
-                                          url=url[:50], 
-                                          gcs_path=gcs_path, 
-                                          local_path=str(local_path))
-                                          
+                                logger.info(
+                                    "Downloaded video from GCS for analysis", url=url[:50], gcs_path=gcs_path, local_path=str(local_path)
+                                )
+
                             except Exception as e:
-                                logger.error("Failed to download video from GCS", 
-                                           url=url[:50], 
-                                           storage_path=storage_path, 
-                                           error=str(e))
+                                logger.error("Failed to download video from GCS", url=url[:50], storage_path=storage_path, error=str(e))
                                 # Fall through to other fallback methods
                         else:
                             # Local storage
                             from pathlib import Path
+
                             video_file = Path(storage_path)
                     else:
                         # Fallback to finding file by URL hash if not in database
@@ -469,12 +467,12 @@ class ContentDetectionService:
 
                 if not video_file or not video_file.exists():
                     logger.warning("Downloaded video file not found for analysis", url=url[:50])
-                    
+
                     # Fallback: attempt to download if not already processed
                     if not media_registry.is_already_processed(post_id, url, "downloaded"):
                         logger.warning("Media not found in registry, downloading for detection", url=url[:50])
                         # This shouldn't happen in normal flow since FileUploadService should have processed it
-                        
+
                     video_results.append(
                         {
                             "url": url,

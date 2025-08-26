@@ -30,7 +30,7 @@ class FileUploadService:
 
         # Configure Gemini API
         genai.configure(api_key=settings.gemini_api_key)
-        
+
         # Initialize GCS storage service (required)
         self.gcs_service = GCSStorageService()
 
@@ -83,18 +83,17 @@ class FileUploadService:
         filename = f"{url_hash}_{unique_id}{extension}"
         return post_folder / filename
 
-    async def save_media(self, data: bytes, post_id: str, media_url: str, 
-                        media_type: str, content_type: str) -> str:
+    async def save_media(self, data: bytes, post_id: str, media_url: str, media_type: str, content_type: str) -> str:
         """
         Save media to GCS storage.
-        
+
         Args:
             data: Media file bytes
             post_id: Facebook post ID
             media_url: Original media URL
             media_type: 'image' or 'video'
             content_type: MIME type of the media
-            
+
         Returns:
             GCS URI
         """
@@ -102,16 +101,10 @@ class FileUploadService:
         gcs_path = self.gcs_service.get_media_path(post_id, media_url, media_type)
         try:
             gcs_uri = await self.gcs_service.upload_media(data, gcs_path, content_type)
-            logger.info("Saved media to GCS", 
-                       post_id=post_id, 
-                       gcs_path=gcs_path,
-                       size_bytes=len(data))
+            logger.info("Saved media to GCS", post_id=post_id, gcs_path=gcs_path, size_bytes=len(data))
             return gcs_uri
         except Exception as e:
-            logger.error("Failed to save media to GCS", 
-                        post_id=post_id, 
-                        gcs_path=gcs_path,
-                        error=str(e))
+            logger.error("Failed to save media to GCS", post_id=post_id, gcs_path=gcs_path, error=str(e))
             raise RuntimeError(f"Failed to save media to GCS: {str(e)}") from e
 
     async def check_media_exists(self, post_id: str, media_url: str, db: AsyncSession) -> Optional[str]:
@@ -151,15 +144,15 @@ class FileUploadService:
                         )
                         return storage_path
                     else:
-                        logger.warning("Media not found in GCS but exists in database",
-                                     post_id=post_id,
-                                     gcs_uri=storage_path)
-                
+                        logger.warning("Media not found in GCS but exists in database", post_id=post_id, gcs_uri=storage_path)
+
                 # Handle legacy local file paths (migration scenario)
                 else:
-                    logger.warning("Found legacy local file path in database - media will be re-uploaded to GCS",
-                                 post_id=post_id,
-                                 local_path=storage_path)
+                    logger.warning(
+                        "Found legacy local file path in database - media will be re-uploaded to GCS",
+                        post_id=post_id,
+                        local_path=storage_path,
+                    )
 
             return None
 
@@ -196,10 +189,10 @@ class FileUploadService:
                 # Download from GCS to temporary file
                 import os
                 import tempfile
-                
+
                 gcs_path = self.gcs_service.gcs_uri_to_path(storage_path)
                 data = await self.gcs_service.download_media(gcs_path)
-                
+
                 # Get appropriate file extension
                 extension_map = {
                     "image/jpeg": ".jpg",
@@ -210,25 +203,23 @@ class FileUploadService:
                     "video/x-msvideo": ".avi",
                 }
                 extension = extension_map.get(mime_type, ".tmp")
-                
+
                 with tempfile.NamedTemporaryFile(delete=False, suffix=extension) as temp_file:
                     temp_file.write(data)
                     temp_file_path = temp_file.name
-                
+
                 try:
                     # Upload to Gemini File API
                     file = genai.upload_file(path=temp_file_path, mime_type=mime_type, display_name=display_name)
                 finally:
                     # Clean up temporary file
                     os.unlink(temp_file_path)
-                    
+
                 logger.info("Uploaded from GCS to Gemini", gcs_path=gcs_path, file_name=file.name)
-                
+
             else:
                 # Handle legacy local file paths during migration
-                logger.warning("Attempting to upload legacy local file to Gemini", 
-                             local_path=storage_path, 
-                             display_name=display_name)
+                logger.warning("Attempting to upload legacy local file to Gemini", local_path=storage_path, display_name=display_name)
                 file = genai.upload_file(path=storage_path, mime_type=mime_type, display_name=display_name)
                 logger.info("Uploaded from local file to Gemini", local_path=storage_path, file_name=file.name)
 
@@ -488,14 +479,12 @@ class FileUploadService:
                     try:
                         # Save to GCS storage
                         storage_path = await self.save_media(processed_data, post_id, url, "image", mime_type)
-                        
+
                         # Also save to local tmp directory for detection
                         local_path = self._get_local_file_path(post_id, url, "image")
                         local_path.parent.mkdir(parents=True, exist_ok=True)
                         local_path.write_bytes(processed_data)
-                        logger.info("Saved image to storage and local tmp directory", 
-                                  storage_path=storage_path, 
-                                  local_path=str(local_path))
+                        logger.info("Saved image to storage and local tmp directory", storage_path=storage_path, local_path=str(local_path))
                     except Exception as e:
                         logger.warning("Failed to save image to storage", error=str(e))
 
@@ -569,14 +558,12 @@ class FileUploadService:
                     try:
                         # Save to GCS storage
                         storage_path = await self.save_media(video_data, post_id, url, "video", mime_type)
-                        
+
                         # Also save to local tmp directory for detection
                         local_path = self._get_local_file_path(post_id, url, "video")
                         local_path.parent.mkdir(parents=True, exist_ok=True)
                         local_path.write_bytes(video_data)
-                        logger.info("Saved video to storage and local tmp directory", 
-                                  storage_path=storage_path, 
-                                  local_path=str(local_path))
+                        logger.info("Saved video to storage and local tmp directory", storage_path=storage_path, local_path=str(local_path))
                     except Exception as e:
                         logger.warning("Failed to save video to storage", error=str(e))
 
@@ -593,46 +580,38 @@ class FileUploadService:
         return file_uris
 
     async def upload_media_from_urls_with_recovery(
-        self,
-        image_urls: List[str],
-        video_urls: List[str],
-        post_id: Optional[str] = None,
-        db: Optional[AsyncSession] = None
+        self, image_urls: List[str], video_urls: List[str], post_id: Optional[str] = None, db: Optional[AsyncSession] = None
     ) -> Tuple[List[str], List[dict]]:
         """Enhanced upload with Gemini URI recovery."""
-        
+
         all_media_urls = image_urls + video_urls
         if not all_media_urls:
             return [], []
-        
+
         # STEP 1: Check if post already processed and try to recover missing Gemini URIs
         if post_id and db:
             post_already_processed = await self.check_post_exists_in_database(post_id, db)
             if post_already_processed:
                 # Try to recover any missing Gemini URIs first
                 recovered_count = await gemini_recovery_service.check_and_recover_all_missing_uris(post_id, db)
-                
+
                 if recovered_count > 0:
-                    logger.info(
-                        "Recovered missing Gemini URIs",
-                        post_id=post_id,
-                        recovered_count=recovered_count
-                    )
-                
+                    logger.info("Recovered missing Gemini URIs", post_id=post_id, recovered_count=recovered_count)
+
                 # Check local files
                 local_files_exist = self._check_local_media_files_exist(post_id)
                 if not local_files_exist:
                     await self._download_media_from_bucket(post_id, db)
-                
+
                 # Get existing URIs (should now include recovered ones)
                 existing_uris = await self.get_existing_gemini_uris_for_post(post_id, db)
                 existing_files = await self._get_existing_media_info(post_id, db)
                 return existing_uris, existing_files
-        
+
         # STEP 2: For new posts, implement lazy Gemini upload strategy
         file_uris = []
         downloaded_files = []
-        
+
         # First, download and save all media to storage
         for i, url in enumerate(image_urls):
             try:
@@ -646,48 +625,44 @@ class FileUploadService:
                         )
                         if file_uri:
                             file_uris.append(file_uri)
-                            
-                        downloaded_files.append({
-                            "type": "image",
-                            "url": url,
-                            "storage_path": existing_storage_path,
-                            "index": i,
-                            "source": "existing_storage"
-                        })
+
+                        downloaded_files.append(
+                            {"type": "image", "url": url, "storage_path": existing_storage_path, "index": i, "source": "existing_storage"}
+                        )
                         continue
-                
+
                 # Download new media
                 image_data, content_type = await self._download_image(url)
                 if image_data:
                     processed_data, mime_type = await self._process_image(image_data, content_type)
-                    
+
                     # Save to storage first
                     if post_id:
                         storage_path = await self.save_media(processed_data, post_id, url, "image", mime_type)
-                        
+
                         # Lazy Gemini upload: only upload if needed immediately
                         # Otherwise, it can be uploaded on-demand later
                         file_uri = None
                         if self._should_upload_to_gemini_immediately(post_id):
-                            file_uri = await self._upload_to_gemini_from_storage_lazy(
-                                storage_path, mime_type, f"post_image_{i + 1}"
-                            )
-                        
+                            file_uri = await self._upload_to_gemini_from_storage_lazy(storage_path, mime_type, f"post_image_{i + 1}")
+
                         if file_uri:
                             file_uris.append(file_uri)
-                        
-                        downloaded_files.append({
-                            "type": "image",
-                            "url": url,
-                            "storage_path": storage_path,
-                            "gemini_uploaded": bool(file_uri),
-                            "index": i,
-                            "source": "new_download"
-                        })
-            
+
+                        downloaded_files.append(
+                            {
+                                "type": "image",
+                                "url": url,
+                                "storage_path": storage_path,
+                                "gemini_uploaded": bool(file_uri),
+                                "index": i,
+                                "source": "new_download",
+                            }
+                        )
+
             except Exception as e:
                 logger.error(f"Failed to process image {url}", error=str(e))
-        
+
         # Similar processing for videos...
         for i, url in enumerate(video_urls):
             try:
@@ -696,52 +671,46 @@ class FileUploadService:
                     existing_storage_path = await self.check_media_exists(post_id, url, db)
                     if existing_storage_path:
                         # File exists in storage, upload to Gemini from storage
-                        file_uri = await self._upload_to_gemini_from_storage_lazy(
-                            existing_storage_path, "video/mp4", f"post_video_{i + 1}"
-                        )
+                        file_uri = await self._upload_to_gemini_from_storage_lazy(existing_storage_path, "video/mp4", f"post_video_{i + 1}")
                         if file_uri:
                             file_uris.append(file_uri)
-                            
-                        downloaded_files.append({
-                            "type": "video",
-                            "url": url,
-                            "storage_path": existing_storage_path,
-                            "index": i,
-                            "source": "existing_storage"
-                        })
+
+                        downloaded_files.append(
+                            {"type": "video", "url": url, "storage_path": existing_storage_path, "index": i, "source": "existing_storage"}
+                        )
                         continue
-                
+
                 # Download new media
                 video_data, content_type = await self._download_video(url)
                 if video_data:
                     mime_type = self._get_video_mime_type(content_type)
-                    
+
                     # Save to storage first
                     if post_id:
                         storage_path = await self.save_media(video_data, post_id, url, "video", mime_type)
-                        
+
                         # Lazy Gemini upload: only upload if needed immediately
                         file_uri = None
                         if self._should_upload_to_gemini_immediately(post_id):
-                            file_uri = await self._upload_to_gemini_from_storage_lazy(
-                                storage_path, mime_type, f"post_video_{i + 1}"
-                            )
-                        
+                            file_uri = await self._upload_to_gemini_from_storage_lazy(storage_path, mime_type, f"post_video_{i + 1}")
+
                         if file_uri:
                             file_uris.append(file_uri)
-                        
-                        downloaded_files.append({
-                            "type": "video",
-                            "url": url,
-                            "storage_path": storage_path,
-                            "gemini_uploaded": bool(file_uri),
-                            "index": i,
-                            "source": "new_download"
-                        })
-            
+
+                        downloaded_files.append(
+                            {
+                                "type": "video",
+                                "url": url,
+                                "storage_path": storage_path,
+                                "gemini_uploaded": bool(file_uri),
+                                "index": i,
+                                "source": "new_download",
+                            }
+                        )
+
             except Exception as e:
                 logger.error(f"Failed to process video {url}", error=str(e))
-        
+
         return file_uris, downloaded_files
 
     async def upload_media_from_urls(
@@ -770,16 +739,15 @@ class FileUploadService:
         duplicates = {}
         if post_id and db:
             from utils.content_deduplication import deduplication_service
-            duplicates = await deduplication_service.find_duplicate_content(
-                post_id, all_media_urls, db
-            )
-            
+
+            duplicates = await deduplication_service.find_duplicate_content(post_id, all_media_urls, db)
+
             if duplicates:
                 logger.info(
                     "Found duplicate content, reusing existing files",
                     post_id=post_id,
                     duplicate_count=len(duplicates),
-                    bandwidth_saved=True
+                    bandwidth_saved=True,
                 )
 
         # Register all media in the processing registry
@@ -790,7 +758,13 @@ class FileUploadService:
                 media_registry.register_media(post_id, url, "video")
 
         # Sequential processing: Download ALL files first, then upload ALL files
-        logger.info("Starting sequential media processing with deduplication", post_id=post_id, images=len(image_urls), videos=len(video_urls), duplicates=len(duplicates))
+        logger.info(
+            "Starting sequential media processing with deduplication",
+            post_id=post_id,
+            images=len(image_urls),
+            videos=len(video_urls),
+            duplicates=len(duplicates),
+        )
 
         # Phase 1: Download all media files
         logger.info("Phase 1: Downloading all media files", post_id=post_id)
@@ -802,22 +776,22 @@ class FileUploadService:
                 # Check if this is duplicate content
                 if url in duplicates:
                     existing_storage_path = duplicates[url]
-                    
+
                     # Reuse existing file
-                    file_uri = await self._upload_to_gemini_from_storage(
-                        existing_storage_path, "image/jpeg", f"post_image_{i + 1}"
+                    file_uri = await self._upload_to_gemini_from_storage(existing_storage_path, "image/jpeg", f"post_image_{i + 1}")
+
+                    downloaded_files.append(
+                        {
+                            "type": "image",
+                            "url": url,
+                            "storage_path": existing_storage_path,
+                            "index": i,
+                            "mime_type": "image/jpeg",
+                            "is_duplicate": True,
+                            "gemini_uri": file_uri,
+                        }
                     )
-                    
-                    downloaded_files.append({
-                        "type": "image",
-                        "url": url,
-                        "storage_path": existing_storage_path,
-                        "index": i,
-                        "mime_type": "image/jpeg",
-                        "is_duplicate": True,
-                        "gemini_uri": file_uri
-                    })
-                    
+
                     logger.info("Reused duplicate content", url=url[:50], storage_path=existing_storage_path)
                     continue
 
@@ -826,13 +800,15 @@ class FileUploadService:
                     existing_record = media_registry.get_processed_media_info(post_id, url)
                     if existing_record and existing_record.storage_path:
                         logger.info("Media already processed, reusing", url=url[:50], storage_path=existing_record.storage_path)
-                        downloaded_files.append({
-                            "type": "image",
-                            "url": url,
-                            "storage_path": existing_record.storage_path,
-                            "index": i,
-                            "mime_type": "image/jpeg"
-                        })
+                        downloaded_files.append(
+                            {
+                                "type": "image",
+                                "url": url,
+                                "storage_path": existing_record.storage_path,
+                                "index": i,
+                                "mime_type": "image/jpeg",
+                            }
+                        )
                         continue
 
                 # Fallback: Check database if not in registry
@@ -853,28 +829,24 @@ class FileUploadService:
                         try:
                             # Calculate content hash for deduplication
                             from utils.content_deduplication import deduplication_service
+
                             content_hash = await deduplication_service.calculate_content_hash(processed_data)
-                            
+
                             # Save to GCS storage
                             storage_path = await self.save_media(processed_data, post_id, url, "image", mime_type)
-                            
+
                             # Also save to local tmp directory for detection
                             local_path = self._get_local_file_path(post_id, url, "image")
                             local_path.parent.mkdir(parents=True, exist_ok=True)
                             local_path.write_bytes(processed_data)
-                            logger.info("Saved image to local tmp directory", 
-                                      url=url[:50], 
-                                      local_path=str(local_path))
-                            
+                            logger.info("Saved image to local tmp directory", url=url[:50], local_path=str(local_path))
+
                             # Update registry
                             media_key = f"{post_id}:{url}"
                             media_registry.update_processing_stage(
-                                media_key, 
-                                "downloaded",
-                                local_path=local_path,
-                                storage_path=storage_path
+                                media_key, "downloaded", local_path=local_path, storage_path=storage_path
                             )
-                            
+
                             downloaded_files.append(
                                 {
                                     "type": "image",
@@ -885,7 +857,7 @@ class FileUploadService:
                                     "mime_type": mime_type,
                                     "content_hash": content_hash,
                                     "normalized_url": deduplication_service.normalize_facebook_url(url),
-                                    "is_duplicate": False
+                                    "is_duplicate": False,
                                 }
                             )
                             logger.info("Downloaded image", url=url[:50], storage_path=storage_path)
@@ -900,22 +872,22 @@ class FileUploadService:
                 # Check if this is duplicate content
                 if url in duplicates:
                     existing_storage_path = duplicates[url]
-                    
+
                     # Reuse existing file
-                    file_uri = await self._upload_to_gemini_from_storage(
-                        existing_storage_path, "video/mp4", f"post_video_{i + 1}"
+                    file_uri = await self._upload_to_gemini_from_storage(existing_storage_path, "video/mp4", f"post_video_{i + 1}")
+
+                    downloaded_files.append(
+                        {
+                            "type": "video",
+                            "url": url,
+                            "storage_path": existing_storage_path,
+                            "index": i,
+                            "mime_type": "video/mp4",
+                            "is_duplicate": True,
+                            "gemini_uri": file_uri,
+                        }
                     )
-                    
-                    downloaded_files.append({
-                        "type": "video",
-                        "url": url,
-                        "storage_path": existing_storage_path,
-                        "index": i,
-                        "mime_type": "video/mp4",
-                        "is_duplicate": True,
-                        "gemini_uri": file_uri
-                    })
-                    
+
                     logger.info("Reused duplicate content", url=url[:50], storage_path=existing_storage_path)
                     continue
 
@@ -924,13 +896,15 @@ class FileUploadService:
                     existing_record = media_registry.get_processed_media_info(post_id, url)
                     if existing_record and existing_record.storage_path:
                         logger.info("Media already processed, reusing", url=url[:50], storage_path=existing_record.storage_path)
-                        downloaded_files.append({
-                            "type": "video",
-                            "url": url,
-                            "storage_path": existing_record.storage_path,
-                            "index": i,
-                            "mime_type": "video/mp4"
-                        })
+                        downloaded_files.append(
+                            {
+                                "type": "video",
+                                "url": url,
+                                "storage_path": existing_record.storage_path,
+                                "index": i,
+                                "mime_type": "video/mp4",
+                            }
+                        )
                         continue
 
                 # Fallback: Check database if not in registry
@@ -951,28 +925,24 @@ class FileUploadService:
                         try:
                             # Calculate content hash for deduplication
                             from utils.content_deduplication import deduplication_service
+
                             content_hash = await deduplication_service.calculate_content_hash(video_data)
-                            
+
                             # Save to GCS storage
                             storage_path = await self.save_media(video_data, post_id, url, "video", mime_type)
-                            
+
                             # Also save to local tmp directory for detection
                             local_path = self._get_local_file_path(post_id, url, "video")
                             local_path.parent.mkdir(parents=True, exist_ok=True)
                             local_path.write_bytes(video_data)
-                            logger.info("Saved video to local tmp directory", 
-                                      url=url[:50], 
-                                      local_path=str(local_path))
-                            
+                            logger.info("Saved video to local tmp directory", url=url[:50], local_path=str(local_path))
+
                             # Update registry
                             media_key = f"{post_id}:{url}"
                             media_registry.update_processing_stage(
-                                media_key, 
-                                "downloaded",
-                                local_path=local_path,
-                                storage_path=storage_path
+                                media_key, "downloaded", local_path=local_path, storage_path=storage_path
                             )
-                            
+
                             downloaded_files.append(
                                 {
                                     "type": "video",
@@ -983,7 +953,7 @@ class FileUploadService:
                                     "mime_type": mime_type,
                                     "content_hash": content_hash,
                                     "normalized_url": deduplication_service.normalize_facebook_url(url),
-                                    "is_duplicate": False
+                                    "is_duplicate": False,
                                 }
                             )
                             logger.info("Downloaded video", url=url[:50], storage_path=storage_path)
@@ -1008,16 +978,16 @@ class FileUploadService:
                 # Handle duplicates that were already uploaded to Gemini in Phase 1
                 if file_info.get("is_duplicate") and file_info.get("gemini_uri"):
                     file_uris.append(file_info["gemini_uri"])
-                    logger.info("Using Gemini URI from duplicate processing", 
-                              url=file_info["url"][:50], gemini_uri=file_info["gemini_uri"])
+                    logger.info("Using Gemini URI from duplicate processing", url=file_info["url"][:50], gemini_uri=file_info["gemini_uri"])
                     continue
 
                 # Check registry for existing Gemini upload
                 if post_id and media_registry.is_already_processed(post_id, file_info["url"], "uploaded"):
                     existing_record = media_registry.get_processed_media_info(post_id, file_info["url"])
                     if existing_record and existing_record.gemini_uri:
-                        logger.info("Media already uploaded to Gemini, reusing", 
-                                  url=file_info["url"][:50], gemini_uri=existing_record.gemini_uri)
+                        logger.info(
+                            "Media already uploaded to Gemini, reusing", url=file_info["url"][:50], gemini_uri=existing_record.gemini_uri
+                        )
                         file_uris.append(existing_record.gemini_uri)
                         continue
 
@@ -1046,9 +1016,11 @@ class FileUploadService:
                     if post_id:
                         media_key = f"{post_id}:{file_info['url']}"
                         media_registry.update_processing_stage(media_key, "uploaded", gemini_uri=file_uri)
-                    
+
                     file_uris.append(file_uri)
-                    logger.info("Uploaded to Gemini", file_type=file_info["type"], storage_path=file_info["storage_path"], gemini_uri=file_uri)
+                    logger.info(
+                        "Uploaded to Gemini", file_type=file_info["type"], storage_path=file_info["storage_path"], gemini_uri=file_uri
+                    )
 
             except Exception as e:
                 logger.error("Failed to upload file to Gemini", file_info=file_info["url"], error=str(e))
@@ -1061,7 +1033,7 @@ class FileUploadService:
             uploaded=len(file_uris),
             total=total_media,
             success_rate=f"{len(file_uris)}/{total_media}",
-            registry_stats=media_registry.get_registry_stats()
+            registry_stats=media_registry.get_registry_stats(),
         )
 
         return file_uris, downloaded_files
@@ -1391,21 +1363,16 @@ class FileUploadService:
             logger.error("Failed to cleanup old files", error=str(e), exc_info=True)
             return 0
 
-    async def _upload_to_gemini_from_storage_lazy(
-        self,
-        storage_path: str,
-        mime_type: str,
-        display_name: str
-    ) -> Optional[str]:
+    async def _upload_to_gemini_from_storage_lazy(self, storage_path: str, mime_type: str, display_name: str) -> Optional[str]:
         """
         Lazy Gemini upload: only upload if not already present.
         """
         try:
             # Check if we already have this file in Gemini (by some identifier)
             # This could be enhanced with a Gemini file registry
-            
+
             return await self._upload_to_gemini_from_storage(storage_path, mime_type, display_name)
-        
+
         except Exception as e:
             logger.error("Lazy Gemini upload failed", storage_path=storage_path, error=str(e))
             return None
@@ -1413,7 +1380,7 @@ class FileUploadService:
     def _should_upload_to_gemini_immediately(self, post_id: str) -> bool:
         """
         Determine if we should upload to Gemini immediately or defer.
-        
+
         Factors to consider:
         - Is this for immediate chat/analysis?
         - Are we in a batch processing mode?
@@ -1442,31 +1409,24 @@ class FileUploadService:
         """
         try:
             from models import PostMedia
-            
+
             # Get all media for this post that has storage paths
-            media_result = await db.execute(
-                select(PostMedia)
-                .where(PostMedia.post_id == post_id)
-                .where(PostMedia.storage_path.isnot(None))
-            )
+            media_result = await db.execute(select(PostMedia).where(PostMedia.post_id == post_id).where(PostMedia.storage_path.isnot(None)))
             media_list = media_result.scalars().all()
-            
+
             for media in media_list:
                 if media.storage_path.startswith("gs://"):
                     # Download from GCS
                     gcs_path = self.gcs_service.gcs_uri_to_path(media.storage_path)
                     data = await self.gcs_service.download_media(gcs_path)
-                    
+
                     # Save to local file
                     local_path = self._get_local_file_path(post_id, media.media_url, media.media_type)
                     local_path.parent.mkdir(parents=True, exist_ok=True)
                     local_path.write_bytes(data)
-                    
-                    logger.info("Downloaded media from bucket", 
-                              post_id=post_id, 
-                              gcs_path=gcs_path, 
-                              local_path=str(local_path))
-        
+
+                    logger.info("Downloaded media from bucket", post_id=post_id, gcs_path=gcs_path, local_path=str(local_path))
+
         except Exception as e:
             logger.error("Error downloading media from bucket", post_id=post_id, error=str(e))
 
@@ -1476,24 +1436,21 @@ class FileUploadService:
         """
         try:
             from models import PostMedia
-            
-            media_result = await db.execute(
-                select(PostMedia)
-                .where(PostMedia.post_id == post_id)
-            )
+
+            media_result = await db.execute(select(PostMedia).where(PostMedia.post_id == post_id))
             media_list = media_result.scalars().all()
-            
+
             return [
                 {
                     "type": media.media_type,
                     "url": media.media_url,
                     "storage_path": media.storage_path,
                     "gemini_uri": media.gemini_file_uri,
-                    "source": "existing_database"
+                    "source": "existing_database",
                 }
                 for media in media_list
             ]
-        
+
         except Exception as e:
             logger.error("Error getting existing media info", post_id=post_id, error=str(e))
             return []
