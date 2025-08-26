@@ -32,9 +32,3 @@ DEBUG=true
 ```bash
 uv run python test_migration.py
 ```
-
-## Documentation
-
-- **[Backend Guide](../docs/backend-guide.md)** - Complete setup, API, and development guide
-- **[Database Schema](../docs/database-schema.md)** - Database design and relationships
-- **[Migration Plan](MIGRATION_PLAN.md)** - NestJS to FastAPI migration details

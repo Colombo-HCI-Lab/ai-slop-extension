@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import insert
 
-from models import Post, PostMedia
+from db.models import Post, PostMedia
 from schemas.content_detection import ContentDetectionRequest, ContentDetectionResponse
 from services.file_upload_service import FileUploadService
 from utils.logging import get_logger

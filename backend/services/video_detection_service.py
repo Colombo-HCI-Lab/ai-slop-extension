@@ -14,7 +14,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 
 from core.config import settings
 from schemas.video_detection import DetectionResult, Prediction, VideoInfo, DetectionResponse
-from slowfast_detection import AIVideoDetector, VideoPreprocessor
+from ml.slowfast import AIVideoDetector, VideoPreprocessor
 from utils.logging import get_logger
 
 logger = get_logger(__name__)

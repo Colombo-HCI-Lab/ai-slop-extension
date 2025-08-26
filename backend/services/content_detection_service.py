@@ -40,7 +40,7 @@ class ContentDetectionService:
         # Check if post has already been fully processed
         from sqlalchemy import select
 
-        from models import Post
+        from db.models import Post
 
         result = await db.execute(select(Post).where(Post.post_id == request.post_id))
         existing_post = result.scalar_one_or_none()
@@ -117,7 +117,7 @@ class ContentDetectionService:
         """Get media information from database for the post."""
         from sqlalchemy import select
 
-        from models import PostMedia
+        from db.models import PostMedia
 
         result = await db.execute(select(PostMedia).where(PostMedia.post_id == post_id))
         media_records = result.scalars().all()
@@ -158,7 +158,7 @@ class ContentDetectionService:
 
         # Initialize ClipBased detector
         try:
-            from clipbased_detection import ClipBasedImageDetector
+            from ml.clipbased import ClipBasedImageDetector
 
             detector = ClipBasedImageDetector()
         except ImportError as e:
@@ -367,20 +367,21 @@ class ContentDetectionService:
         logger.info("Starting real SlowFast video analysis", video_count=len(video_urls))
         video_results = []
 
-        # Initialize SlowFast detector
+        # Initialize SlowFast detector via ml public API
         try:
-            from slowfast_detection import SlowFastVideoDetector
+            from ml.slowfast import AIVideoDetector, VideoPreprocessor
 
-            detector = SlowFastVideoDetector()
+            detector = AIVideoDetector()
+            preprocessor = VideoPreprocessor()
         except ImportError as e:
-            logger.error("Failed to import SlowFast detector", error=str(e))
+            logger.error("Failed to import SlowFast modules", error=str(e))
             # Fallback to error results
             for url in video_urls:
                 video_results.append(
                     {
                         "url": url,
                         "status": "error",
-                        "error": "SlowFast detector not available",
+                        "error": "SlowFast modules not available",
                         "is_ai_generated": None,
                         "ai_probability": None,
                         "confidence": 0.0,
@@ -485,16 +486,16 @@ class ContentDetectionService:
                     )
                     continue
 
-                # Run real SlowFast detection on the downloaded video
+                # Run SlowFast pipeline: preprocess then predict
                 logger.debug("Running SlowFast detection", video_file=str(video_file))
-                detection_result = detector.detect_video(str(video_file))
+                slowfast_input, _ = preprocessor.process_video(video_file)
+                raw_result = detector.predict(slowfast_input)
 
-                # Convert SlowFast result format to our expected format
-                is_ai_generated = detection_result.get("is_ai_generated", False)
-                confidence = detection_result.get("confidence", 0.0)
-
+                # Convert result format to our expected format
+                is_ai_generated = raw_result.get("is_ai_generated", False)
+                confidence = raw_result.get("confidence", 0.0)
                 # Convert to probability (0.0 = human, 1.0 = AI)
-                ai_probability = detection_result.get("ai_probability", 0.5)
+                ai_probability = raw_result.get("ai_probability", 0.5)
 
                 # Get media_id from database fallback if not found in first check
                 media_id = None
@@ -568,7 +569,7 @@ class ContentDetectionService:
         """Update the post in database with image and video analysis results."""
         from sqlalchemy import select
 
-        from models import Post
+        from db.models import Post
 
         # Find the post that was created by text analysis
         result = await db.execute(select(Post).where(Post.post_id == post_id))

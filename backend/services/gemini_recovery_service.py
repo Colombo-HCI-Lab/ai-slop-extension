@@ -26,7 +26,7 @@ class GeminiRecoveryService:
             Dict mapping media_url -> recovered_gemini_uri
         """
         try:
-            from models import PostMedia
+            from db.models import PostMedia
             from services.gcs_storage_service import GCSStorageService
 
             gcs_service = GCSStorageService()

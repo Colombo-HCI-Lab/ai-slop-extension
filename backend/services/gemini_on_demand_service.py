@@ -23,7 +23,7 @@ class GeminiOnDemandService:
         3. Any other operation requires Gemini access
         """
         try:
-            from models import PostMedia
+            from db.models import PostMedia
 
             # Check if Gemini URI already exists
             result = await db.execute(

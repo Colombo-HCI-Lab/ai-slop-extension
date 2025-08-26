@@ -79,7 +79,7 @@ class ContentDeduplicationService:
             Dict mapping new_url -> existing_storage_path (for duplicates)
         """
         try:
-            from models import PostMedia
+            from db.models import PostMedia
 
             # Get all existing media for this post
             existing_result = await db.execute(

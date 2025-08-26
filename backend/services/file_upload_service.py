@@ -120,7 +120,7 @@ class FileUploadService:
             GCS URI if exists, None otherwise
         """
         try:
-            from models import PostMedia
+            from db.models import PostMedia
 
             # Check database for existing storage path
             media_result = await db.execute(
@@ -314,7 +314,7 @@ class FileUploadService:
             True if post exists with completed detection, False otherwise
         """
         try:
-            from models import Post
+            from db.models import Post
 
             # Check if post exists AND has completed detection (verdict != "pending")
             result = await db.execute(select(Post.post_id, Post.verdict).where(Post.post_id == post_id))
@@ -357,7 +357,7 @@ class FileUploadService:
             List of existing Gemini file URIs for the post
         """
         try:
-            from models import PostMedia
+            from db.models import PostMedia
 
             # Get all Gemini URIs for this post, regardless of media URLs
             # (since Facebook URLs change but post_id stays the same)
@@ -391,7 +391,7 @@ class FileUploadService:
         """
         try:
             # Import here to avoid circular imports
-            from models import PostMedia
+            from db.models import PostMedia
 
             # Check if this media URL already has a Gemini file URI (simplified with direct post_id lookup)
             media_result = await db.execute(
@@ -1051,7 +1051,7 @@ class FileUploadService:
         try:
             import asyncio
 
-            from clipbased_detection.utils import download_image_from_url
+            from ml.clipbased.impl.utils import download_image_from_url
 
             logger.info("Downloading image", url=url[:100] + "..." if len(url) > 100 else url)
 
@@ -1408,7 +1408,7 @@ class FileUploadService:
         This is a fallback method for legacy support.
         """
         try:
-            from models import PostMedia
+            from db.models import PostMedia
 
             # Get all media for this post that has storage paths
             media_result = await db.execute(select(PostMedia).where(PostMedia.post_id == post_id).where(PostMedia.storage_path.isnot(None)))
@@ -1435,7 +1435,7 @@ class FileUploadService:
         Get existing media information for a post.
         """
         try:
-            from models import PostMedia
+            from db.models import PostMedia
 
             media_result = await db.execute(select(PostMedia).where(PostMedia.post_id == post_id))
             media_list = media_result.scalars().all()

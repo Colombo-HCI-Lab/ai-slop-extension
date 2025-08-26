@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from db.session import get_db
-from models import Post
+from db.models import Post
 from schemas.content_detection import ContentDetectionRequest, ContentDetectionResponse
 from services.content_detection_service import ContentDetectionService
 from services.post_media_service import PostMediaService

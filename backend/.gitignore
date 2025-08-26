@@ -28,9 +28,9 @@ test_*.png
 *.pyc
 
 # Large model files
-slowfast_detection/models/*.pth
-slowfast_detection/models/*.pt
-slowfast_detection/models/*.ckpt
+ml/slowfast/impl/models/*.pth
+ml/slowfast/impl/models/*.pt
+ml/slowfast/impl/models/*.ckpt
 *.safetensors
 *.bin
 

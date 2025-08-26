@@ -235,3 +235,4 @@ class PostMedia(Base):
     def __repr__(self) -> str:
         """String representation."""
         return f"<PostMedia(id={self.id}, post_id={self.post_id}, media_type={self.media_type})>"
+

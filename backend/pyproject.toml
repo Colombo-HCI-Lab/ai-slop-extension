@@ -76,7 +76,7 @@ dev = [
 # Use `uv run uvicorn main:app --host 0.0.0.0 --port 4001 --reload` directly
 
 [tool.setuptools.packages.find]
-include = ["slowfast_detection*", "clipbased_detection*", "api*", "core*", "schemas*", "services*", "utils*"]
+include = ["ml*", "api*", "core*", "schemas*", "services*", "utils*"]
 exclude = ["tmp*", "tests*", "scripts*"]
 
 [tool.uv]

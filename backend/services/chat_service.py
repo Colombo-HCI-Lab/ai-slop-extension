@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
-from models import Chat, Post, PostMedia, UserSession
+from db.models import Chat, Post, PostMedia, UserSession
 from schemas.chat import ChatRequest, ChatResponse, Message
 from services.gemini_on_demand_service import gemini_on_demand_service
 from tenacity import AsyncRetrying, stop_after_attempt, wait_exponential

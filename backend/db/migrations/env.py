@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config, create_async_engine
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from alembic import context
-from models import Base  # Import our models
+from db.models import Base  # Import our models from the db package
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

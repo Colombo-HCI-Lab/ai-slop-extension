@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from tenacity import AsyncRetrying, stop_after_attempt, wait_exponential
 
 from core.config import settings
-from models import Post
+from db.models import Post
 from schemas.text_detection import DetectRequest, DetectResponse
 from utils.logging import get_logger
 

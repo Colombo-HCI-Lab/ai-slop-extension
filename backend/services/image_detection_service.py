@@ -50,20 +50,20 @@ class ImageDetectionService:
         try:
             if model_name == "auto" or model_name == "clipbased":
                 # Try ClipBased first
-                from clipbased_detection import ClipBasedImageDetector
+                from ml.clipbased import ClipBasedImageDetector
 
                 return ClipBasedImageDetector(), "clipbased"
             elif model_name == "ssp":
                 # Try SSP detector
                 try:
-                    from slowfast_detection.image_detection import SSPImageDetector
+                    from ml.slowfast.impl.image_detection import SSPImageDetector
 
                     return SSPImageDetector(), "ssp"
                 except ImportError:
                     logger.warning(
                         "SSP detector not available, falling back to ClipBased", requested_model=model_name, fallback_model="clipbased"
                     )
-                    from clipbased_detection import ClipBasedImageDetector
+                    from ml.clipbased import ClipBasedImageDetector
 
                     return ClipBasedImageDetector(), "clipbased"
             else:
@@ -193,8 +193,8 @@ class ImageDetectionService:
 
         # Check ClipBased
         try:
-            from clipbased_detection import ClipBasedImageDetector
-            from clipbased_detection.config import config
+            from ml.clipbased import ClipBasedImageDetector
+            from ml.clipbased.impl.config import config
 
             models.extend(config.get_available_models())
         except ImportError:
@@ -202,7 +202,7 @@ class ImageDetectionService:
 
         # Check SSP
         try:
-            from slowfast_detection.image_detection import SSPImageDetector
+            from ml.slowfast.impl.image_detection import SSPImageDetector
 
             models.append("ssp")
         except ImportError:
