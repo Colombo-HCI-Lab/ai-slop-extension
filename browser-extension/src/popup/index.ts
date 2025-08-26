@@ -7,6 +7,12 @@ interface Stats {
   humanVerified: number;
 }
 
+/** Settings data structure */
+interface Settings {
+  autoCheck: boolean;
+  showConfidence: boolean;
+}
+
 /** Message types */
 type PopupMessage =
   | { type: 'UPDATE_STATS'; stats: Partial<Stats> }
@@ -45,6 +51,12 @@ class PopupManager {
     postsChecked: 0,
     aiDetected: 0,
     humanVerified: 0,
+  };
+
+  /** Cached settings */
+  private settings: Settings = {
+    autoCheck: true,
+    showConfidence: true,
   };
 
   constructor() {
@@ -92,7 +104,7 @@ class PopupManager {
     });
 
     this.settingsBtn?.addEventListener('click', () => {
-      this.openSettingsPage();
+      this.openReportIssue();
     });
 
     // Listen for messages from content script or background script
@@ -106,15 +118,24 @@ class PopupManager {
    */
   private handleAutoCheckToggle(): void {
     const isEnabled = this.autoCheckToggle?.checked || false;
-    chrome.storage.sync.set({ autoCheck: isEnabled });
+    this.settings.autoCheck = isEnabled;
+    chrome.storage.sync.set({ settings: this.settings });
 
-    // Send message to content script to update behavior
+    // Send combined settings to content script
     chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
       if (tabs[0]?.id) {
-        chrome.tabs.sendMessage(tabs[0].id, {
-          type: 'UPDATE_SETTINGS',
-          autoCheck: isEnabled,
-        });
+        chrome.tabs.sendMessage(
+          tabs[0].id,
+          {
+            type: 'UPDATE_SETTINGS',
+            settings: this.settings,
+          },
+          () => {
+            if (chrome.runtime.lastError) {
+              this.showToast('Could not update settings on the page.');
+            }
+          }
+        );
       }
     });
   }
@@ -124,15 +145,24 @@ class PopupManager {
    */
   private handleShowConfidenceToggle(): void {
     const isEnabled = this.showConfidenceToggle?.checked || false;
-    chrome.storage.sync.set({ showConfidence: isEnabled });
+    this.settings.showConfidence = isEnabled;
+    chrome.storage.sync.set({ settings: this.settings });
 
-    // Send message to content script to update behavior
+    // Send combined settings to content script
     chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
       if (tabs[0]?.id) {
-        chrome.tabs.sendMessage(tabs[0].id, {
-          type: 'UPDATE_SETTINGS',
-          showConfidence: isEnabled,
-        });
+        chrome.tabs.sendMessage(
+          tabs[0].id,
+          {
+            type: 'UPDATE_SETTINGS',
+            settings: this.settings,
+          },
+          () => {
+            if (chrome.runtime.lastError) {
+              this.showToast('Could not update settings on the page.');
+            }
+          }
+        );
       }
     });
   }
@@ -141,17 +171,22 @@ class PopupManager {
    * Opens the help page
    */
   private openHelpPage(): void {
-    chrome.tabs.create({
-      url: 'https://github.com/your-repo/ai-slop-extension#help',
-    });
+    const repo = 'https://github.com/your-repo/ai-slop-extension';
+    chrome.tabs.create({ url: `${repo}#readme` });
   }
 
   /**
-   * Opens the settings page or shows inline settings
+   * Opens a prefilled GitHub issue for quick reporting
    */
-  private openSettingsPage(): void {
-    // For now, just show a message that settings are in the popup
-    this.showToast('Settings are available right here in the popup!');
+  private openReportIssue(): void {
+    const manifest = chrome.runtime.getManifest();
+    const backend = (process.env.BACKEND_URL as string) || 'not-configured';
+    const body = `Please describe the issue here.\n\n` +
+      `Extension version: ${manifest.version}\n` +
+      `Backend URL: ${backend}\n` +
+      `User agent: ${navigator.userAgent}\n`;
+    const url = `https://github.com/your-repo/ai-slop-extension/issues/new?title=${encodeURIComponent('Bug: ')}&body=${encodeURIComponent(body)}`;
+    chrome.tabs.create({ url });
   }
 
   /**
@@ -202,21 +237,21 @@ class PopupManager {
    */
   private async loadExtensionData(): Promise<void> {
     try {
-      // Load settings
-      const settings = await chrome.storage.sync.get(['autoCheck', 'showConfidence']);
-      if (this.autoCheckToggle) {
-        this.autoCheckToggle.checked = settings.autoCheck !== false;
-      }
-      if (this.showConfidenceToggle) {
-        this.showConfidenceToggle.checked = settings.showConfidence !== false;
-      }
+      // Load settings (single object)
+      const { settings } = await chrome.storage.sync.get(['settings']);
+      this.settings = {
+        autoCheck: settings?.autoCheck !== false,
+        showConfidence: settings?.showConfidence !== false,
+      };
+      if (this.autoCheckToggle) this.autoCheckToggle.checked = this.settings.autoCheck;
+      if (this.showConfidenceToggle) this.showConfidenceToggle.checked = this.settings.showConfidence;
 
-      // Load statistics
-      const stats = await chrome.storage.local.get(['postsChecked', 'aiDetected', 'humanVerified']);
+      // Load statistics (single object)
+      const { stats } = await chrome.storage.local.get(['stats']);
       this.stats = {
-        postsChecked: stats.postsChecked || 0,
-        aiDetected: stats.aiDetected || 0,
-        humanVerified: stats.humanVerified || 0,
+        postsChecked: stats?.postsChecked || 0,
+        aiDetected: stats?.aiDetected || 0,
+        humanVerified: stats?.humanVerified || 0,
       };
     } catch (error) {
       console.error('Failed to load extension data:', error);
@@ -339,7 +374,7 @@ class PopupManager {
     this.stats = { ...this.stats, ...newStats };
 
     // Save to storage
-    chrome.storage.local.set(this.stats);
+    chrome.storage.local.set({ stats: this.stats });
 
     // Update UI
     this.updateUI();

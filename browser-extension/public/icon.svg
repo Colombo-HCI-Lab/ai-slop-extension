@@ -1,12 +1,19 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
-  <!-- AI Slop Detection Icon - Shield with AI symbol -->
-  <!-- Shield base (larger) -->
-  <path d="M64 8 L16 28 L16 62 C16 95 38 116 64 124 C90 116 112 95 112 62 L112 28 Z" fill="#4A90E2" stroke="#2E5C8A" stroke-width="2"/>
+  <!-- Eye shape (cartoonish oval) -->
+  <ellipse cx="64" cy="64" rx="50" ry="30" fill="#bfdbfe" stroke="#60a5fa" stroke-width="3"/>
   
-  <!-- AI symbol (larger) -->
-  <text x="64" y="72" font-family="Arial, sans-serif" font-size="38" font-weight="bold" text-anchor="middle" fill="white">AI</text>
+  <!-- Iris (light blue filled circle) -->
+  <circle cx="64" cy="64" r="18" fill="#3b82f6"/>
   
-  <!-- Detection eye (smaller white circle) -->
-  <ellipse cx="64" cy="88" rx="16" ry="8" fill="white" opacity="0.9"/>
-  <circle cx="64" cy="88" r="5" fill="#2E5C8A"/>
+  <!-- Pupil (dark blue) -->
+  <circle cx="64" cy="64" r="8" fill="#1e40af"/>
+  
+  <!-- Light reflection (cartoonish highlight) -->
+  <circle cx="60" cy="58" r="4" fill="#e0f2fe" opacity="0.9"/>
+  
+  <!-- Eyelashes/lids for cartoonish effect -->
+  <path d="M20 50 Q30 45 40 48" stroke="#60a5fa" stroke-width="2" stroke-linecap="round" fill="none"/>
+  <path d="M88 48 Q98 45 108 50" stroke="#60a5fa" stroke-width="2" stroke-linecap="round" fill="none"/>
+  <path d="M20 78 Q30 83 40 80" stroke="#60a5fa" stroke-width="2" stroke-linecap="round" fill="none"/>
+  <path d="M88 80 Q98 83 108 78" stroke="#60a5fa" stroke-width="2" stroke-linecap="round" fill="none"/>
 </svg>

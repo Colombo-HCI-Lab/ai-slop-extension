@@ -102,6 +102,12 @@ module.exports = {
                 manifest.host_permissions.push(backendHost);
               }
             }
+
+            // Ensure the popup is wired to the toolbar action
+            manifest.action = manifest.action || {};
+            if (!manifest.action.default_popup) {
+              manifest.action.default_popup = 'popup.html';
+            }
             
             return JSON.stringify(manifest, null, 2);
           }

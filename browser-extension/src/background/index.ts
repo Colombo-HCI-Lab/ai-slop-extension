@@ -59,6 +59,9 @@ class BackgroundService {
   /** Endpoint for chat functionality */
   private readonly CHAT_ENDPOINT = `${this.API_BASE_URL}/chat/send`;
 
+  /** In-flight AI requests to de-duplicate by content key */
+  private inFlightAiRequests: Map<string, Promise<AiSlopResponse>> = new Map();
+
   constructor() {
     this.initialize();
   }
@@ -108,6 +111,14 @@ class BackgroundService {
             });
           });
         return true; // Indicates we'll respond asynchronously
+      } else if (message.type === 'CHAT_HISTORY_REQUEST') {
+        this.handleChatHistoryRequest(message.postId, message.userId)
+          .then(sendResponse)
+          .catch(error => {
+            console.error('Chat history request error:', error);
+            sendResponse({ error: 'Failed to load chat history', details: error.message });
+          });
+        return true;
       }
     });
   }
@@ -164,25 +175,27 @@ class BackgroundService {
         has_videos: hasVideos || false,
       };
 
-      console.log('[Background] 📤 Sending request:', requestBody);
-
-      const response = await fetch(this.PROCESS_ENDPOINT, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
-      });
-
-      console.log(`[Background] 📥 Response status: ${response.status}`);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`[Background] ❌ HTTP error ${response.status}:`, errorText);
-        throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
+      const key = this.makePostKey(content, postId, imageUrls, videoUrls, postUrl, hasVideos);
+      if (this.inFlightAiRequests.has(key)) {
+        return this.inFlightAiRequests.get(key)!;
       }
 
-      const data = await response.json();
+      const reqPromise = this.fetchJsonWithRetry(this.PROCESS_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+      })
+        .then((data: any) => {
+          console.log('[Background] ✅ Analysis successful:', data);
+          return data;
+        })
+        .finally(() => {
+          this.inFlightAiRequests.delete(key);
+        });
+
+      this.inFlightAiRequests.set(key, reqPromise);
+
+      const data = await reqPromise;
       console.log('[Background] ✅ Analysis successful:', data);
 
       // Transform backend response to match expected format
@@ -218,6 +231,75 @@ class BackgroundService {
     }
   }
 
+  /** Fetch JSON with timeout and limited retries */
+  private async fetchJsonWithRetry(
+    url: string,
+    init: RequestInit,
+    opts: { timeoutMs?: number; retries?: number; backoffBaseMs?: number } = {}
+  ): Promise<any> {
+    const timeoutMs = opts.timeoutMs ?? 15000;
+    const retries = opts.retries ?? 2;
+    const backoffBaseMs = opts.backoffBaseMs ?? 300;
+
+    for (let attempt = 0; ; attempt++) {
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const res = await fetch(url, { ...init, signal: controller.signal });
+        clearTimeout(id);
+        if (!res.ok) {
+          // Retry on 5xx; no retry on 4xx
+          const text = await res.text().catch(() => '');
+          if (res.status >= 500 && attempt < retries) {
+            const delay = backoffBaseMs * Math.pow(2, attempt);
+            await new Promise(r => setTimeout(r, delay));
+            continue;
+          }
+          throw new Error(`HTTP ${res.status}: ${text}`);
+        }
+        const data = await res.json();
+        return data;
+      } catch (err: any) {
+        clearTimeout(id);
+        if ((err.name === 'AbortError' || err.message?.includes('Failed to fetch')) && attempt < retries) {
+          const delay = backoffBaseMs * Math.pow(2, attempt);
+          await new Promise(r => setTimeout(r, delay));
+          continue;
+        }
+        throw err;
+      }
+    }
+  }
+
+  /** Build a stable key to de-duplicate similar processing requests */
+  private makePostKey(
+    content: string,
+    postId: string,
+    imageUrls?: string[],
+    videoUrls?: string[],
+    postUrl?: string,
+    hasVideos?: boolean
+  ): string {
+    const fingerprint = JSON.stringify({
+      cl: content.length,
+      c0: content.slice(0, 200),
+      ic: imageUrls?.length || 0,
+      vc: videoUrls?.length || 0,
+      pu: (postUrl || '').slice(0, 200),
+      hv: !!hasVideos,
+    });
+    return `${postId}|${this.hashString(fingerprint)}`;
+  }
+
+  private hashString(input: string): string {
+    // Simple djb2 hash to short hex string
+    let hash = 5381;
+    for (let i = 0; i < input.length; i++) {
+      hash = (hash * 33) ^ input.charCodeAt(i);
+    }
+    return (hash >>> 0).toString(16);
+  }
+
   /**
    * Handles chat requests by communicating with the backend chat API
    * @param message - The chat message data
@@ -232,28 +314,27 @@ class BackgroundService {
     previousAnalysis?: Record<string, unknown>;
   }): Promise<ChatResponse> {
     try {
-      const response = await fetch(this.CHAT_ENDPOINT, {
+      const data = await this.fetchJsonWithRetry(this.CHAT_ENDPOINT, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           post_id: message.postId,
           message: message.message,
           user_id: message.userId,
         }),
       });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      return data;
+      return data as ChatResponse;
     } catch (error) {
       console.error('Chat API request failed:', error);
       throw error;
     }
+  }
+
+  /** Load chat history via background with timeout/retry */
+  private async handleChatHistoryRequest(postId: string, userId: string): Promise<any> {
+    const url = `${this.API_BASE_URL}/chat/history/${encodeURIComponent(postId)}?user_id=${encodeURIComponent(userId)}`;
+    const data = await this.fetchJsonWithRetry(url, { method: 'GET' });
+    return data;
   }
 
   /**

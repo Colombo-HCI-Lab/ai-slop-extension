@@ -1761,22 +1761,27 @@ export class FacebookPostObserver {
 
     try {
       const userId = getUserIdentifier();
-      const API_BASE_URL = 'http://localhost:4000/api/v1';
-      
       console.log(`[AI-Slop] Loading chat history for post ${postId}, user ${userId}`);
-      
-      const response = await fetch(`${API_BASE_URL}/chat/history/${postId}?user_id=${userId}`);
-      
-      if (!response.ok) {
-        if (response.status === 404) {
-          // No chat history found, this is normal for new conversations
-          console.log(`[AI-Slop] No previous chat history found for post ${postId}`);
-          return;
-        }
-        throw new Error(`HTTP ${response.status}`);
-      }
-      
-      const historyData = await response.json();
+
+      // Delegate network call to background for consistent CORS/timeout handling
+      const historyData = await new Promise<any>((resolve, reject) => {
+        chrome.runtime.sendMessage(
+          {
+            type: 'CHAT_HISTORY_REQUEST',
+            postId: postId,
+            userId: userId,
+          },
+          (response) => {
+            if (chrome.runtime.lastError) {
+              return reject(chrome.runtime.lastError);
+            }
+            if (response && response.error) {
+              return reject(new Error(response.error));
+            }
+            resolve(response);
+          }
+        );
+      });
       console.log(`[AI-Slop] Loaded ${historyData.total_messages} previous messages`);
       
       // Clear existing messages (except loading indicators)
