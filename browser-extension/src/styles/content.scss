@@ -1,0 +1,548 @@
+@use 'theme';
+
+// Eye Icon Styles - Clean minimal design
+.ai-slop-icon {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 32px !important;
+  height: 32px !important;
+  border-radius: theme.$radius !important;
+  background-color: theme.$surface !important;
+  cursor: pointer;
+  transition: all theme.$transition-base;
+  position: absolute !important;
+  top: 12px !important;
+  right: 12px !important;
+  z-index: theme.$z-extension !important;
+  box-shadow: theme.$shadow-sm !important;
+  border: 1px solid theme.$border !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+
+  &:hover {
+    background-color: theme.$surface-secondary !important;
+    box-shadow: theme.$shadow-md !important;
+    border-color: theme.$primary-color !important;
+  }
+
+  svg {
+    width: 24px !important;
+    height: 24px !important;
+    color: theme.$primary-color !important;
+    fill: theme.$primary-color !important;
+  }
+
+  // Loading State
+  &[data-state='loading'] {
+    animation: gentlePulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+
+    svg {
+      animation: rotate 1s linear infinite;
+    }
+  }
+
+  // Error State
+  &[data-state='error'] {
+    background-color: #fef2f2 !important;
+    border-color: theme.$danger-color !important;
+
+    svg {
+      color: theme.$danger-color !important;
+      fill: theme.$danger-color !important;
+    }
+  }
+
+  // Analyzed State
+  &[data-state='analyzed'] {
+    background-color: theme.$surface-secondary !important;
+    border-color: theme.$primary-color !important;
+  }
+}
+
+// Overlay Styles - Clean minimal overlay
+.ai-slop-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: theme.$z-modal;
+  animation: fadeIn 0.2s ease;
+}
+
+.ai-slop-result {
+  background-color: theme.$surface;
+  border-radius: theme.$radius-lg;
+  padding: theme.$spacing-2xl;
+  max-width: 500px;
+  width: 90%;
+  box-shadow: theme.$shadow-xl;
+  border: 1px solid theme.$border;
+
+  // Verdict-specific styles
+  &.misinformation {
+    border-left: 4px solid theme.$danger-color;
+  }
+
+  &.verified {
+    border-left: 4px solid theme.$success-color;
+  }
+
+  &.unknown {
+    border-left: 4px solid theme.$warning-color;
+  }
+
+  h3 {
+    margin: 0 0 theme.$spacing-lg 0;
+    font-size: theme.$font-size-2xl;
+    font-weight: theme.$font-weight-semibold;
+    color: theme.$text-primary;
+    letter-spacing: -0.5px;
+  }
+
+  .confidence {
+    margin-bottom: theme.$spacing-lg;
+    padding: theme.$spacing-base theme.$spacing-md;
+    background-color: theme.$surface-secondary;
+    border-radius: theme.$radius;
+    font-size: theme.$font-size-sm;
+    color: theme.$text-secondary;
+    border: 1px solid theme.$border;
+    display: inline-block;
+    font-weight: theme.$font-weight-medium;
+  }
+
+  p {
+    margin: 0 0 theme.$spacing-xl 0;
+    line-height: theme.$line-height-relaxed;
+    color: theme.$text-secondary;
+    font-size: theme.$font-size-base;
+  }
+
+  .close-overlay {
+    @include theme.button-primary;
+    display: block;
+    width: 100%;
+    padding: theme.$spacing-md;
+    border-radius: theme.$radius;
+    font-size: theme.$font-size-base;
+    font-weight: theme.$font-weight-medium;
+  }
+}
+
+// AI Slop Chat Window - Clean minimal flat design
+.detect-chat-window {
+  position: fixed !important;
+  top: theme.$spacing-xl !important;
+  right: theme.$spacing-xl !important;
+  width: theme.$chat-window-width !important;
+  height: theme.$chat-window-height !important;
+  max-height: calc(100vh - 48px) !important;
+  background-color: theme.$surface !important;
+  border-radius: theme.$radius-lg !important;
+  box-shadow: theme.$shadow-xl !important;
+  z-index: theme.$z-extension-modal !important;
+  display: flex !important;
+  flex-direction: column !important;
+  font-family: theme.$font-family !important;
+  border: 1px solid theme.$border !important;
+  transition: box-shadow theme.$transition-base !important;
+
+  &.dragging {
+    box-shadow: theme.$shadow-xl !important;
+    transition: none !important;
+    cursor: grabbing !important;
+  }
+
+  &.minimized {
+    height: 50px !important;
+    overflow: hidden !important;
+
+    .analysis-result,
+    .chat-messages,
+    .chat-input-container {
+      display: none !important;
+    }
+  }
+
+  .chat-window-header {
+    padding: theme.$spacing-lg theme.$spacing-xl !important;
+    border-bottom: 1px solid theme.$border !important;
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    background-color: theme.$surface !important;
+    border-radius: theme.$radius-lg theme.$radius-lg 0 0 !important;
+    user-select: none !important;
+
+    .chat-window-title {
+      display: flex !important;
+      align-items: center !important;
+      gap: theme.$spacing-base !important;
+      flex: 1 !important;
+
+      .title-text {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 2px !important;
+
+        .title-main {
+          font-weight: theme.$font-weight-semibold !important;
+          color: theme.$text-primary !important;
+          font-size: theme.$font-size-md !important;
+        }
+
+        .title-preview {
+          font-size: theme.$font-size-sm !important;
+          color: theme.$text-secondary !important;
+          font-weight: normal !important;
+          overflow: hidden !important;
+          text-overflow: ellipsis !important;
+          white-space: nowrap !important;
+          max-width: 250px !important;
+        }
+      }
+    }
+
+    .chat-window-icon {
+      width: 24px !important;
+      height: 24px !important;
+      background: theme.$primary-color !important;
+      border-radius: theme.$radius !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      color: white !important;
+    }
+
+    .chat-window-controls {
+      display: flex !important;
+      gap: theme.$spacing-sm !important;
+
+      .minimize-chat,
+      .close-chat {
+        @include theme.button-secondary;
+        width: 28px !important;
+        height: 28px !important;
+        border-radius: theme.$radius !important;
+        padding: 0 !important;
+        font-size: 14px !important;
+        font-weight: normal !important;
+
+        &.close-chat:hover {
+          background-color: #fef2f2 !important;
+          border-color: theme.$danger-color !important;
+          color: theme.$danger-color !important;
+        }
+      }
+    }
+  }
+
+  &.dragging .chat-window-header {
+    background-color: theme.$surface-hover !important;
+  }
+
+  .analysis-result {
+    padding: theme.$spacing-xl !important;
+    border-bottom: 1px solid theme.$border !important;
+    background-color: theme.$surface !important;
+
+    &.ai-detected {
+      background-color: theme.$surface !important;
+      border-left: 4px solid theme.$danger-color !important;
+    }
+
+    &.human-content {
+      background-color: theme.$surface !important;
+      border-left: 4px solid theme.$success-color !important;
+    }
+
+    .verdict {
+      margin-bottom: theme.$spacing-base !important;
+      font-size: theme.$font-size-lg !important;
+
+      strong {
+        color: theme.$text-primary !important;
+      }
+    }
+
+    .confidence {
+      margin-bottom: theme.$spacing-md !important;
+      font-size: theme.$font-size-base !important;
+      color: theme.$text-secondary !important;
+      font-weight: theme.$font-weight-medium !important;
+    }
+
+    .modality-analysis {
+      margin-bottom: theme.$spacing-base !important;
+      padding: theme.$spacing-base theme.$spacing-md !important;
+      background-color: theme.$surface-secondary !important;
+      border-left: 3px solid theme.$primary-color !important;
+      border-radius: theme.$radius !important;
+      font-size: theme.$font-size-sm !important;
+
+      strong {
+        color: theme.$text-primary !important;
+        margin-right: theme.$spacing-sm !important;
+        font-weight: theme.$font-weight-semibold !important;
+      }
+    }
+
+    .reasoning {
+      margin-bottom: theme.$spacing-lg !important;
+      line-height: theme.$line-height-relaxed !important;
+      color: theme.$text-secondary !important;
+      font-size: theme.$font-size-base !important;
+    }
+
+    .ignore-analysis {
+      @include theme.button-secondary;
+      border-radius: theme.$radius !important;
+      padding: theme.$spacing-xs theme.$spacing-sm !important;
+      font-size: theme.$font-size-xs !important;
+    }
+
+    .ignored-analysis {
+      text-align: center !important;
+      color: theme.$success-color !important;
+      padding: theme.$spacing-md !important;
+
+      strong {
+        font-size: theme.$font-size-lg !important;
+        margin-bottom: theme.$spacing-sm !important;
+        display: block !important;
+      }
+    }
+  }
+
+  .chat-messages {
+    flex: 1 !important;
+    overflow-y: auto !important;
+    padding: theme.$spacing-lg theme.$spacing-xl !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: theme.$spacing-md !important;
+
+    .system-message {
+      background-color: theme.$surface-secondary !important;
+      padding: theme.$spacing-base theme.$spacing-md !important;
+      border-radius: theme.$radius !important;
+      border: 1px solid theme.$border !important;
+      font-size: theme.$font-size-sm !important;
+      color: theme.$text-muted !important;
+      text-align: center !important;
+      font-style: italic !important;
+    }
+
+    .user-message {
+      background-color: theme.$primary-color !important;
+      color: white !important;
+      padding: theme.$spacing-md theme.$spacing-lg !important;
+      border-radius: theme.$radius-lg theme.$radius-sm theme.$radius-sm theme.$radius-lg !important;
+      max-width: 75% !important;
+      align-self: flex-end !important;
+      font-size: theme.$font-size-base !important;
+      line-height: 1.5 !important;
+      word-wrap: break-word !important;
+    }
+
+    .assistant-message {
+      background-color: theme.$surface !important;
+      color: theme.$text-primary !important;
+      padding: theme.$spacing-md theme.$spacing-lg !important;
+      border-radius: theme.$radius-sm theme.$radius-lg theme.$radius-lg theme.$radius-sm !important;
+      border: 1px solid theme.$border !important;
+      max-width: 75% !important;
+      align-self: flex-start !important;
+      font-size: theme.$font-size-base !important;
+      line-height: 1.5 !important;
+      word-wrap: break-word !important;
+
+      &.loading {
+        font-style: italic !important;
+        color: theme.$text-muted !important;
+      }
+    }
+
+    .suggested-questions {
+      margin-top: theme.$spacing-base !important;
+      display: flex !important;
+      flex-direction: column !important;
+      gap: theme.$spacing-sm !important;
+
+      .suggestions-label {
+        font-size: theme.$font-size-sm !important;
+        color: theme.$text-secondary !important;
+        font-weight: theme.$font-weight-medium !important;
+        margin-bottom: 6px !important;
+      }
+
+      .suggested-question {
+        @include theme.button-secondary;
+        background-color: theme.$surface-hover !important;
+        border-radius: theme.$radius !important;
+        padding: theme.$spacing-xs theme.$spacing-sm !important;
+        font-size: theme.$font-size-xs !important;
+        text-align: left !important;
+      }
+    }
+  }
+
+  .chat-input-container {
+    padding: theme.$spacing-lg theme.$spacing-xl !important;
+    border-top: 1px solid theme.$border !important;
+    display: flex !important;
+    gap: theme.$spacing-base !important;
+    background-color: theme.$surface !important;
+    border-radius: 0 0 theme.$radius-lg theme.$radius-lg !important;
+
+    .chat-input {
+      @include theme.input-base;
+      flex: 1 !important;
+      border-radius: theme.$radius-lg !important;
+      font-size: theme.$font-size-base !important;
+    }
+
+    .send-chat {
+      @include theme.button-primary;
+      border-radius: theme.$radius !important;
+      padding: theme.$spacing-base theme.$spacing-md !important;
+      font-size: theme.$font-size-sm !important;
+      font-weight: theme.$font-weight-medium !important;
+
+      &:disabled {
+        background-color: theme.$border !important;
+        cursor: not-allowed !important;
+        color: theme.$text-muted !important;
+      }
+    }
+  }
+}
+
+// Custom Scrollbar - Clean minimal design
+.chat-messages::-webkit-scrollbar {
+  width: 4px;
+}
+
+.chat-messages::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-messages::-webkit-scrollbar-thumb {
+  background: theme.$border;
+  border-radius: theme.$radius;
+}
+
+.chat-messages::-webkit-scrollbar-thumb:hover {
+  background: theme.$primary-color;
+}
+
+// Animations
+@keyframes gentlePulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(0.98);
+  }
+}
+
+@keyframes rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes successBounce {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes slideInFromRight {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+// Responsive Design
+@media (max-width: 480px) {
+  .detect-chat-window {
+    top: theme.$spacing-base !important;
+    right: theme.$spacing-base !important;
+    left: theme.$spacing-base !important;
+    width: auto !important;
+    max-width: none !important;
+    height: calc(100vh - 20px) !important;
+    max-height: none !important;
+
+    .chat-window-title {
+      font-size: theme.$font-size-base !important;
+    }
+
+    .chat-window-icon {
+      width: 16px !important;
+      height: 16px !important;
+    }
+
+    .minimize-chat,
+    .close-chat {
+      width: 24px !important;
+      height: 24px !important;
+      font-size: theme.$font-size-base !important;
+    }
+  }
+}
+
+// Accessibility
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -1,5 +1,22 @@
 /**
- * Response type for AI slop detection results from the API
+ * Raw API response from the backend (snake_case)
+ */
+type ApiDetectionResponse = {
+  verdict: string;
+  confidence: number;
+  explanation: string;
+  text_ai_probability?: number;
+  text_confidence?: number;
+  image_ai_probability?: number;
+  image_confidence?: number;
+  video_ai_probability?: number;
+  video_confidence?: number;
+  post_id?: string;
+  timestamp: string;
+};
+
+/**
+ * Normalized response type for AI slop detection results (camelCase)
  */
 type AiSlopResponse = {
   /** Whether the content is AI-generated slop */
@@ -29,6 +46,23 @@ type AiSlopResponse = {
   processingTime: number;
   /** Analysis timestamp */
   timestamp: string;
+};
+
+/**
+ * Chat history response from the API
+ */
+type ChatHistoryResponse = {
+  messages: ChatMessage[];
+  total_messages?: number;
+};
+
+/**
+ * Individual chat message from history
+ */
+type ChatMessage = {
+  role: 'user' | 'assistant';
+  message: string;
+  created_at: string;
 };
 
 /**
@@ -139,6 +173,30 @@ class BackgroundService {
   }
 
   /**
+   * Normalize raw API response to the expected format
+   */
+  private normalizeApiResponse(data: ApiDetectionResponse, postId: string): AiSlopResponse {
+    return {
+      isAiSlop: data.verdict === 'ai_slop',
+      confidence: data.confidence,
+      reasoning: data.explanation,
+      // Include separate probability and confidence values
+      textAiProbability: data.text_ai_probability,
+      textConfidence: data.text_confidence,
+      imageAiProbability: data.image_ai_probability,
+      imageConfidence: data.image_confidence,
+      videoAiProbability: data.video_ai_probability,
+      videoConfidence: data.video_confidence,
+      analysisDetails: {
+        verdict: data.verdict,
+        postId: data.post_id || postId, // Use response post_id or fallback
+      },
+      processingTime: 0,
+      timestamp: data.timestamp,
+    };
+  }
+
+  /**
    * Handles AI slop detection requests by communicating with the backend API
    * @param content - The text content of the Facebook post to analyze
    * @param postId - Unique identifier for the post
@@ -185,9 +243,9 @@ class BackgroundService {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody),
       })
-        .then((data: any) => {
+        .then((data: unknown) => {
           console.log('[Background] ✅ Analysis successful:', data);
-          return data;
+          return this.normalizeApiResponse(data as ApiDetectionResponse, postId);
         })
         .finally(() => {
           this.inFlightAiRequests.delete(key);
@@ -197,26 +255,7 @@ class BackgroundService {
 
       const data = await reqPromise;
       console.log('[Background] ✅ Analysis successful:', data);
-
-      // Transform backend response to match expected format
-      return {
-        isAiSlop: data.verdict === 'ai_slop',
-        confidence: data.confidence,
-        reasoning: data.explanation,
-        // Include separate probability and confidence values
-        textAiProbability: data.text_ai_probability,
-        textConfidence: data.text_confidence,
-        imageAiProbability: data.image_ai_probability,
-        imageConfidence: data.image_confidence,
-        videoAiProbability: data.video_ai_probability,
-        videoConfidence: data.video_confidence,
-        analysisDetails: {
-          verdict: data.verdict,
-          postId: data.post_id || postId, // Use response post_id or fallback
-        },
-        processingTime: 0,
-        timestamp: data.timestamp,
-      };
+      return data;
     } catch (error) {
       console.error('[Background] ❌ AI slop detection API request failed:', error);
 
@@ -236,7 +275,7 @@ class BackgroundService {
     url: string,
     init: RequestInit,
     opts: { timeoutMs?: number; retries?: number; backoffBaseMs?: number } = {}
-  ): Promise<any> {
+  ): Promise<unknown> {
     const timeoutMs = opts.timeoutMs ?? 15000;
     const retries = opts.retries ?? 2;
     const backoffBaseMs = opts.backoffBaseMs ?? 300;
@@ -259,9 +298,13 @@ class BackgroundService {
         }
         const data = await res.json();
         return data;
-      } catch (err: any) {
+      } catch (err: unknown) {
         clearTimeout(id);
-        if ((err.name === 'AbortError' || err.message?.includes('Failed to fetch')) && attempt < retries) {
+        const error = err as Error;
+        if (
+          (error.name === 'AbortError' || error.message?.includes('Failed to fetch')) &&
+          attempt < retries
+        ) {
           const delay = backoffBaseMs * Math.pow(2, attempt);
           await new Promise(r => setTimeout(r, delay));
           continue;
@@ -331,10 +374,13 @@ class BackgroundService {
   }
 
   /** Load chat history via background with timeout/retry */
-  private async handleChatHistoryRequest(postId: string, userId: string): Promise<any> {
+  private async handleChatHistoryRequest(
+    postId: string,
+    userId: string
+  ): Promise<ChatHistoryResponse> {
     const url = `${this.API_BASE_URL}/chat/history/${encodeURIComponent(postId)}?user_id=${encodeURIComponent(userId)}`;
     const data = await this.fetchJsonWithRetry(url, { method: 'GET' });
-    return data;
+    return data as ChatHistoryResponse;
   }
 
   /**

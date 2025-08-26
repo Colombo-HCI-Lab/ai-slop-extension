@@ -1,4 +1,4 @@
-import './popup.css';
+import './popup.scss';
 
 /** Stats data structure */
 interface Stats {
@@ -171,7 +171,7 @@ class PopupManager {
    * Opens the help page
    */
   private openHelpPage(): void {
-    const repo = 'https://github.com/your-repo/ai-slop-extension';
+    const repo = 'https://github.com/Colombo-HCI-Lab/ai-slop-extension';
     chrome.tabs.create({ url: `${repo}#readme` });
   }
 
@@ -181,11 +181,12 @@ class PopupManager {
   private openReportIssue(): void {
     const manifest = chrome.runtime.getManifest();
     const backend = (process.env.BACKEND_URL as string) || 'not-configured';
-    const body = `Please describe the issue here.\n\n` +
+    const body =
+      `Please describe the issue here.\n\n` +
       `Extension version: ${manifest.version}\n` +
       `Backend URL: ${backend}\n` +
       `User agent: ${navigator.userAgent}\n`;
-    const url = `https://github.com/your-repo/ai-slop-extension/issues/new?title=${encodeURIComponent('Bug: ')}&body=${encodeURIComponent(body)}`;
+    const url = `https://github.com/Colombo-HCI-Lab/ai-slop-extension/issues/new?title=${encodeURIComponent('Bug: ')}&body=${encodeURIComponent(body)}`;
     chrome.tabs.create({ url });
   }
 
@@ -244,7 +245,8 @@ class PopupManager {
         showConfidence: settings?.showConfidence !== false,
       };
       if (this.autoCheckToggle) this.autoCheckToggle.checked = this.settings.autoCheck;
-      if (this.showConfidenceToggle) this.showConfidenceToggle.checked = this.settings.showConfidence;
+      if (this.showConfidenceToggle)
+        this.showConfidenceToggle.checked = this.settings.showConfidence;
 
       // Load statistics (single object)
       const { stats } = await chrome.storage.local.get(['stats']);

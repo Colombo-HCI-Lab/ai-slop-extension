@@ -39,6 +39,11 @@ module.exports = {
         test: /\.css$/,
         use: [MiniCssExtractPlugin.loader, 'css-loader'],
       },
+      // SCSS processing
+      {
+        test: /\.scss$/,
+        use: [MiniCssExtractPlugin.loader, 'css-loader', 'sass-loader'],
+      },
       // Asset handling (images, fonts, etc.)
       {
         test: /\.(jpg|jpeg|png|woff|woff2|eot|ttf|svg)$/,

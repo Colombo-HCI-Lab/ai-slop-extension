@@ -1,0 +1,325 @@
+@use '../styles/theme';
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: theme.$font-family;
+  background: theme.$background;
+  color: theme.$text-primary;
+  font-size: theme.$font-size-base;
+  line-height: theme.$line-height-normal;
+  width: theme.$popup-width;
+  height: theme.$popup-height;
+  overflow: hidden;
+  user-select: none;
+}
+
+// Container - Minimal flat design
+.popup-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: theme.$background;
+}
+
+// Header - Clean flat header
+.popup-header {
+  padding: theme.$spacing-lg theme.$spacing-xl;
+  background: theme.$surface;
+  border-bottom: 1px solid theme.$border;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: theme.$spacing-base;
+    
+    svg {
+      width: 24px;
+      height: 24px;
+      color: theme.$primary-color;
+    }
+    
+    h1 {
+      font-size: theme.$font-size-lg;
+      font-weight: theme.$font-weight-semibold;
+      color: theme.$text-primary;
+    }
+  }
+  
+  .status-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px theme.$spacing-md;
+    background: theme.$surface-secondary;
+    border: 1px solid theme.$border;
+    border-radius: theme.$radius;
+    
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: theme.$radius-full;
+      background: theme.$success-color;
+    }
+    
+    .status-text {
+      font-size: theme.$font-size-sm;
+      color: theme.$text-secondary;
+      font-weight: theme.$font-weight-medium;
+    }
+  }
+}
+
+// Content
+.popup-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: theme.$spacing-xl;
+}
+
+// Stats Section - Clean flat cards
+.stats-section {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: theme.$spacing-md;
+  margin-bottom: theme.$spacing-2xl;
+  
+  .stat-card {
+    @include theme.card;
+    padding: theme.$spacing-lg;
+    text-align: center;
+    
+    .stat-value {
+      font-size: theme.$font-size-2xl;
+      font-weight: theme.$font-weight-bold;
+      color: theme.$primary-color;
+      margin-bottom: 6px;
+    }
+    
+    .stat-label {
+      font-size: theme.$font-size-xs;
+      color: theme.$text-secondary;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      font-weight: theme.$font-weight-medium;
+    }
+  }
+}
+
+// Info Section
+.info-section {
+  margin-bottom: theme.$spacing-2xl;
+  
+  h2 {
+    font-size: theme.$font-size-md;
+    font-weight: theme.$font-weight-semibold;
+    color: theme.$text-primary;
+    margin-bottom: theme.$spacing-md;
+  }
+  
+  .instruction-list {
+    display: flex;
+    flex-direction: column;
+    gap: theme.$spacing-base;
+    
+    .instruction-item {
+      display: flex;
+      align-items: center;
+      gap: theme.$spacing-md;
+      padding: theme.$spacing-md;
+      background: theme.$surface;
+      border-radius: theme.$radius;
+      border: 1px solid theme.$border;
+      transition: all theme.$transition-base;
+      
+      &:hover {
+        background: theme.$surface-hover;
+        border-color: theme.$primary-color;
+      }
+      
+      .instruction-icon {
+        width: 40px;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: theme.$surface-secondary;
+        border-radius: theme.$radius;
+        flex-shrink: 0;
+        
+        svg {
+          width: 20px;
+          height: 20px;
+          color: theme.$primary-color;
+        }
+      }
+      
+      p {
+        font-size: theme.$font-size-sm;
+        color: theme.$text-secondary;
+        margin: 0;
+        line-height: 1.4;
+      }
+    }
+  }
+}
+
+// Settings Section - Clean flat toggles
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: theme.$spacing-base;
+  
+  .toggle-setting {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: theme.$spacing-md;
+    background: theme.$surface;
+    border: 1px solid theme.$border;
+    border-radius: theme.$radius;
+    cursor: pointer;
+    transition: all theme.$transition-base;
+    
+    &:hover {
+      background: theme.$surface-hover;
+      border-color: theme.$primary-color;
+    }
+    
+    span:first-child {
+      font-size: theme.$font-size-sm;
+      color: theme.$text-primary;
+      font-weight: theme.$font-weight-medium;
+    }
+    
+    input[type='checkbox'] {
+      display: none;
+    }
+    
+    .toggle-slider {
+      position: relative;
+      width: 40px;
+      height: 20px;
+      background: theme.$border;
+      border-radius: theme.$radius;
+      transition: all 0.2s ease;
+      
+      &::after {
+        content: '';
+        position: absolute;
+        width: 16px;
+        height: 16px;
+        background: white;
+        border-radius: theme.$radius-sm;
+        top: 2px;
+        left: 2px;
+        transition: all 0.2s ease;
+        box-shadow: theme.$shadow-sm;
+      }
+    }
+    
+    input:checked + .toggle-slider {
+      background: theme.$primary-color;
+      
+      &::after {
+        transform: translateX(20px);
+      }
+    }
+  }
+}
+
+// Footer - Clean flat buttons
+.popup-footer {
+  padding: theme.$spacing-lg theme.$spacing-xl;
+  background: theme.$surface;
+  border-top: 1px solid theme.$border;
+  display: flex;
+  gap: theme.$spacing-base;
+  
+  .footer-btn {
+    @include theme.button-secondary;
+    flex: 1;
+    padding: theme.$spacing-base theme.$spacing-md;
+    border-radius: theme.$radius;
+    font-size: theme.$font-size-sm;
+    gap: 6px;
+    
+    svg {
+      width: 14px;
+      height: 14px;
+    }
+    
+    &:hover {
+      @include theme.button-primary;
+    }
+  }
+}
+
+// Scrollbar - Clean minimal design
+.popup-content::-webkit-scrollbar {
+  width: 4px;
+}
+
+.popup-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.popup-content::-webkit-scrollbar-thumb {
+  background: theme.$border;
+  border-radius: theme.$radius;
+}
+
+.popup-content::-webkit-scrollbar-thumb:hover {
+  background: theme.$primary-color;
+}
+
+// Animations
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+// Accessibility
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+// High Contrast Mode
+@media (prefers-contrast: high) {
+  .popup-header,
+  .popup-footer {
+    border-color: #000000;
+  }
+  
+  .logo h1,
+  .settings-section span:first-child {
+    color: #000000;
+  }
+}

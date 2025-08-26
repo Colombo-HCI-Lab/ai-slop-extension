@@ -1,4 +1,21 @@
-import '../styles/content.css';
+import '../styles/content.scss';
+
+/**
+ * Chat history response from the API
+ */
+type ChatHistoryResponse = {
+  messages: ChatMessage[];
+  total_messages?: number;
+};
+
+/**
+ * Individual chat message from history
+ */
+type ChatMessage = {
+  role: 'user' | 'assistant';
+  message: string;
+  created_at: string;
+};
 
 // User identification utilities
 const getUserIdentifier = (): string => {
@@ -515,25 +532,29 @@ export class FacebookPostObserver {
       // Enhanced content validation to skip posts with repetitive content
       const trimmedContent = content.trim();
       const hasMedia = mediaUrls.images.length > 0 || mediaUrls.hasVideos;
-      
+
       // Allow posts with no text content if they have media (media-only posts)
       if (trimmedContent.length === 0 && !hasMedia) {
         console.log(`[AI-Slop] ⏭️ Post ${postId} has no content and no media, skipping analysis`);
         return;
       }
-      
+
       // For posts with text content, check for repetitive Facebook patterns
       if (trimmedContent.length > 0) {
         const facebookCount = (trimmedContent.toLowerCase().match(/(facebook)/gi) || []).length;
         const hasConsecutiveFacebook = trimmedContent.toLowerCase().match(/(facebook){3,}/gi);
-        const facebookRatio = trimmedContent.length > 0 ? facebookCount / (trimmedContent.length / 8) : 0; // Rough word ratio
-        
-        const isInvalidTextContent = trimmedContent.length < 10 || 
-          hasConsecutiveFacebook || 
+        const facebookRatio =
+          trimmedContent.length > 0 ? facebookCount / (trimmedContent.length / 8) : 0; // Rough word ratio
+
+        const isInvalidTextContent =
+          trimmedContent.length < 10 ||
+          hasConsecutiveFacebook ||
           (facebookCount > 10 && facebookRatio > 0.3); // Too many Facebook occurrences
-          
+
         if (isInvalidTextContent) {
-          console.log(`[AI-Slop] ⏭️ Post ${postId} has repetitive text content (${trimmedContent.length} chars, ${facebookCount} "Facebook" occurrences), skipping analysis`);
+          console.log(
+            `[AI-Slop] ⏭️ Post ${postId} has repetitive text content (${trimmedContent.length} chars, ${facebookCount} "Facebook" occurrences), skipping analysis`
+          );
           return;
         }
       }
@@ -629,11 +650,10 @@ export class FacebookPostObserver {
 
     // Check if content is generic (Facebook repetition pattern)
     const isGenericContent =
-      content.length > 200 && (
-        content.toLowerCase().includes('facebook'.repeat(10)) ||
+      content.length > 200 &&
+      (content.toLowerCase().includes('facebook'.repeat(10)) ||
         (content.toLowerCase().match(/(facebook)/gi) || []).length > 15 || // Too many "Facebook" occurrences
-        content.toLowerCase().match(/(facebook){5,}/gi) // Consecutive "Facebook" repetitions
-      );
+        content.toLowerCase().match(/(facebook){5,}/gi)); // Consecutive "Facebook" repetitions
 
     let uniqueString: string;
 
@@ -829,24 +849,28 @@ export class FacebookPostObserver {
       // Skip small images (likely icons or avatars)
       if (img.width > 100 || img.height > 100 || (!img.width && !img.height)) {
         // Skip images that are part of video elements (video thumbnails/posters)
-        const isVideoThumbnail = img.closest('video') || 
-                                img.closest('[data-video-id]') || 
-                                img.closest('[role="button"][aria-label*="video"]') ||
-                                img.closest('[role="button"][aria-label*="Video"]') ||
-                                img.closest('[role="button"][aria-label*="Play"]') ||
-                                img.closest('[data-testid*="video"]') ||
-                                img.closest('.videoContainer') ||
-                                img.closest('[class*="video"]') ||
-                                img.getAttribute('data-video') ||
-                                img.hasAttribute('poster') ||
-                                // Check if parent post contains video controls/elements
-                                postElement.querySelector('button[aria-label*="Play video"]') ||
-                                postElement.querySelector('button[aria-label*="Play"]') ||
-                                postElement.querySelector('video') ||
-                                postElement.querySelector('[data-testid*="video"]');
-        
+        const isVideoThumbnail =
+          img.closest('video') ||
+          img.closest('[data-video-id]') ||
+          img.closest('[role="button"][aria-label*="video"]') ||
+          img.closest('[role="button"][aria-label*="Video"]') ||
+          img.closest('[role="button"][aria-label*="Play"]') ||
+          img.closest('[data-testid*="video"]') ||
+          img.closest('.videoContainer') ||
+          img.closest('[class*="video"]') ||
+          img.getAttribute('data-video') ||
+          img.hasAttribute('poster') ||
+          // Check if parent post contains video controls/elements
+          postElement.querySelector('button[aria-label*="Play video"]') ||
+          postElement.querySelector('button[aria-label*="Play"]') ||
+          postElement.querySelector('video') ||
+          postElement.querySelector('[data-testid*="video"]');
+
         if (isVideoThumbnail) {
-          console.log('[AI-Slop] 🎬 Skipping video thumbnail/poster image:', img.src?.substring(0, 100));
+          console.log(
+            '[AI-Slop] 🎬 Skipping video thumbnail/poster image:',
+            img.src?.substring(0, 100)
+          );
           return;
         }
 
@@ -854,10 +878,13 @@ export class FacebookPostObserver {
         if (src && !src.includes('emoji') && !src.includes('icon') && !src.includes('avatar')) {
           // Skip Facebook video thumbnail URLs (pattern: t15.xxxx-xx)
           if (src.includes('t15.') && src.includes('-10/')) {
-            console.log('[AI-Slop] 🎬 Skipping Facebook video thumbnail by URL pattern:', src.substring(0, 100));
+            console.log(
+              '[AI-Slop] 🎬 Skipping Facebook video thumbnail by URL pattern:',
+              src.substring(0, 100)
+            );
             return;
           }
-          
+
           // Don't clean Facebook URLs - preserve all authentication parameters
           if (!images.includes(src)) {
             images.push(src);
@@ -870,21 +897,22 @@ export class FacebookPostObserver {
     const divElements = postElement.querySelectorAll('div[style*="background-image"]');
     divElements.forEach(div => {
       // Skip background images that are part of video elements
-      const isVideoThumbnail = div.closest('video') || 
-                              div.closest('[data-video-id]') || 
-                              div.closest('[role="button"][aria-label*="video"]') ||
-                              div.closest('[role="button"][aria-label*="Video"]') ||
-                              div.closest('[role="button"][aria-label*="Play"]') ||
-                              div.closest('[data-testid*="video"]') ||
-                              div.closest('.videoContainer') ||
-                              div.closest('[class*="video"]') ||
-                              div.getAttribute('data-video') ||
-                              // Check if parent post contains video controls/elements
-                              postElement.querySelector('button[aria-label*="Play video"]') ||
-                              postElement.querySelector('button[aria-label*="Play"]') ||
-                              postElement.querySelector('video') ||
-                              postElement.querySelector('[data-testid*="video"]');
-      
+      const isVideoThumbnail =
+        div.closest('video') ||
+        div.closest('[data-video-id]') ||
+        div.closest('[role="button"][aria-label*="video"]') ||
+        div.closest('[role="button"][aria-label*="Video"]') ||
+        div.closest('[role="button"][aria-label*="Play"]') ||
+        div.closest('[data-testid*="video"]') ||
+        div.closest('.videoContainer') ||
+        div.closest('[class*="video"]') ||
+        div.getAttribute('data-video') ||
+        // Check if parent post contains video controls/elements
+        postElement.querySelector('button[aria-label*="Play video"]') ||
+        postElement.querySelector('button[aria-label*="Play"]') ||
+        postElement.querySelector('video') ||
+        postElement.querySelector('[data-testid*="video"]');
+
       if (isVideoThumbnail) {
         console.log('[AI-Slop] 🎬 Skipping video background image');
         return;
@@ -1764,14 +1792,14 @@ export class FacebookPostObserver {
       console.log(`[AI-Slop] Loading chat history for post ${postId}, user ${userId}`);
 
       // Delegate network call to background for consistent CORS/timeout handling
-      const historyData = await new Promise<any>((resolve, reject) => {
+      const historyData = await new Promise<ChatHistoryResponse>((resolve, reject) => {
         chrome.runtime.sendMessage(
           {
             type: 'CHAT_HISTORY_REQUEST',
             postId: postId,
             userId: userId,
           },
-          (response) => {
+          response => {
             if (chrome.runtime.lastError) {
               return reject(chrome.runtime.lastError);
             }
@@ -1783,16 +1811,16 @@ export class FacebookPostObserver {
         );
       });
       console.log(`[AI-Slop] Loaded ${historyData.total_messages} previous messages`);
-      
+
       // Clear existing messages (except loading indicators)
       const existingMessages = messagesContainer.querySelectorAll('.message-bubble');
       existingMessages.forEach(msg => msg.remove());
-      
+
       // Add each previous message
-      historyData.messages.forEach((message: any) => {
+      historyData.messages.forEach((message: ChatMessage) => {
         const messageElement = document.createElement('div');
         messageElement.className = `message-bubble ${message.role === 'user' ? 'user-message' : 'bot-message'}`;
-        
+
         if (message.role === 'user') {
           messageElement.innerHTML = `
             <div class="message-content">
@@ -1808,13 +1836,12 @@ export class FacebookPostObserver {
             <div class="message-time">${new Date(message.created_at).toLocaleTimeString()}</div>
           `;
         }
-        
+
         messagesContainer.appendChild(messageElement);
       });
-      
+
       // Scroll to bottom to show most recent messages
       messagesContainer.scrollTo(0, messagesContainer.scrollHeight);
-      
     } catch (error) {
       console.error(`[AI-Slop] Error loading chat history:`, error);
       // Don't show error to user, just continue without history

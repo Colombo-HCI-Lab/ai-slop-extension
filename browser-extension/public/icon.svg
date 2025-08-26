@@ -1,19 +1,19 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
   <!-- Eye shape (cartoonish oval) -->
-  <ellipse cx="64" cy="64" rx="50" ry="30" fill="#bfdbfe" stroke="#60a5fa" stroke-width="3"/>
+  <ellipse cx="64" cy="64" rx="50" ry="30" fill="#90e0ef" stroke="#48cae4" stroke-width="3"/>
   
-  <!-- Iris (light blue filled circle) -->
-  <circle cx="64" cy="64" r="18" fill="#3b82f6"/>
+  <!-- Iris (blue green filled circle) -->
+  <circle cx="64" cy="64" r="18" fill="#0096c7"/>
   
-  <!-- Pupil (dark blue) -->
-  <circle cx="64" cy="64" r="8" fill="#1e40af"/>
+  <!-- Pupil (darker blue) -->
+  <circle cx="64" cy="64" r="8" fill="#023e8a"/>
   
   <!-- Light reflection (cartoonish highlight) -->
-  <circle cx="60" cy="58" r="4" fill="#e0f2fe" opacity="0.9"/>
+  <circle cx="60" cy="58" r="4" fill="#ffffff" opacity="0.9"/>
   
   <!-- Eyelashes/lids for cartoonish effect -->
-  <path d="M20 50 Q30 45 40 48" stroke="#60a5fa" stroke-width="2" stroke-linecap="round" fill="none"/>
-  <path d="M88 48 Q98 45 108 50" stroke="#60a5fa" stroke-width="2" stroke-linecap="round" fill="none"/>
-  <path d="M20 78 Q30 83 40 80" stroke="#60a5fa" stroke-width="2" stroke-linecap="round" fill="none"/>
-  <path d="M88 80 Q98 83 108 78" stroke="#60a5fa" stroke-width="2" stroke-linecap="round" fill="none"/>
+  <path d="M20 50 Q30 45 40 48" stroke="#48cae4" stroke-width="2" stroke-linecap="round" fill="none"/>
+  <path d="M88 48 Q98 45 108 50" stroke="#48cae4" stroke-width="2" stroke-linecap="round" fill="none"/>
+  <path d="M20 78 Q30 83 40 80" stroke="#48cae4" stroke-width="2" stroke-linecap="round" fill="none"/>
+  <path d="M88 80 Q98 83 108 78" stroke="#48cae4" stroke-width="2" stroke-linecap="round" fill="none"/>
 </svg>
