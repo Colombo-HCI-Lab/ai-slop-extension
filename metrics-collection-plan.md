@@ -222,12 +222,23 @@ def downgrade():
     op.drop_table('user')
 ```
 
-## Browser Extension Architecture
+## Browser Extension Architecture (current)
 
-### 1. Core Metrics Collection Service
+Extension structure and integration points:
+- Background split: 
+- Content split: 
+- Shared utilities: 
+- Logging: all logs gated by  via  and DefinePlugin
+
+The metrics layer should integrate with this architecture:
+- Add a metrics client under  and send batches via background by adding a new message type in  and a handler in .
+- Reuse  via background API for robust sending.
+
+### 1. Core Metrics Collection Service (aligned to new extension structure)
 
 ```typescript
-// browser-extension/src/services/MetricsCollector.ts
+// browser-extension/src/content/metrics/MetricsCollector.ts
+// Note: Uses shared/logger (scoped), shared/net/retry via background, and shared/messages
 import { debounce, throttle } from '../utils/performance';
 
 interface MetricsConfig {
@@ -262,7 +273,7 @@ export class MetricsCollector {
       }
     );
     
-    // Performance observer for API timings
+    // Performance observer for API timings (uses Performance API)
     this.performanceObserver = new PerformanceObserver((list) => {
       for (const entry of list.getEntries()) {
         if (entry.entryType === 'measure' && entry.name.startsWith('api-')) {
@@ -313,14 +324,24 @@ export class MetricsCollector {
     this.eventBuffer = [];
     
     try {
-      await this.sendWithRetry(events);
+      // In the current architecture, send via background script to reuse
+      // fetchJsonWithRetry and API base handling. Define a new message type
+      // in src/shared/messages.ts (e.g., METRICS_BATCH) and handle it in
+      // src/background/messaging.ts by calling a lightweight metrics endpoint.
+      await this.sendWithBackground(events);
     } catch (error) {
-      console.error('Failed to send metrics after retries:', error);
+      // Use shared logger; disabled in production builds
+      logger.error('Failed to send metrics after retries:', error);
       // Re-add failed events to buffer with exponential backoff
       this.eventBuffer.unshift(...events.slice(0, this.config.batchSize));
     }
   }
   
+  private async sendWithBackground(events: AnalyticsEvent[]): Promise<void> {
+    await sendMetricsBatch({ sessionId: this.sessionId, events });
+  }
+
+  // (Optional) Direct retry path if calling backend from content, but we prefer background
   private async sendWithRetry(events: AnalyticsEvent[], retries = 3): Promise<void> {
     for (let attempt = 0; attempt < retries; attempt++) {
       try {
@@ -374,10 +395,10 @@ export class MetricsCollector {
 }
 ```
 
-### 2. Enhanced Post Observer
+### 2. Enhanced Post Observer (hooks in src/content/observer.ts)
 
 ```typescript
-// browser-extension/src/content/FacebookPostObserver.ts
+// browser-extension/src/content/observer.ts
 export class FacebookPostObserver {
   private metricsCollector: MetricsCollector;
   private postTracker: Map<string, PostTrackingData> = new Map();
@@ -390,7 +411,7 @@ export class FacebookPostObserver {
   }
   
   private initializeTracking(): void {
-    // Track post processing
+    // Track post processing (leverages existing MutationObserver)
     this.observer = new MutationObserver(this.handleMutations.bind(this));
     
     // Track user interactions
@@ -400,7 +421,7 @@ export class FacebookPostObserver {
     // Track page visibility changes
     document.addEventListener('visibilitychange', this.handleVisibilityChange.bind(this));
     
-    // Track performance metrics
+    // Track performance metrics using performance.mark/measure around background calls
     this.trackPerformanceMetrics();
   }
   
@@ -421,7 +442,7 @@ export class FacebookPostObserver {
       interacted: false
     });
     
-    // Send for AI detection
+    // Send for AI detection (currently delegated to background via content/messaging)
     this.requestAIDetection(postId, postData).then(result => {
       const processingTime = performance.now() - startTime;
       
@@ -515,7 +536,7 @@ export class FacebookPostObserver {
 ### 3. Chat Metrics Tracking
 
 ```typescript
-// browser-extension/src/services/ChatMetricsTracker.ts
+// browser-extension/src/content/metrics/ChatMetricsTracker.ts
 export class ChatMetricsTracker {
   private currentSession: ChatSession | null = null;
   private messageTimings: Map<string, number> = new Map();
@@ -967,7 +988,7 @@ class AnalyticsService:
 ### Client-Side Error Handling
 
 ```typescript
-// browser-extension/src/utils/ErrorHandler.ts
+// browser-extension/src/shared/logger.ts (used for error logging)
 export class MetricsErrorHandler {
   private errorBuffer: ErrorEvent[] = [];
   private maxRetries: number = 3;
@@ -1240,8 +1261,8 @@ class TestAnalyticsService:
 ### Integration Tests
 
 ```typescript
-// browser-extension/tests/integration/MetricsCollector.test.ts
-import { MetricsCollector } from '../../src/services/MetricsCollector';
+// browser-extension/src/content/metrics/MetricsCollector.test.ts
+import { MetricsCollector } from '../../src/content/metrics/MetricsCollector';
 import { MockServer } from '../mocks/MockServer';
 
 describe('MetricsCollector Integration', () => {
