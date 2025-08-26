@@ -94,11 +94,16 @@ class Settings(BaseSettings):
 
     # Concurrency and retry settings (services)
     text_max_concurrency: int = 2
-    image_max_concurrency: int = 2
-    video_max_concurrency: int = 2
-    detection_timeout_seconds: float = 180.0
+    image_max_concurrency: int = 1
+    video_max_concurrency: int = 1
+    detection_timeout_seconds: float = 120.0
     detection_retry_max_attempts: int = 2
     detection_retry_backoff_base: float = 0.5
+
+    # Split thread pools (avoid blocking light ops)
+    detection_light_threads: int = 2
+    image_heavy_threads: int = 2
+    video_heavy_threads: int = 2
 
     # Logging settings
     log_level: str = "INFO"
@@ -125,7 +130,7 @@ class Settings(BaseSettings):
 
     # Google Gemini settings
     gemini_api_key: str = ""
-    gemini_max_concurrency: int = 4  # Limit concurrent Gemini calls
+    gemini_max_concurrency: int = 1  # Per-worker limit; ~4 total with 4 workers
     gemini_timeout_seconds: float = 30.0  # Timeout per Gemini call
     gemini_retry_max_attempts: int = 3  # Retry attempts for Gemini operations
     gemini_retry_backoff_base: float = 0.5  # Exponential backoff base

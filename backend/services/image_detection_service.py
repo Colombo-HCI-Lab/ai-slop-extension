@@ -4,6 +4,7 @@ Adds singleton, concurrency limits, timeouts, and retries.
 """
 
 import asyncio
+import concurrent.futures
 import time
 from pathlib import Path
 from typing import Dict, List, Union, Optional, Tuple
@@ -34,6 +35,9 @@ class ImageDetectionService:
         self.detector = None
         self.actual_model = None
         self._sem = asyncio.Semaphore(settings.image_max_concurrency)
+        # Dedicated executors so heavy jobs don't block light tasks
+        self._heavy_executor = concurrent.futures.ThreadPoolExecutor(max_workers=settings.image_heavy_threads, thread_name_prefix="img-heavy")
+        self._light_executor = concurrent.futures.ThreadPoolExecutor(max_workers=settings.detection_light_threads, thread_name_prefix="img-light")
 
         logger.info("ImageDetectionService initialized", model=self.model_name, device=self.device)
 
@@ -112,8 +116,9 @@ class ImageDetectionService:
                 return detector.detect(str(image_path))
 
             async with self._sem:
+                loop = asyncio.get_running_loop()
                 result = await asyncio.wait_for(
-                    asyncio.to_thread(_infer),
+                    loop.run_in_executor(self._heavy_executor, _infer),
                     timeout=settings.detection_timeout_seconds,
                 )
 
@@ -226,8 +231,9 @@ class ImageDetectionService:
                     os.unlink(tmp_file_path)
 
             async with self._sem:
+                loop = asyncio.get_running_loop()
                 result = await asyncio.wait_for(
-                    asyncio.to_thread(_infer_url),
+                    loop.run_in_executor(self._heavy_executor, _infer_url),
                     timeout=settings.detection_timeout_seconds,
                 )
 
@@ -382,6 +388,12 @@ class ImageDetectionService:
         if hasattr(self.detector, "cleanup"):
             self.detector.cleanup()
         logger.info("ImageDetectionService cleaned up", model=self.model_name)
+        # Shut down executors
+        try:
+            self._heavy_executor.shutdown(wait=False, cancel_futures=True)
+            self._light_executor.shutdown(wait=False, cancel_futures=True)
+        except Exception:
+            pass
 
     # --- Singleton support ---
     _instance: Optional["ImageDetectionService"] = None

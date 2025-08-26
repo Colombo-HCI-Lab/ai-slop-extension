@@ -4,6 +4,7 @@ Adds singleton, concurrency limits, timeouts, and retries.
 """
 
 import asyncio
+import concurrent.futures
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Union
@@ -37,6 +38,9 @@ class DetectionService:
         self.preprocessor = VideoPreprocessor()
         self.detector = AIVideoDetector(model_name=self.model_name, device=self.device)
         self._sem = asyncio.Semaphore(settings.video_max_concurrency)
+        # Dedicated executors so CPU-heavy decode doesn't block light ops
+        self._heavy_executor = concurrent.futures.ThreadPoolExecutor(max_workers=settings.video_heavy_threads, thread_name_prefix="vid-heavy")
+        self._light_executor = concurrent.futures.ThreadPoolExecutor(max_workers=settings.detection_light_threads, thread_name_prefix="vid-light")
 
         logger.info("DetectionService initialized", model=self.model_name, device=self.device)
 
@@ -75,7 +79,8 @@ class DetectionService:
                 temp_detector = self.detector
 
             # Get video metadata (CPU-bound), run in thread
-            video_info_dict = await asyncio.to_thread(self.preprocessor.get_video_info, video_path)
+            loop = asyncio.get_running_loop()
+            video_info_dict = await loop.run_in_executor(self._light_executor, self.preprocessor.get_video_info, video_path)
             video_info = VideoInfo(
                 filename=video_path.name,
                 duration=video_info_dict.get("duration"),
@@ -97,8 +102,9 @@ class DetectionService:
                 return temp_detector.predict(slowfast_input)
 
             async with self._sem:
+                loop = asyncio.get_running_loop()
                 raw_result = await asyncio.wait_for(
-                    asyncio.to_thread(_infer),
+                    loop.run_in_executor(self._heavy_executor, _infer),
                     timeout=settings.detection_timeout_seconds,
                 )
 
@@ -233,6 +239,12 @@ class DetectionService:
         if hasattr(self, "detector"):
             self.detector.cleanup()
         logger.info("DetectionService cleaned up", model=self.model_name)
+        # Shut down executors
+        try:
+            self._heavy_executor.shutdown(wait=False, cancel_futures=True)
+            self._light_executor.shutdown(wait=False, cancel_futures=True)
+        except Exception:
+            pass
 
     # --- Singleton support ---
     _instance: Optional["DetectionService"] = None
