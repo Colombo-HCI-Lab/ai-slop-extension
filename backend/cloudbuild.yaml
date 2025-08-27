@@ -46,7 +46,7 @@ steps:
     id: 'push-backend'
     waitFor: [ 'build-backend' ]
 
-  # Deploy backend to Cloud Run (only waits for push, not cleanup)
+  # Deploy backend to Cloud Run (waits for push to complete)
   - name: 'gcr.io/cloud-builders/gcloud'
     args:
       - 'run'
@@ -74,7 +74,21 @@ steps:
       - '--timeout'
       - '$_TIMEOUT'
     id: 'deploy-backend'
-    waitFor: [ 'push-backend' ]  # Only wait for push to complete, cleanup can continue in parallel
+    waitFor: [ 'push-backend' ]  # Wait for push to complete fully
+
+  # Verify deployment completed successfully
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args:
+      - 'run'
+      - 'services'
+      - 'describe'
+      - 'ai-slop-backend'
+      - '--region'
+      - '$_REGION'
+      - '--format'
+      - 'value(status.url)'
+    id: 'verify-deployment'
+    waitFor: [ 'deploy-backend' ]  # Wait for deployment to complete
 
 # Set timeout for the entire build
 timeout: 3600s
