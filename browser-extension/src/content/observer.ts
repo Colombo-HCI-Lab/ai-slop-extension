@@ -477,8 +477,14 @@ export class FacebookPostObserver {
       return;
     }
 
-    // Generate unique ID for the post
+    // Extract stable, URL-based post ID only
     const postId = await this.generatePostId(postElement);
+
+    // If we cannot resolve a deterministic numeric ID, skip processing entirely
+    if (!postId) {
+      log('[AI-Slop] ⏭️ Skipping post: no resolvable numeric post ID found');
+      return;
+    }
 
     if (this.processedPosts.has(postId)) {
       // Check if icon still exists
@@ -603,59 +609,15 @@ export class FacebookPostObserver {
    * @param postElement - The post's HTML element
    * @returns Facebook post ID (numeric string) or fallback Base64 encoded string
    */
-  private async generatePostId(postElement: HTMLElement): Promise<string> {
-    // Primary method: Extract post ID from Facebook URLs with retry logic
+  private async generatePostId(postElement: HTMLElement): Promise<string | null> {
+    // Single technique: Extract post ID from Facebook URLs only
     const postId = await this.extractPostIdFromUrls(postElement);
     if (postId) {
       log(`[AI-Slop] 🆔 Using URL-based post ID: ${postId}`);
       return postId;
     }
-
-    log(`[AI-Slop] ⚠️ No URL-based ID found, falling back to legacy method`);
-
-    // Fallback to legacy content/DOM-based ID generation
-    const content = await this.extractPostContent(postElement);
-
-    // Get additional unique characteristics from the DOM
-    const authorElement = postElement.querySelector('h2, h3, h4');
-    const authorText = authorElement?.textContent?.trim().slice(0, 50) || '';
-
-    // Get timestamp or date links
-    const timeElement = postElement.querySelector(
-      'a[href*="posts/"], time, [aria-label*="ago"], [aria-label*="hours"], [aria-label*="minutes"]'
-    );
-    const timeText = timeElement?.textContent?.trim().slice(0, 30) || '';
-    const timeHref = timeElement?.getAttribute('href')?.slice(0, 50) || '';
-
-    // Get the element's position in the DOM (as a fallback identifier)
-    const position = Array.from(document.querySelectorAll('*')).indexOf(postElement);
-
-    // Check if content is generic (Facebook repetition pattern)
-    const isGenericContent =
-      content.length > 200 &&
-      (content.toLowerCase().includes('facebook'.repeat(10)) ||
-        (content.toLowerCase().match(/(facebook)/gi) || []).length > 15 || // Too many "Facebook" occurrences
-        content.toLowerCase().match(/(facebook){5,}/gi)); // Consecutive "Facebook" repetitions
-
-    let uniqueString: string;
-
-    if (isGenericContent || content.length < 20) {
-      // Use DOM-based identification for posts with poor content extraction
-      uniqueString = `${authorText}-${timeText}-${timeHref}-${position}-${postElement.className}-${Date.now()}`;
-      log(`[AI-Slop] 🆔 Using DOM-based ID for post with generic content`);
-    } else {
-      // Use content-based identification for posts with good content
-      uniqueString = `${content.slice(0, 100)}-${authorText}`;
-    }
-
-    try {
-      return btoa(encodeURIComponent(uniqueString));
-    } catch (error) {
-      // Ultimate fallback
-      const fallbackId = `${Date.now()}-${Math.random()}-${position}`;
-      warn(`[AI-Slop] ⚠️ Using fallback ID generation:`, error);
-      return btoa(fallbackId);
-    }
+    // No fallbacks allowed: return null to skip processing
+    return null;
   }
 
   /**
@@ -675,13 +637,28 @@ export class FacebookPostObserver {
     // Look for all links within the post that might contain post IDs
     // Check multiple patterns to catch various Facebook URL formats
     const linkSelectors = [
-      'a[href*="posts/"]',
+      // Common post links
       'a[href*="/posts/"]',
       'a[href*="story_fbid="]',
       'a[href*="fbid="]',
+      // Group post variants
+      'a[href*="/groups/"]',
+      'a[role="link"][href*="/groups/"]',
+      // Permalink pages
+      'a[href*="permalink.php"]',
+      // Video post variants (often the only visible permalink for videos)
+      'a[href*="/videos/"]',
+      'a[role="link"][href*="/videos/"]',
+      'a[href*="/watch/"]',
+      'a[role="link"][href*="/watch/"]',
+      'a[href*="/reel/"]',
+      'a[href*="/reels/"]',
+      // Timestamps (often the permalink)
       'time a',
       '[aria-label*="ago"] a',
+      '[aria-label*="hour"] a',
       '[aria-label*="hours"] a',
+      '[aria-label*="minute"] a',
       '[aria-label*="minutes"] a',
     ];
 
@@ -698,14 +675,17 @@ export class FacebookPostObserver {
     });
 
     for (const link of allLinks) {
-      const href = link.getAttribute('href') || '';
+      // Prefer raw attribute (often relative); fall back to resolved absolute href
+      const hrefAttr = link.getAttribute('href') || '';
+      const hrefAbs = (link as HTMLAnchorElement).href || '';
+      const href = hrefAttr || hrefAbs;
 
       if (!href) continue;
 
       // Try different Facebook URL patterns:
 
-      // Pattern 1: /posts/{numeric_id}
-      let match = href.match(/\/posts\/(\d+)/);
+      // Pattern 1: /posts/{numeric_id} (optionally with a leading segment like /{user}/posts/{id})
+      let match = href.match(/\/(?:[^\s/]+\/)?posts\/(\d+)/);
       if (match && match[1]) {
         const postId = match[1];
         log(
@@ -734,12 +714,72 @@ export class FacebookPostObserver {
         return postId;
       }
 
-      // Pattern 4: /{numeric_id}/posts/{another_id} (group posts)
-      match = href.match(/\/(\d{10,})\/posts\/(\d+)/);
+      // Pattern 4: /{group_id}/posts/{post_id} (group posts)
+      match = href.match(/\/(\d{6,})\/posts\/(\d{6,})/);
       if (match && match[2]) {
         const postId = match[2];
         log(
           `[AI-Slop] 🔗 Extracted post ID from URL (group posts pattern): ${postId} (from: ${href.slice(0, 100)}...)`
+        );
+        return postId;
+      }
+
+      // Pattern 5: /groups/{group_id or name}/posts/{post_id}
+      match = href.match(/\/groups\/(?:\d+|[A-Za-z0-9_.-]+)\/posts\/(\d{6,})/);
+      if (match && match[1]) {
+        const postId = match[1];
+        log(
+          `[AI-Slop] 🔗 Extracted post ID from URL (groups posts pattern): ${postId} (from: ${href.slice(0, 100)}...)`
+        );
+        return postId;
+      }
+
+      // Pattern 6: /groups/{group_id or name}/permalink/{post_id}
+      match = href.match(/\/groups\/(?:\d+|[A-Za-z0-9_.-]+)\/permalink\/(\d{6,})/);
+      if (match && match[1]) {
+        const postId = match[1];
+        log(
+          `[AI-Slop] 🔗 Extracted post ID from URL (groups permalink pattern): ${postId} (from: ${href.slice(0, 100)}...)`
+        );
+        return postId;
+      }
+
+      // Pattern 7: permalink.php?story_fbid={post_id}
+      match = href.match(/permalink\.php\?[^#]*story_fbid=(\d{6,})/);
+      if (match && match[1]) {
+        const postId = match[1];
+        log(
+          `[AI-Slop] 🔗 Extracted post ID from URL (permalink.php pattern): ${postId} (from: ${href.slice(0, 100)}...)`
+        );
+        return postId;
+      }
+
+      // Pattern 8: /videos/{video_id}
+      match = href.match(/\/videos\/(\d{6,})/);
+      if (match && match[1]) {
+        const postId = match[1];
+        log(
+          `[AI-Slop] 🔗 Extracted post ID from URL (videos pattern): ${postId} (from: ${href.slice(0, 100)}...)`
+        );
+        return postId;
+      }
+
+      // Pattern 9: /watch/?v={video_id}
+      match = href.match(/[?&]v=(\d{6,})/);
+      if (match && match[1]) {
+        const postId = match[1];
+        log(
+          `[AI-Slop] 🔗 Extracted post ID from URL (watch?v= pattern): ${postId} (from: ${href.slice(0, 100)}...)`
+        );
+        return postId;
+      }
+
+      // Pattern 10: /reel/{id} or /reels/{id}
+      match = href.match(/\/reels?\/(\d{6,})/);
+      if (match && match[1]) {
+        const postId = match[1];
+        log(
+          `[AI-Slop] 🔗 Extracted post ID from URL (reel(s) pattern): ${postId} (from: ${href.slice(0, 100)}...)`
         );
         return postId;
       }
