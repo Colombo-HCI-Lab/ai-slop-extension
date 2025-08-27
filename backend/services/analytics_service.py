@@ -8,15 +8,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, func, and_, desc, asc
 from sqlalchemy.orm import selectinload
 
-from db.models import User, UserPostAnalytics, UserSessionEnhanced, ChatSession, AnalyticsEvent, PerformanceMetric, Post
+from db.models import User, UserPostAnalytics, UserSessionAnalytics, ChatSession, AnalyticsEvent, UserPerformanceAnalytics, Post
 from schemas.analytics import (
     AnalyticsEvent as EventSchema,
     UserCreate,
     UserPostAnalyticsCreate,
-    UserSessionEnhancedCreate,
+    UserSessionAnalyticsCreate,
     ChatSessionCreate,
     AnalyticsEventCreate,
-    PerformanceMetricRequest,
+    UserPerformanceAnalyticsRequest,
 )
 from utils.logging import get_logger
 
@@ -95,7 +95,7 @@ class AnalyticsService:
             )
             raise
 
-    async def start_session(self, user_id: str, browser_info: Dict[str, Any]) -> UserSessionEnhanced:
+    async def start_session(self, user_id: str, browser_info: Dict[str, Any]) -> UserSessionAnalytics:
         """Start a new user session."""
         logger.info(
             f"Starting session for user {user_id[:8]}...",
@@ -112,7 +112,7 @@ class AnalyticsService:
             ip_hash = browser_info.get("ip_hash")
             user_agent = browser_info.get("user_agent")
 
-            session = UserSessionEnhanced(user_id=user_id, session_token=session_token, ip_hash=ip_hash, user_agent=user_agent)
+            session = UserSessionAnalytics(user_id=user_id, session_token=session_token, ip_hash=ip_hash, user_agent=user_agent)
 
             self.db.add(session)
             await self.db.commit()
@@ -147,7 +147,7 @@ class AnalyticsService:
         )
 
         try:
-            stmt = select(UserSessionEnhanced).where(UserSessionEnhanced.id == session_id)
+            stmt = select(UserSessionAnalytics).where(UserSessionAnalytics.id == session_id)
             result = await self.db.execute(stmt)
             session = result.scalar_one_or_none()
 
@@ -215,7 +215,7 @@ class AnalyticsService:
 
             if session_id:
                 # Check if session exists
-                stmt = select(UserSessionEnhanced).where(UserSessionEnhanced.id == session_id)
+                stmt = select(UserSessionAnalytics).where(UserSessionAnalytics.id == session_id)
                 result = await self.db.execute(stmt)
                 session_exists = result.scalar_one_or_none() is not None
 
@@ -455,10 +455,11 @@ class AnalyticsService:
             logger.error(f"Failed to generate dashboard for user {user_id}: {e}")
             raise
 
-    async def record_performance_metric(self, metric_request: PerformanceMetricRequest) -> PerformanceMetric:
+    async def record_performance_metric(self, metric_request: UserPerformanceAnalyticsRequest) -> UserPerformanceAnalytics:
         """Record a performance metric."""
         try:
-            metric = PerformanceMetric(
+            metric = UserPerformanceAnalytics(
+                session_id=metric_request.session_id,
                 metric_name=metric_request.metric_name,
                 metric_value=metric_request.metric_value,
                 metric_unit=metric_request.metric_unit,
@@ -503,7 +504,7 @@ class AnalyticsService:
 
             # Update session metrics
             if session_id and metrics:
-                stmt = select(UserSessionEnhanced).where(UserSessionEnhanced.id == session_id)
+                stmt = select(UserSessionAnalytics).where(UserSessionAnalytics.id == session_id)
                 result = await self.db.execute(stmt)
                 session = result.scalar_one_or_none()
 
@@ -556,14 +557,14 @@ class AnalyticsService:
         """Get user session statistics."""
         try:
             stmt = select(
-                func.count(UserSessionEnhanced.id).label("total_sessions"),
-                func.avg(UserSessionEnhanced.duration_seconds).label("avg_session_duration"),
-                func.sum(UserSessionEnhanced.posts_viewed).label("total_posts_in_sessions"),
+                func.count(UserSessionAnalytics.id).label("total_sessions"),
+                func.avg(UserSessionAnalytics.duration_seconds).label("avg_session_duration"),
+                func.sum(UserSessionAnalytics.posts_viewed).label("total_posts_in_sessions"),
             ).where(
                 and_(
-                    UserSessionEnhanced.user_id == user_id,
-                    UserSessionEnhanced.started_at >= date_from,
-                    UserSessionEnhanced.started_at <= date_to,
+                    UserSessionAnalytics.user_id == user_id,
+                    UserSessionAnalytics.started_at >= date_from,
+                    UserSessionAnalytics.started_at <= date_to,
                 )
             )
 

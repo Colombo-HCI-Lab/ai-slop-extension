@@ -15,7 +15,7 @@ from schemas.analytics import (
     PostInteractionRequest,
     ChatSessionMetrics,
     UserDashboardResponse,
-    PerformanceMetricRequest,
+    UserPerformanceAnalyticsRequest,
 )
 from services.analytics_service import AnalyticsService
 from services.monitoring_service import MonitoringService
@@ -328,7 +328,7 @@ async def get_user_dashboard(
 
 @router.post("/performance/metrics")
 async def record_performance_metric(
-    request: PerformanceMetricRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)
+    request: UserPerformanceAnalyticsRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)
 ):
     """Record system performance metric."""
     start_time = datetime.now()
@@ -440,9 +440,7 @@ async def cleanup_old_data(
 # Background task functions
 
 
-async def _process_events_background(
-    session_id: str, events: List[AnalyticsEvent], user_id: Optional[str] = None
-) -> None:
+async def _process_events_background(session_id: str, events: List[AnalyticsEvent], user_id: Optional[str] = None) -> None:
     """Process events in background using a fresh DB session."""
     from db.pool import database_pool
 
@@ -462,7 +460,7 @@ async def _process_events_background(
         await db_session.close()
 
 
-async def _record_performance_metric_background(request: PerformanceMetricRequest) -> None:
+async def _record_performance_metric_background(request: UserPerformanceAnalyticsRequest) -> None:
     """Record performance metric in background using a fresh DB session."""
     from db.pool import database_pool
 

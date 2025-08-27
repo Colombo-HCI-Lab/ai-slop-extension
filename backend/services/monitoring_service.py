@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, text
 
-from db.models import AnalyticsEvent, PerformanceMetric, User, UserSessionEnhanced
+from db.models import AnalyticsEvent, UserPerformanceAnalytics, User, UserSessionAnalytics
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -24,7 +24,7 @@ class MonitoringService:
     ) -> None:
         """Record API endpoint performance metrics."""
         try:
-            metric = PerformanceMetric(
+            metric = UserPerformanceAnalytics(
                 metric_name="api_response_time",
                 metric_value=duration_ms,
                 metric_unit="ms",
@@ -107,11 +107,11 @@ class MonitoringService:
             one_hour_ago = datetime.utcnow() - timedelta(hours=1)
 
             stmt = select(
-                func.avg(PerformanceMetric.metric_value).label("avg_response_time"),
-                func.max(PerformanceMetric.metric_value).label("max_response_time"),
-                func.count(PerformanceMetric.id).label("total_requests"),
-                func.count(PerformanceMetric.id).filter(PerformanceMetric.metric_value > 1000).label("slow_requests"),
-            ).where(PerformanceMetric.metric_name == "api_response_time", PerformanceMetric.timestamp >= one_hour_ago)
+                func.avg(UserPerformanceAnalytics.metric_value).label("avg_response_time"),
+                func.max(UserPerformanceAnalytics.metric_value).label("max_response_time"),
+                func.count(UserPerformanceAnalytics.id).label("total_requests"),
+                func.count(UserPerformanceAnalytics.id).filter(UserPerformanceAnalytics.metric_value > 1000).label("slow_requests"),
+            ).where(UserPerformanceAnalytics.metric_name == "api_response_time", UserPerformanceAnalytics.timestamp >= one_hour_ago)
 
             result = await self.db.execute(stmt)
             row = result.first()
@@ -142,8 +142,8 @@ class MonitoringService:
             active_users_stmt = select(func.count(func.distinct(User.id))).where(User.last_active_at >= one_hour_ago)
 
             # Active sessions in last hour
-            active_sessions_stmt = select(func.count(UserSessionEnhanced.id)).where(
-                UserSessionEnhanced.started_at >= one_hour_ago, UserSessionEnhanced.ended_at.is_(None)
+            active_sessions_stmt = select(func.count(UserSessionAnalytics.id)).where(
+                UserSessionAnalytics.started_at >= one_hour_ago, UserSessionAnalytics.ended_at.is_(None)
             )
 
             # Events in last hour

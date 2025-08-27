@@ -128,9 +128,10 @@ class UserDashboardResponse(BaseModel):
     behavior_metrics: Dict[str, Any] = Field(..., description="Behavioral metrics")
 
 
-class PerformanceMetricRequest(BaseModel):
+class UserPerformanceAnalyticsRequest(BaseModel):
     """Request to record performance metric."""
 
+    session_id: Optional[str] = Field(None, description="Session ID")
     metric_name: str = Field(..., description="Metric name")
     metric_value: float = Field(..., description="Metric value")
     metric_unit: Optional[str] = Field(None, description="Unit of measurement")
@@ -178,7 +179,7 @@ class UserCreate(BaseModel):
     experiment_groups: Optional[List[str]] = None
 
 
-class UserSessionEnhancedCreate(BaseModel):
+class UserSessionAnalyticsCreate(BaseModel):
     """Create enhanced user session."""
 
     user_id: str

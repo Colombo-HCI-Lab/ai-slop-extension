@@ -71,7 +71,7 @@ Low-level event tracking for all user activities.
 |--------|------|-------------|
 | `id` | VARCHAR(36) | Primary key |
 | `user_id` | VARCHAR(36) | Foreign key to user table |
-| `session_id` | VARCHAR(36) | Foreign key to user_session_enhanced |
+| `session_id` | VARCHAR(36) | Foreign key to user_session_analytics |
 | `post_id` | VARCHAR(255) | Foreign key to post table (optional) |
 | `event_type` | VARCHAR(100) | Event identifier (e.g., scroll_behavior) |
 | `event_category` | VARCHAR(50) | Category: interaction/performance/error |
@@ -82,7 +82,7 @@ Low-level event tracking for all user activities.
 | `server_timestamp` | TIMESTAMP | Server-side received timestamp |
 | `created_at` | TIMESTAMP | Record creation timestamp |
 
-### Table: `user_session_enhanced`
+### Table: `user_session_analytics`
 Comprehensive session behavior tracking.
 
 | Column | Type | Description |
@@ -129,12 +129,13 @@ Chat interaction analytics and metrics.
 | `created_at` | TIMESTAMP | Record creation timestamp |
 | `updated_at` | TIMESTAMP | Record last update timestamp |
 
-### Table: `performance_metric`
-System performance and health metrics.
+### Table: `user_performance_analytics`
+System performance and health metrics linked to user sessions.
 
 | Column | Type | Description |
 |--------|------|-------------|
 | `id` | VARCHAR(36) | Primary key |
+| `session_id` | VARCHAR(36) | Foreign key to user_session_analytics |
 | `metric_name` | VARCHAR(100) | Metric identifier |
 | `metric_value` | FLOAT | Numeric metric value |
 | `metric_unit` | VARCHAR(50) | Unit of measurement (ms, bytes, etc.) |
@@ -142,6 +143,7 @@ System performance and health metrics.
 | `timestamp` | TIMESTAMP | Metric collection timestamp |
 | `metric_metadata` | JSON | Additional metric context |
 | `created_at` | TIMESTAMP | Record creation timestamp |
+| `updated_at` | TIMESTAMP | Record last update timestamp |
 
 ## Event Types Collected
 

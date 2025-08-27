@@ -288,8 +288,8 @@ class User(Base):
     )
 
     # Relationships
-    sessions: Mapped[list["UserSessionEnhanced"]] = relationship(
-        "UserSessionEnhanced",
+    sessions: Mapped[list["UserSessionAnalytics"]] = relationship(
+        "UserSessionAnalytics",
         back_populates="user",
         cascade="all, delete-orphan",
         lazy="selectin",
@@ -398,10 +398,10 @@ class UserPostAnalytics(Base):
         return f"<UserPostAnalytics(id={self.id}, user_id={self.user_id}, post_id={self.post_id})>"
 
 
-class UserSessionEnhanced(Base):
+class UserSessionAnalytics(Base):
     """Enhanced user session model with detailed metrics."""
 
-    __tablename__ = "user_session_enhanced"
+    __tablename__ = "user_session_analytics"
 
     id: Mapped[str] = mapped_column(
         String(36),
@@ -459,9 +459,16 @@ class UserSessionEnhanced(Base):
         lazy="selectin",
     )
 
+    performance_metrics: Mapped[list["UserPerformanceAnalytics"]] = relationship(
+        "UserPerformanceAnalytics",
+        back_populates="session",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
     def __repr__(self) -> str:
         """String representation."""
-        return f"<UserSessionEnhanced(id={self.id}, user_id={self.user_id})>"
+        return f"<UserSessionAnalytics(id={self.id}, user_id={self.user_id})>"
 
 
 class ChatSession(Base):
@@ -539,7 +546,7 @@ class AnalyticsEvent(Base):
     )
 
     session_id: Mapped[Optional[str]] = mapped_column(
-        ForeignKey("user_session_enhanced.id", ondelete="CASCADE"),
+        ForeignKey("user_session_analytics.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
     )
@@ -576,8 +583,8 @@ class AnalyticsEvent(Base):
         lazy="selectin",
     )
 
-    session: Mapped[Optional["UserSessionEnhanced"]] = relationship(
-        "UserSessionEnhanced",
+    session: Mapped[Optional["UserSessionAnalytics"]] = relationship(
+        "UserSessionAnalytics",
         back_populates="events",
         lazy="selectin",
     )
@@ -592,15 +599,22 @@ class AnalyticsEvent(Base):
         return f"<AnalyticsEvent(id={self.id}, event_type={self.event_type})>"
 
 
-class PerformanceMetric(Base):
+class UserPerformanceAnalytics(Base):
     """Performance metric model for system monitoring."""
 
-    __tablename__ = "performance_metric"
+    __tablename__ = "user_performance_analytics"
 
     id: Mapped[str] = mapped_column(
         String(36),
         primary_key=True,
         default=lambda: str(uuid.uuid4()),
+    )
+
+    # Foreign key to session
+    session_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("user_session_analytics.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
     )
 
     # Metric data
@@ -616,6 +630,13 @@ class PerformanceMetric(Base):
     )
     metric_metadata: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
+    # Relationships
+    session: Mapped[Optional["UserSessionAnalytics"]] = relationship(
+        "UserSessionAnalytics",
+        back_populates="performance_metrics",
+        lazy="selectin",
+    )
+
     def __repr__(self) -> str:
         """String representation."""
-        return f"<PerformanceMetric(id={self.id}, metric_name={self.metric_name}, value={self.metric_value})>"
+        return f"<UserPerformanceAnalytics(id={self.id}, metric_name={self.metric_name}, value={self.metric_value})>"

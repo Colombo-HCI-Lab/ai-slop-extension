@@ -86,7 +86,7 @@ def upgrade() -> None:
 
     # Enhanced user session table
     op.create_table(
-        "user_session_enhanced",
+        "user_session_analytics",
         sa.Column("id", sa.String(36), primary_key=True),
         sa.Column("user_id", sa.String(36), sa.ForeignKey("user.id", ondelete="CASCADE"), nullable=False),
         sa.Column("session_token", sa.String(255), unique=True),
@@ -107,9 +107,9 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()")),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()")),
     )
-    op.create_index("ix_user_session_enhanced_user_id", "user_session_enhanced", ["user_id"])
-    op.create_index("ix_user_session_enhanced_started_at", "user_session_enhanced", ["started_at"])
-    op.create_index("ix_user_session_enhanced_token", "user_session_enhanced", ["session_token"])
+    op.create_index("ix_user_session_analytics_user_id", "user_session_analytics", ["user_id"])
+    op.create_index("ix_user_session_analytics_started_at", "user_session_analytics", ["started_at"])
+    op.create_index("ix_user_session_analytics_token", "user_session_analytics", ["session_token"])
 
     # Chat session table
     op.create_table(
@@ -139,7 +139,7 @@ def upgrade() -> None:
         "analytics_event",
         sa.Column("id", sa.String(36), primary_key=True),
         sa.Column("user_id", sa.String(36), sa.ForeignKey("user.id", ondelete="CASCADE")),
-        sa.Column("session_id", sa.String(36), sa.ForeignKey("user_session_enhanced.id", ondelete="CASCADE")),
+        sa.Column("session_id", sa.String(36), sa.ForeignKey("user_session_analytics.id", ondelete="CASCADE")),
         sa.Column("post_id", sa.String(255), sa.ForeignKey("post.post_id", ondelete="CASCADE")),
         sa.Column("event_type", sa.String(100), nullable=False),
         sa.Column("event_category", sa.String(50)),  # 'interaction', 'performance', 'error'
@@ -159,8 +159,9 @@ def upgrade() -> None:
 
     # Performance metrics table for system monitoring
     op.create_table(
-        "performance_metric",
+        "user_performance_analytics",
         sa.Column("id", sa.String(36), primary_key=True),
+        sa.Column("session_id", sa.String(36), sa.ForeignKey("user_session_analytics.id", ondelete="CASCADE")),
         sa.Column("metric_name", sa.String(100), nullable=False),
         sa.Column("metric_value", sa.Float(), nullable=False),
         sa.Column("metric_unit", sa.String(50)),
@@ -170,15 +171,16 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()")),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()")),
     )
-    op.create_index("ix_performance_metric_name_time", "performance_metric", ["metric_name", "timestamp"])
+    op.create_index("ix_user_performance_analytics_name_time", "user_performance_analytics", ["metric_name", "timestamp"])
+    op.create_index("ix_user_performance_analytics_session", "user_performance_analytics", ["session_id"])
 
 
 def downgrade() -> None:
     """Downgrade schema."""
-    op.drop_table("performance_metric")
+    op.drop_table("user_performance_analytics")
     op.drop_table("analytics_event")
     op.drop_table("chat_session")
-    op.drop_table("user_session_enhanced")
+    op.drop_table("user_session_analytics")
     op.drop_table("user_post_analytics")
     op.drop_column("post", "group_name")
     op.drop_column("post", "group_id")
