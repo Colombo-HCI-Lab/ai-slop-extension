@@ -1122,7 +1122,7 @@ export class FacebookPostObserver {
     // Create the AI slop detection icon button
     const iconContainer = document.createElement('div');
     const isAiSlop = analysisResult.isAiSlop;
-    
+
     // Set up CSS classes for proper styling and animation
     iconContainer.className = `ai-slop-icon ${isAiSlop ? 'ai-detected' : 'human-content'}`;
     iconContainer.setAttribute('data-post-id', postId);
@@ -1151,11 +1151,11 @@ export class FacebookPostObserver {
     }
 
     // Add click handler with event prevention to avoid clicking the underlying post
-    iconContainer.addEventListener('click', (event) => {
+    iconContainer.addEventListener('click', event => {
       // Prevent event bubbling to avoid clicking the underlying post
       event.stopPropagation();
       event.preventDefault();
-      
+
       // Fire-and-forget analytics post interaction (do not block UI)
       const session = metricsManager.getSession();
       if (session?.userId) {
@@ -1195,7 +1195,7 @@ export class FacebookPostObserver {
       log(`[AI-Slop] ✅ Icon injected successfully for post ${postId} with consistent positioning`);
     } catch (error) {
       logError(`[AI-Slop] ❌ Failed to append icon for post ${postId}:`, error);
-      
+
       // Fallback: try to find any suitable container within the post
       const fallbackContainers = postElement.querySelectorAll('div');
       for (const container of fallbackContainers) {

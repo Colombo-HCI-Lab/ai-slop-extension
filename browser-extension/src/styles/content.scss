@@ -29,14 +29,44 @@
   min-width: 36px !important;
   min-height: 36px !important;
   
-  // Continuous subtle animation to make it more noticeable
-  animation: subtleGlow 3s ease-in-out infinite;
+  /* Idle animations to improve noticeability */
+  animation: subtleGlow 2.2s ease-in-out infinite, colorPulse 3s ease-in-out infinite;
+  
+  /* Dual pulsing rings for stronger noticeability */
+  &::before,
+  &::after {
+    content: '';
+    position: absolute !important;
+    inset: -3px !important;
+    border-radius: 50% !important;
+    border: 2px solid rgba(24, 119, 242, 0.45) !important; // Facebook blue-ish
+    opacity: 0 !important;
+    pointer-events: none !important;
+    z-index: -1 !important;
+    animation: pulseRing 1.8s ease-out infinite;
+  }
 
+  &::before {
+    animation-delay: 0.6s;
+  }
+  
   &:hover {
-    background-color: #f0f2f5 !important;
+    background-color: #e7f0ff !important; /* more distinct than white */
     box-shadow: 0 5px 15px rgba(0,0,0,0.4) !important;
     border-color: #1565c0 !important;
-    transform: scale(1.05) !important;
+    color: #1565c0 !important;
+    transform: scale(1.15) !important;
+    /* Avoid transform conflicts while hovering */
+    animation-play-state: paused !important;
+    
+    svg {
+      animation-play-state: paused !important;
+    }
+
+    &::after, &::before {
+      opacity: 0 !important;
+      animation-play-state: paused !important;
+    }
   }
 
   svg {
@@ -44,6 +74,9 @@
     height: 20px !important;
     color: #1877f2 !important;
     fill: currentColor !important;
+    transform-origin: center center !important;
+    /* Idle SVG pulse to ensure visibility even when outer ring is clipped */
+    animation: svgPulse 2.4s ease-in-out infinite;
   }
 
   // Loading State
@@ -76,12 +109,34 @@
     &.ai-detected {
       border-color: #FFC107 !important;
       animation: warningPulse 4s ease-in-out infinite;
+
+      &::before,
+      &::after {
+        border-color: rgba(255, 193, 7, 0.55) !important;
+      }
+
+      &:hover {
+        background-color: rgba(255, 193, 7, 0.15) !important;
+        border-color: #FF9800 !important;
+        color: #FF9800 !important;
+      }
     }
     
     // Human content - success animation
     &.human-content {
       border-color: #4CAF50 !important;
       animation: successGlow 4s ease-in-out infinite;
+
+      &::before,
+      &::after {
+        border-color: rgba(76, 175, 80, 0.5) !important;
+      }
+
+      &:hover {
+        background-color: rgba(76, 175, 80, 0.15) !important;
+        border-color: #2E7D32 !important;
+        color: #2E7D32 !important;
+      }
     }
   }
 }
@@ -492,15 +547,23 @@
 }
 
 // New continuous animations for better visibility
+// Note: Avoid animating transform here to prevent conflicts with :hover scaling
 @keyframes subtleGlow {
   0%, 100% {
     box-shadow: 0 3px 10px rgba(0,0,0,0.3);
-    transform: scale(1);
+    opacity: 1;
   }
   50% {
-    box-shadow: 0 4px 15px rgba(24, 119, 242, 0.4);
-    transform: scale(1.02);
+    box-shadow: 0 4px 16px rgba(24, 119, 242, 0.45);
+    opacity: 0.95;
   }
+}
+
+// Pulsing ring that expands outward behind the icon
+@keyframes pulseRing {
+  0% { transform: scale(0.85); opacity: 0.45; }
+  60% { transform: scale(1.9); opacity: 0.15; }
+  100% { transform: scale(2.1); opacity: 0; }
 }
 
 @keyframes warningPulse {
@@ -566,6 +629,18 @@
     opacity: 1;
     transform: translateX(0);
   }
+}
+
+/* Inner SVG breathing effect to draw attention without layout shifts */
+@keyframes svgPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.2); }
+}
+
+/* Color breathing to enhance visibility using currentColor */
+@keyframes colorPulse {
+  0%, 100% { color: #1877f2; }
+  50% { color: #0d47a1; }
 }
 
 // Responsive Design
