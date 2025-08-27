@@ -4,12 +4,8 @@
   "version": "1.0.0",
   "description": "Real-time AI slop detection for Facebook posts",
   "permissions": [
-    "activeTab",
-    "scripting",
     "storage",
-    "tabs",
-    "webRequest",
-    "tabCapture"
+    "tabs"
   ],
   "host_permissions": [
     "*://*.facebook.com/*"
