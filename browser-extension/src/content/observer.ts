@@ -1085,7 +1085,7 @@ export class FacebookPostObserver {
 
   /**
    * Injects the AI slop detection icon into a Facebook post with analysis results
-   * Creates and adds the interactive icon element with enhanced targeting
+   * Creates and adds the interactive icon element with consistent positioning
    * @param postElement - The post's HTML element
    * @param postId - Unique identifier for the post used for logging and debugging
    * @param content - The extracted post content
@@ -1112,16 +1112,23 @@ export class FacebookPostObserver {
   ): void {
     log(`[AI-Slop] 🎯 Starting icon injection for post: ${postId}`);
 
+    // Check if icon already exists anywhere in the post
+    const existingIcon = postElement.querySelector('.ai-slop-icon');
+    if (existingIcon) {
+      warn(`[AI-Slop] ⚠️ Icon already exists for post ${postId}, skipping injection`);
+      return;
+    }
+
     // Create the AI slop detection icon button
     const iconContainer = document.createElement('div');
-    iconContainer.className = 'ai-slop-icon';
+    const isAiSlop = analysisResult.isAiSlop;
+    
+    // Set up CSS classes for proper styling and animation
+    iconContainer.className = `ai-slop-icon ${isAiSlop ? 'ai-detected' : 'human-content'}`;
     iconContainer.setAttribute('data-post-id', postId);
     iconContainer.setAttribute('data-content', content);
     iconContainer.setAttribute('data-analysis', JSON.stringify(analysisResult));
     iconContainer.setAttribute('data-state', 'analyzed');
-
-    // Set icon based on analysis result
-    const isAiSlop = analysisResult.isAiSlop;
 
     if (isAiSlop) {
       // AI slop detected - yellow warning triangle
@@ -1143,8 +1150,12 @@ export class FacebookPostObserver {
       iconContainer.setAttribute('title', 'Human-generated content - Click to open chat');
     }
 
-    // Add click handler to open chat directly
-    iconContainer.addEventListener('click', () => {
+    // Add click handler with event prevention to avoid clicking the underlying post
+    iconContainer.addEventListener('click', (event) => {
+      // Prevent event bubbling to avoid clicking the underlying post
+      event.stopPropagation();
+      event.preventDefault();
+      
       // Fire-and-forget analytics post interaction (do not block UI)
       const session = metricsManager.getSession();
       if (session?.userId) {
@@ -1165,162 +1176,43 @@ export class FacebookPostObserver {
       this.openChatForPost(postElement, postId, content, analysisResult);
     });
 
-    // Enhanced targeting for Facebook group posts
-    let targetElement: HTMLElement | null = null;
-    let injectionMethod = '';
+    // Find the best position for consistent icon placement
+    // Strategy: Always try to position relative to the post element itself for consistency
+    let targetElement: HTMLElement = postElement;
+    let injectionMethod = 'Direct post positioning';
 
-    // Strategy 1: Find author heading and use its parent
-    const authorContainer = postElement.querySelector('h2, h3, h4');
-    if (authorContainer && authorContainer.parentElement instanceof HTMLElement) {
-      targetElement = authorContainer.parentElement;
-      injectionMethod = 'Author parent container';
+    // Ensure the post element can contain an absolutely positioned child
+    const currentPosition = getComputedStyle(postElement).position;
+    if (currentPosition === 'static') {
+      postElement.style.position = 'relative';
+      log(`[AI-Slop] 📍 Set post element position to relative for consistent positioning`);
     }
 
-    // Strategy 2: Find any element with author links (profile links)
-    if (!targetElement) {
-      const authorLink = postElement.querySelector('a[href*="/user/"], a[href*="/profile/"]');
-      if (authorLink && authorLink.parentElement instanceof HTMLElement) {
-        // Go up the tree to find a suitable container
-        let parent: HTMLElement | null = authorLink.parentElement;
-        let depth = 0;
-        while (parent && depth < 5) {
-          // Look for a container that's likely the post header
-          if (parent.offsetWidth > 100 && parent.offsetHeight > 20) {
-            targetElement = parent;
-            injectionMethod = 'Author link container';
-            break;
-          }
-          parent = parent.parentElement instanceof HTMLElement ? parent.parentElement : null;
-          depth++;
-        }
-      }
-    }
+    log(`[AI-Slop] 🎯 Using consistent positioning strategy: ${injectionMethod}`);
 
-    // Strategy 3: Find elements containing timestamps or "shared with" text
-    if (!targetElement) {
-      const timestampElement = postElement.querySelector(
-        'a[href*="posts/"], [aria-label*="ago"], [aria-label*="hours"], [aria-label*="minutes"]'
-      );
-      if (timestampElement && timestampElement.parentElement instanceof HTMLElement) {
-        // Go up to find a container
-        let parent: HTMLElement | null = timestampElement.parentElement;
-        let depth = 0;
-        while (parent && depth < 3) {
-          if (parent.offsetWidth > 200) {
-            targetElement = parent;
-            injectionMethod = 'Timestamp container';
+    try {
+      targetElement.appendChild(iconContainer);
+      log(`[AI-Slop] ✅ Icon injected successfully for post ${postId} with consistent positioning`);
+    } catch (error) {
+      logError(`[AI-Slop] ❌ Failed to append icon for post ${postId}:`, error);
+      
+      // Fallback: try to find any suitable container within the post
+      const fallbackContainers = postElement.querySelectorAll('div');
+      for (const container of fallbackContainers) {
+        if (container instanceof HTMLElement && container.offsetWidth > 100) {
+          try {
+            const containerPosition = getComputedStyle(container).position;
+            if (containerPosition === 'static') {
+              container.style.position = 'relative';
+            }
+            container.appendChild(iconContainer);
+            log(`[AI-Slop] ✅ Icon injected using fallback container`);
             break;
-          }
-          parent = parent.parentElement instanceof HTMLElement ? parent.parentElement : null;
-          depth++;
-        }
-      }
-    }
-
-    // Strategy 4: Look for any relatively positioned containers in the upper part
-    if (!targetElement) {
-      const containers = postElement.querySelectorAll('div');
-      for (const container of containers) {
-        if (container instanceof HTMLElement) {
-          const rect = container.getBoundingClientRect();
-          const postRect = postElement.getBoundingClientRect();
-
-          // Check if this container is in the upper part of the post
-          if (rect.top <= postRect.top + 80 && rect.width > 200 && rect.height > 30) {
-            targetElement = container;
-            injectionMethod = 'Upper container';
-            break;
+          } catch (fallbackError) {
+            continue;
           }
         }
       }
-    }
-
-    // Strategy 5: Use the first substantial child element as last resort
-    if (!targetElement) {
-      const firstChild = postElement.firstElementChild;
-      if (firstChild instanceof HTMLElement && firstChild.offsetWidth > 100) {
-        targetElement = firstChild;
-        injectionMethod = 'First child container';
-      }
-    }
-
-    // Strategy 6: Ultimate fallback - use the post element itself
-    if (!targetElement) {
-      targetElement = postElement;
-      injectionMethod = 'Post element (fallback)';
-    }
-
-    if (targetElement) {
-      // Check if icon already exists anywhere in the post
-      const existingIcon = postElement.querySelector('.ai-slop-icon');
-      if (existingIcon) {
-        warn(`[AI-Slop] ⚠️ Icon already exists for post ${postId}, skipping injection`);
-        return;
-      }
-
-      log(`[AI-Slop] 🎯 Target element found via: ${injectionMethod}`, targetElement);
-
-      // Style the icon container with professional styling and maximum visibility
-      iconContainer.style.cssText = `
-        position: absolute !important;
-        top: 10px !important;
-        right: 10px !important;
-        cursor: pointer !important;
-        z-index: 2147483647 !important;
-        background: #ffffff !important;
-        border-radius: 50% !important;
-        padding: 6px !important;
-        box-shadow: 0 3px 10px rgba(0,0,0,0.3) !important;
-        width: 36px !important;
-        height: 36px !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        border: 2px solid #1877f2 !important;
-        opacity: 1 !important;
-        visibility: visible !important;
-        pointer-events: auto !important;
-        transform: scale(1) !important;
-        overflow: visible !important;
-        clip: unset !important;
-        clip-path: none !important;
-        max-width: none !important;
-        max-height: none !important;
-        min-width: 36px !important;
-        min-height: 36px !important;
-        transition: all 0.2s ease !important;
-      `;
-
-      // Make parent position relative if needed
-      const currentPosition = getComputedStyle(targetElement).position;
-      if (currentPosition === 'static') {
-        targetElement.style.position = 'relative';
-        log(`[AI-Slop] 📍 Set target element position to relative`);
-      }
-
-      try {
-        targetElement.appendChild(iconContainer);
-        log(`[AI-Slop] ✅ Icon injected successfully for post ${postId} via ${injectionMethod}`);
-      } catch (error) {
-        logError(`[AI-Slop] ❌ Failed to append icon for post ${postId}:`, error);
-      }
-    } else {
-      logError(
-        `[AI-Slop] ❌ Failed to find suitable element for icon injection for post ${postId}`
-      );
-
-      // Add debug information about the post structure
-      log(`[AI-Slop] 🔍 Post element structure for debugging:`, {
-        tagName: postElement.tagName,
-        className: postElement.className,
-        hasAuthorHeading: !!postElement.querySelector('h2, h3, h4'),
-        buttonCount: postElement.querySelectorAll('button').length,
-        childrenCount: postElement.children.length,
-        offsetDimensions: {
-          width: postElement.offsetWidth,
-          height: postElement.offsetHeight,
-        },
-      });
     }
   }
 

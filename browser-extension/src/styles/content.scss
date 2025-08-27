@@ -1,37 +1,49 @@
 @use 'theme';
 
-// Eye Icon Styles - Clean minimal design
+// AI Slop Icon Styles - Consistent positioning and continuous animation for visibility
 .ai-slop-icon {
   display: flex !important;
-  align-items: center;
-  justify-content: center;
-  width: 32px !important;
-  height: 32px !important;
-  border-radius: theme.$radius !important;
-  background-color: theme.$surface !important;
-  cursor: pointer;
-  transition: all theme.$transition-base;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 36px !important;
+  height: 36px !important;
+  border-radius: 50% !important;
+  background-color: #ffffff !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
   position: absolute !important;
-  top: 12px !important;
-  right: 12px !important;
-  z-index: theme.$z-extension !important;
-  box-shadow: theme.$shadow-sm !important;
-  border: 1px solid theme.$border !important;
+  top: 8px !important;
+  right: 8px !important;
+  z-index: 2147483647 !important;  // Maximum z-index to ensure always on top
+  box-shadow: 0 3px 10px rgba(0,0,0,0.3) !important;
+  border: 2px solid #1877f2 !important;
   opacity: 1 !important;
   visibility: visible !important;
   pointer-events: auto !important;
+  transform: scale(1) !important;
+  overflow: visible !important;
+  clip: unset !important;
+  clip-path: none !important;
+  max-width: none !important;
+  max-height: none !important;
+  min-width: 36px !important;
+  min-height: 36px !important;
+  
+  // Continuous subtle animation to make it more noticeable
+  animation: subtleGlow 3s ease-in-out infinite;
 
   &:hover {
-    background-color: theme.$surface-secondary !important;
-    box-shadow: theme.$shadow-md !important;
-    border-color: theme.$primary-color !important;
+    background-color: #f0f2f5 !important;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.4) !important;
+    border-color: #1565c0 !important;
+    transform: scale(1.05) !important;
   }
 
   svg {
-    width: 24px !important;
-    height: 24px !important;
-    color: theme.$primary-color !important;
-    fill: theme.$primary-color !important;
+    width: 20px !important;
+    height: 20px !important;
+    color: #1877f2 !important;
+    fill: currentColor !important;
   }
 
   // Loading State
@@ -46,18 +58,31 @@
   // Error State
   &[data-state='error'] {
     background-color: #fef2f2 !important;
-    border-color: theme.$danger-color !important;
+    border-color: #e74c3c !important;
+    animation: subtleGlow 3s ease-in-out infinite;
 
     svg {
-      color: theme.$danger-color !important;
-      fill: theme.$danger-color !important;
+      color: #e74c3c !important;
+      fill: currentColor !important;
     }
   }
 
-  // Analyzed State
+  // Analyzed State - different animations based on result
   &[data-state='analyzed'] {
-    background-color: theme.$surface-secondary !important;
-    border-color: theme.$primary-color !important;
+    background-color: #ffffff !important;
+    border-color: #1877f2 !important;
+    
+    // AI detected - warning animation
+    &.ai-detected {
+      border-color: #FFC107 !important;
+      animation: warningPulse 4s ease-in-out infinite;
+    }
+    
+    // Human content - success animation
+    &.human-content {
+      border-color: #4CAF50 !important;
+      animation: successGlow 4s ease-in-out infinite;
+    }
   }
 }
 
@@ -463,6 +488,40 @@
   }
   to {
     transform: rotate(360deg);
+  }
+}
+
+// New continuous animations for better visibility
+@keyframes subtleGlow {
+  0%, 100% {
+    box-shadow: 0 3px 10px rgba(0,0,0,0.3);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 4px 15px rgba(24, 119, 242, 0.4);
+    transform: scale(1.02);
+  }
+}
+
+@keyframes warningPulse {
+  0%, 100% {
+    box-shadow: 0 3px 10px rgba(0,0,0,0.3);
+    border-color: #FFC107;
+  }
+  50% {
+    box-shadow: 0 4px 15px rgba(255, 193, 7, 0.5);
+    border-color: #FF9800;
+  }
+}
+
+@keyframes successGlow {
+  0%, 100% {
+    box-shadow: 0 3px 10px rgba(0,0,0,0.3);
+    border-color: #4CAF50;
+  }
+  50% {
+    box-shadow: 0 4px 15px rgba(76, 175, 80, 0.4);
+    border-color: #2E7D32;
   }
 }
 
