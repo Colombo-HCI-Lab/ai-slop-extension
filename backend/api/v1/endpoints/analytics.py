@@ -32,6 +32,20 @@ async def initialize_user(
     request: UserInitRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db), http_request: Request = None
 ):
     """Initialize or update user profile with metrics."""
+    start_time = datetime.now()
+    logger.info(
+        f"POST /analytics/users/initialize - Initializing user",
+        extra={
+            "endpoint": "/analytics/users/initialize",
+            "method": "POST",
+            "extension_user_id": request.extension_user_id[:8] + "...",
+            "timezone": request.timezone,
+            "locale": request.locale,
+            "browser_name": request.browser_info.get("name"),
+            "client_ip": request.client_ip or "unknown",
+        },
+    )
+
     try:
         # Extract client IP for rate limiting and geolocation
         client_ip = request.client_ip or (http_request.client.host if http_request else "unknown")
@@ -49,24 +63,91 @@ async def initialize_user(
         # Background task for additional processing if needed
         background_tasks.add_task(_enrich_user_data, service, user.id, client_ip)
 
-        return UserInitResponse(user_id=user.id, session_id=session.id, experiment_groups=user.experiment_groups or [])
+        response = UserInitResponse(user_id=user.id, session_id=session.id, experiment_groups=user.experiment_groups or [])
+
+        duration_ms = (datetime.now() - start_time).total_seconds() * 1000
+        logger.info(
+            f"POST /analytics/users/initialize - Success",
+            extra={
+                "endpoint": "/analytics/users/initialize",
+                "method": "POST",
+                "user_id": str(user.id),
+                "session_id": str(session.id),
+                "duration_ms": round(duration_ms, 2),
+                "experiment_groups": user.experiment_groups,
+                "status": "success",
+            },
+        )
+
+        return response
 
     except Exception as e:
-        logger.error(f"User initialization failed: {e}")
+        duration_ms = (datetime.now() - start_time).total_seconds() * 1000
+        logger.error(
+            f"POST /analytics/users/initialize - Failed",
+            extra={
+                "endpoint": "/analytics/users/initialize",
+                "method": "POST",
+                "extension_user_id": request.extension_user_id[:8] + "...",
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "duration_ms": round(duration_ms, 2),
+                "status": "error",
+            },
+            exc_info=True,
+        )
         raise HTTPException(status_code=500, detail="Failed to initialize user")
 
 
 @router.post("/sessions/start")
 async def start_session(request: SessionStartRequest, db: AsyncSession = Depends(get_db)):
     """Start a new user session."""
+    start_time = datetime.now()
+    logger.info(
+        f"POST /analytics/sessions/start - Starting session",
+        extra={
+            "endpoint": "/analytics/sessions/start",
+            "method": "POST",
+            "user_id": request.user_id[:8] + "...",
+            "browser_name": request.browser_info.get("name"),
+            "ip_hash": request.ip_hash[:8] + "..." if request.ip_hash else None,
+        },
+    )
+
     try:
         service = AnalyticsService(db)
         session = await service.start_session(user_id=request.user_id, browser_info=request.browser_info)
 
+        duration_ms = (datetime.now() - start_time).total_seconds() * 1000
+        logger.info(
+            f"POST /analytics/sessions/start - Success",
+            extra={
+                "endpoint": "/analytics/sessions/start",
+                "method": "POST",
+                "user_id": request.user_id[:8] + "...",
+                "session_id": str(session.id),
+                "duration_ms": round(duration_ms, 2),
+                "status": "success",
+            },
+        )
+
         return {"session_id": session.id, "status": "started"}
 
     except Exception as e:
-        logger.error(f"Session start failed: {e}")
+        duration_ms = (datetime.now() - start_time).total_seconds() * 1000
+        logger.error(
+            f"POST /analytics/sessions/start - Failed",
+            extra={
+                "endpoint": "/analytics/sessions/start",
+                "method": "POST",
+                "user_id": request.user_id[:8] + "...",
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "duration_ms": round(duration_ms, 2),
+                "status": "error",
+            },
+            exc_info=True,
+        )
         raise HTTPException(status_code=500, detail="Failed to start session")
 
 
@@ -87,6 +168,19 @@ async def end_session(request: SessionEndRequest, db: AsyncSession = Depends(get
 @router.post("/events/batch")
 async def submit_event_batch(request: EventBatchRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     """Submit batch of analytics events with optional user_id."""
+    start_time = datetime.now()
+    logger.info(
+        f"POST /analytics/events/batch - Processing event batch",
+        extra={
+            "endpoint": "/analytics/events/batch",
+            "method": "POST",
+            "session_id": request.session_id[:8] + "..." if request.session_id else None,
+            "user_id": request.user_id[:8] + "..." if request.user_id else None,
+            "event_count": len(request.events),
+            "event_types": list(set(event.type for event in request.events)),
+        },
+    )
+
     try:
         # Validate event batch size
         if len(request.events) > 1000:
@@ -94,6 +188,7 @@ async def submit_event_batch(request: EventBatchRequest, background_tasks: Backg
 
         # Validate timestamps (prevent future events)
         from datetime import timezone
+
         current_time = datetime.now(timezone.utc)
         valid_events = []
 
@@ -102,7 +197,7 @@ async def submit_event_batch(request: EventBatchRequest, background_tasks: Backg
             event_time = event.client_timestamp
             if event_time.tzinfo is None:
                 event_time = event_time.replace(tzinfo=timezone.utc)
-            
+
             if event_time > current_time:
                 logger.warning(f"Skipping future event: {event.type}")
                 continue
@@ -115,17 +210,59 @@ async def submit_event_batch(request: EventBatchRequest, background_tasks: Backg
             valid_events.append(event)
 
         if not valid_events:
+            duration_ms = (datetime.now() - start_time).total_seconds() * 1000
+            logger.warning(
+                f"POST /analytics/events/batch - No valid events",
+                extra={
+                    "endpoint": "/analytics/events/batch",
+                    "method": "POST",
+                    "session_id": request.session_id[:8] + "..." if request.session_id else None,
+                    "total_events": len(request.events),
+                    "valid_events": 0,
+                    "duration_ms": round(duration_ms, 2),
+                    "status": "no_valid_events",
+                },
+            )
             return {"status": "no_valid_events", "count": 0}
 
-        service = AnalyticsService(db)
+        # Process events asynchronously with optional user_id (fresh DB session inside task)
+        background_tasks.add_task(_process_events_background, request.session_id, valid_events, request.user_id)
 
-        # Process events asynchronously with optional user_id
-        background_tasks.add_task(_process_events_background, service, request.session_id, valid_events, request.user_id)
+        duration_ms = (datetime.now() - start_time).total_seconds() * 1000
+        logger.info(
+            f"POST /analytics/events/batch - Success",
+            extra={
+                "endpoint": "/analytics/events/batch",
+                "method": "POST",
+                "session_id": request.session_id[:8] + "..." if request.session_id else None,
+                "user_id": request.user_id[:8] + "..." if request.user_id else None,
+                "total_events": len(request.events),
+                "valid_events": len(valid_events),
+                "filtered_events": len(request.events) - len(valid_events),
+                "duration_ms": round(duration_ms, 2),
+                "status": "accepted",
+            },
+        )
 
         return {"status": "accepted", "count": len(valid_events)}
 
     except Exception as e:
-        logger.error(f"Event batch processing failed: {e}")
+        duration_ms = (datetime.now() - start_time).total_seconds() * 1000
+        logger.error(
+            f"POST /analytics/events/batch - Failed",
+            extra={
+                "endpoint": "/analytics/events/batch",
+                "method": "POST",
+                "session_id": request.session_id[:8] + "..." if request.session_id else None,
+                "user_id": request.user_id[:8] + "..." if request.user_id else None,
+                "event_count": len(request.events),
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "duration_ms": round(duration_ms, 2),
+                "status": "error",
+            },
+            exc_info=True,
+        )
         raise HTTPException(status_code=500, detail="Failed to process events")
 
 
@@ -194,16 +331,53 @@ async def record_performance_metric(
     request: PerformanceMetricRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)
 ):
     """Record system performance metric."""
-    try:
-        service = AnalyticsService(db)
+    start_time = datetime.now()
+    logger.info(
+        f"POST /analytics/performance/metrics - Recording performance metric",
+        extra={
+            "endpoint": "/analytics/performance/metrics",
+            "method": "POST",
+            "metric_name": request.metric_name,
+            "metric_value": request.metric_value,
+            "metric_unit": request.metric_unit,
+            "target_endpoint": request.endpoint,
+        },
+    )
 
-        # Process in background to avoid blocking
-        background_tasks.add_task(_record_performance_metric_background, service, request)
+    try:
+        # Process in background with fresh DB session to avoid leaks
+        background_tasks.add_task(_record_performance_metric_background, request)
+
+        duration_ms = (datetime.now() - start_time).total_seconds() * 1000
+        logger.info(
+            f"POST /analytics/performance/metrics - Success",
+            extra={
+                "endpoint": "/analytics/performance/metrics",
+                "method": "POST",
+                "metric_name": request.metric_name,
+                "metric_value": request.metric_value,
+                "duration_ms": round(duration_ms, 2),
+                "status": "accepted",
+            },
+        )
 
         return {"status": "accepted"}
 
     except Exception as e:
-        logger.error(f"Performance metric recording failed: {e}")
+        duration_ms = (datetime.now() - start_time).total_seconds() * 1000
+        logger.error(
+            f"POST /analytics/performance/metrics - Failed",
+            extra={
+                "endpoint": "/analytics/performance/metrics",
+                "method": "POST",
+                "metric_name": request.metric_name,
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "duration_ms": round(duration_ms, 2),
+                "status": "error",
+            },
+            exc_info=True,
+        )
         raise HTTPException(status_code=500, detail="Failed to record metric")
 
 
@@ -254,46 +428,53 @@ async def get_performance_alerts(db: AsyncSession = Depends(get_db)):
 async def cleanup_old_data(
     days_to_keep: int = 30, background_tasks: BackgroundTasks = BackgroundTasks(), db: AsyncSession = Depends(get_db)
 ):
-    """Clean up old analytics data."""
+    """No-op: analytics cleanup disabled to retain all records."""
     try:
-        monitoring_service = MonitoringService(db)
-
-        # Run cleanup in background
-        background_tasks.add_task(monitoring_service.cleanup_old_metrics, days_to_keep)
-
-        return {"status": "cleanup_scheduled", "days_to_keep": days_to_keep}
+        # Explicitly do nothing; return a disabled status
+        return {"status": "disabled", "message": "Cleanup disabled by retention policy", "days_to_keep": days_to_keep}
     except Exception as e:
-        logger.error(f"Failed to schedule cleanup: {e}")
-        raise HTTPException(status_code=500, detail="Failed to schedule cleanup")
+        logger.error(f"Unexpected error in cleanup endpoint: {e}")
+        raise HTTPException(status_code=500, detail="Cleanup endpoint error")
 
 
 # Background task functions
 
 
-async def _process_events_background(service: AnalyticsService, session_id: str, events: List[AnalyticsEvent], user_id: Optional[str] = None) -> None:
-    """Process events in background."""
+async def _process_events_background(
+    session_id: str, events: List[AnalyticsEvent], user_id: Optional[str] = None
+) -> None:
+    """Process events in background using a fresh DB session."""
+    from db.pool import database_pool
+
+    db_session = await database_pool.get_session()
     try:
         # Use provided user_id or generate anonymous one
         if not user_id:
-            # For anonymous users, use session_id as user identifier
             user_id = f"anon_{session_id[:8]}"
 
+        service = AnalyticsService(db_session)
         await service.process_event_batch(session_id=session_id, events=events, user_id=user_id)
 
         logger.info(f"Background processed {len(events)} events for session {session_id}")
-
     except Exception as e:
         logger.error(f"Background event processing failed: {e}")
+    finally:
+        await db_session.close()
 
 
-async def _record_performance_metric_background(service: AnalyticsService, request: PerformanceMetricRequest) -> None:
-    """Record performance metric in background."""
+async def _record_performance_metric_background(request: PerformanceMetricRequest) -> None:
+    """Record performance metric in background using a fresh DB session."""
+    from db.pool import database_pool
+
+    db_session = await database_pool.get_session()
     try:
+        service = AnalyticsService(db_session)
         await service.record_performance_metric(request)
         logger.debug(f"Background recorded metric: {request.metric_name}")
-
     except Exception as e:
         logger.error(f"Background metric recording failed: {e}")
+    finally:
+        await db_session.close()
 
 
 async def _enrich_user_data(service: AnalyticsService, user_id: str, client_ip: str) -> None:

@@ -149,6 +149,7 @@ def upgrade() -> None:
         sa.Column("client_timestamp", sa.DateTime(timezone=True)),
         sa.Column("server_timestamp", sa.DateTime(timezone=True), server_default=sa.text("now()")),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()")),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()")),
     )
     op.create_index("ix_analytics_event_user_type", "analytics_event", ["user_id", "event_type"])
     op.create_index("ix_analytics_event_created", "analytics_event", ["created_at"])
@@ -167,6 +168,7 @@ def upgrade() -> None:
         sa.Column("timestamp", sa.DateTime(timezone=True), server_default=sa.text("now()")),
         sa.Column("metric_metadata", sa.JSON()),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()")),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()")),
     )
     op.create_index("ix_performance_metric_name_time", "performance_metric", ["metric_name", "timestamp"])
 

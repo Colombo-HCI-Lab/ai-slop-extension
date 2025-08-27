@@ -217,37 +217,12 @@ class MonitoringService:
             return {"status": "error", "error": str(e)}
 
     async def cleanup_old_metrics(self, days_to_keep: int = 30) -> Dict[str, int]:
-        """Clean up old performance metrics to manage database size."""
-        try:
-            cutoff_date = datetime.utcnow() - timedelta(days=days_to_keep)
-
-            # Delete old performance metrics
-            perf_stmt = text("DELETE FROM performance_metric WHERE created_at < :cutoff_date")
-            perf_result = await self.db.execute(perf_stmt, {"cutoff_date": cutoff_date})
-
-            # Delete old analytics events (keep essential events longer)
-            events_stmt = text(
-                """DELETE FROM analytics_event 
-                WHERE created_at < :cutoff_date 
-                AND event_category NOT IN ('error', 'security')"""
-            )
-            events_result = await self.db.execute(events_stmt, {"cutoff_date": cutoff_date})
-
-            await self.db.commit()
-
-            cleaned = {
-                "performance_metrics": perf_result.rowcount,
-                "analytics_events": events_result.rowcount,
-                "cutoff_date": cutoff_date.isoformat(),
-            }
-
-            logger.info(f"Cleaned up old metrics: {cleaned}")
-            return cleaned
-
-        except Exception as e:
-            await self.db.rollback()
-            logger.error(f"Failed to cleanup old metrics: {e}")
-            raise
+        """No-op: retention policy set to keep all analytics and metrics forever."""
+        logger.info(
+            "Cleanup disabled by retention policy; keeping all metrics/events",
+            extra={"days_to_keep": days_to_keep},
+        )
+        return {"performance_metrics": 0, "analytics_events": 0, "cutoff_date": None}
 
     async def get_performance_alerts(self) -> List[Dict[str, any]]:
         """Get performance alerts that need attention."""

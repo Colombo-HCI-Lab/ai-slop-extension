@@ -1,12 +1,30 @@
 // Styles are imported from entry index.ts, not here
 import { getUserId } from '@/shared/storage';
 import { log, warn, error as logError } from '@/shared/logger';
-import { sendChat, fetchChatHistory, sendAiSlopRequest } from '@/content/messaging';
+import {
+  sendChat,
+  fetchChatHistory,
+  sendAiSlopRequest,
+  recordPerformanceMetric,
+  sendPostInteraction,
+  sendChatSessionMetrics,
+} from '@/content/messaging';
+import { metricsManager } from './metrics/MetricsManager';
 import {
   POST_CONTENT_SELECTOR as POST_SELECTOR,
   ALLOWED_GROUP_NAMES as GROUPS,
 } from '@/content/dom/selectors';
 import { ChatMessage } from '@/content/types';
+// Chat session metrics state attached to chat window elements
+interface ChatMetrics {
+  sessionId: string;
+  analyticsId: string;
+  startTime: number;
+  messageCount: number;
+  userMessageCount: number;
+  assistantMessageCount: number;
+  suggestedQuestionClicks: number;
+}
 
 // Types moved to '@/content/types'
 
@@ -24,6 +42,9 @@ export class FacebookPostObserver {
 
   /** Set to track processed posts and prevent duplicate processing */
   private processedPosts: Set<string>;
+
+  /** Map of postId -> user_post_analytics id returned by backend */
+  private postAnalyticsId: Map<string, string> = new Map();
 
   /** Selector for extracting post content */
   private readonly POST_CONTENT_SELECTOR = POST_SELECTOR;
@@ -49,9 +70,7 @@ export class FacebookPostObserver {
         allowedName.toLowerCase().includes(currentGroupName.toLowerCase())
     );
 
-    log(
-      `[AI-Slop] Group filtering - Current group: "${currentGroupName}", Allowed: ${isAllowed}`
-    );
+    log(`[AI-Slop] Group filtering - Current group: "${currentGroupName}", Allowed: ${isAllowed}`);
     return isAllowed;
   }
 
@@ -544,6 +563,7 @@ export class FacebookPostObserver {
       log(`[AI-Slop] 🔍 Analyzing post ${postId} with backend API...`);
 
       // Send analysis request to backend via background service
+      const t0 = performance.now();
       const response = await sendAiSlopRequest({
         content,
         postId,
@@ -553,6 +573,16 @@ export class FacebookPostObserver {
         hasVideos: mediaUrls.hasVideos,
         videoResults: videoResults,
       });
+      const t1 = performance.now();
+
+      // Record performance metric to analytics backend (fire-and-forget)
+      recordPerformanceMetric({
+        metricName: 'ai_detection_latency',
+        metricValue: Math.round(t1 - t0),
+        metricUnit: 'ms',
+        endpoint: '/posts/process',
+        metadata: { postId, hasVideos: mediaUrls.hasVideos },
+      }).catch(e => console.debug('recordPerformanceMetric failed', e));
 
       log(`[AI-Slop] ✅ Hardcoded analysis complete for post ${postId}:`, {
         isAiSlop: response.isAiSlop,
@@ -824,10 +854,7 @@ export class FacebookPostObserver {
           postElement.querySelector('[data-testid*="video"]');
 
         if (isVideoThumbnail) {
-          log(
-            '[AI-Slop] 🎬 Skipping video thumbnail/poster image:',
-            img.src?.substring(0, 100)
-          );
+          log('[AI-Slop] 🎬 Skipping video thumbnail/poster image:', img.src?.substring(0, 100));
           return;
         }
 
@@ -1117,9 +1144,26 @@ export class FacebookPostObserver {
     }
 
     // Add click handler to open chat directly
-    iconContainer.addEventListener('click', () =>
-      this.openChatForPost(postElement, postId, content, analysisResult)
-    );
+    iconContainer.addEventListener('click', () => {
+      // Fire-and-forget analytics post interaction (do not block UI)
+      const session = metricsManager.getSession();
+      if (session?.userId) {
+        sendPostInteraction({
+          postId,
+          userId: session.userId,
+          interactionType: 'chatted',
+        })
+          .then(res => {
+            if (res.analytics_id) {
+              this.postAnalyticsId.set(postId, res.analytics_id);
+            }
+          })
+          .catch(e => console.debug('sendPostInteraction failed', e));
+      }
+
+      // Open chat immediately for responsive UX
+      this.openChatForPost(postElement, postId, content, analysisResult);
+    });
 
     // Enhanced targeting for Facebook group posts
     let targetElement: HTMLElement | null = null;
@@ -1256,9 +1300,7 @@ export class FacebookPostObserver {
 
       try {
         targetElement.appendChild(iconContainer);
-        log(
-          `[AI-Slop] ✅ Icon injected successfully for post ${postId} via ${injectionMethod}`
-        );
+        log(`[AI-Slop] ✅ Icon injected successfully for post ${postId} via ${injectionMethod}`);
       } catch (error) {
         logError(`[AI-Slop] ❌ Failed to append icon for post ${postId}:`, error);
       }
@@ -1582,6 +1624,19 @@ export class FacebookPostObserver {
     chatWindow.setAttribute('data-post-content', postContent);
     chatWindow.setAttribute('data-analysis', JSON.stringify(analysisResult));
 
+    // Attach chat metrics state
+    const chatSessionId = `chat_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const analyticsId = this.postAnalyticsId.get(postId) || '';
+    (chatWindow as unknown as HTMLElement & { _chatMetrics?: ChatMetrics })._chatMetrics = {
+      sessionId: chatSessionId,
+      analyticsId,
+      startTime: Date.now(),
+      messageCount: 0,
+      userMessageCount: 0,
+      assistantMessageCount: 0,
+      suggestedQuestionClicks: 0,
+    };
+
     // Add event listeners
     this.setupChatWindowEventListeners(chatWindow);
 
@@ -1602,8 +1657,26 @@ export class FacebookPostObserver {
     const sendButton = chatWindow.querySelector('.send-chat');
     const ignoreButton = chatWindow.querySelector('.ignore-analysis');
 
-    // Close chat window
-    closeButton?.addEventListener('click', () => chatWindow.remove());
+    // Close chat window fast; send metrics in background
+    closeButton?.addEventListener('click', () => {
+      const metrics =
+        (chatWindow as unknown as HTMLElement & { _chatMetrics?: ChatMetrics })._chatMetrics ||
+        null;
+      chatWindow.remove();
+      if (metrics && metrics.analyticsId) {
+        const durationMs = Date.now() - metrics.startTime;
+        sendChatSessionMetrics({
+          sessionId: metrics.sessionId,
+          userPostAnalyticsId: metrics.analyticsId,
+          durationMs,
+          messageCount: metrics.messageCount,
+          userMessageCount: metrics.userMessageCount,
+          assistantMessageCount: metrics.assistantMessageCount,
+          suggestedQuestionClicks: metrics.suggestedQuestionClicks,
+          endedBy: 'close',
+        }).catch(e => console.debug('sendChatSessionMetrics failed', e));
+      }
+    });
 
     // Minimize chat window
     minimizeButton?.addEventListener('click', () => {
@@ -1669,6 +1742,15 @@ export class FacebookPostObserver {
     userMessageDiv.className = 'user-message';
     userMessageDiv.textContent = message;
     messagesContainer?.appendChild(userMessageDiv);
+    // Increment user message counters immediately
+    {
+      const m = (chatWindow as unknown as HTMLElement & { _chatMetrics?: ChatMetrics })
+        ._chatMetrics;
+      if (m) {
+        m.userMessageCount += 1;
+        m.messageCount += 1;
+      }
+    }
 
     // Add loading message
     const loadingDiv = document.createElement('div');
@@ -1701,6 +1783,14 @@ export class FacebookPostObserver {
       assistantMessageDiv.className = 'assistant-message';
       assistantMessageDiv.textContent = response.message;
       messagesContainer?.appendChild(assistantMessageDiv);
+      {
+        const m2 = (chatWindow as unknown as HTMLElement & { _chatMetrics?: ChatMetrics })
+          ._chatMetrics;
+        if (m2) {
+          m2.assistantMessageCount += 1;
+          m2.messageCount += 1;
+        }
+      }
 
       // Add suggested questions
       if (response.suggested_questions && response.suggested_questions.length > 0) {
@@ -1717,6 +1807,12 @@ export class FacebookPostObserver {
             if (chatInput) {
               chatInput.value = question;
               chatInput.focus();
+            }
+            // Track suggested question click
+            const m = (chatWindow as unknown as HTMLElement & { _chatMetrics?: ChatMetrics })
+              ._chatMetrics;
+            if (m) {
+              m.suggestedQuestionClicks += 1;
             }
           });
           suggestionsDiv.appendChild(questionButton);

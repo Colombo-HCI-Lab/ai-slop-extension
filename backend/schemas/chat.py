@@ -8,7 +8,7 @@ chat messages, conversation requests, and AI-powered responses about posts.
 import uuid
 from typing import Any, Dict, List
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class ChatRequest(BaseModel):
@@ -18,7 +18,8 @@ class ChatRequest(BaseModel):
     message: str = Field(..., description="User message")
     user_id: str = Field(..., description="Unique user identifier (UUID)")
 
-    @validator("user_id")
+    @field_validator("user_id")
+    @classmethod
     def validate_user_id(cls, v):
         """Validate that user_id is a valid UUID format."""
         try:

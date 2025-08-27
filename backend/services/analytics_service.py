@@ -31,6 +31,17 @@ class AnalyticsService:
 
     async def initialize_user(self, extension_user_id: str, browser_info: Dict[str, Any], timezone: str, locale: str) -> User:
         """Initialize or update user with deduplication."""
+        logger.info(
+            f"Initializing user: {extension_user_id[:8]}...",
+            extra={
+                "extension_user_id": extension_user_id,
+                "timezone": timezone,
+                "locale": locale,
+                "browser_name": browser_info.get("name"),
+                "browser_version": browser_info.get("version"),
+            },
+        )
+
         try:
             # Check for existing user
             stmt = select(User).where(User.extension_user_id == extension_user_id)
@@ -43,7 +54,10 @@ class AnalyticsService:
                 user.browser_info = browser_info
                 user.timezone = timezone
                 user.locale = locale
-                logger.debug(f"Updated existing user: {extension_user_id}")
+                logger.info(
+                    f"Updated existing user: {extension_user_id[:8]}...",
+                    extra={"user_id": str(user.id), "action": "update_user", "last_active_at": user.last_active_at.isoformat()},
+                )
             else:
                 # Create new user with A/B test assignment
                 user = User(
@@ -54,7 +68,14 @@ class AnalyticsService:
                     experiment_groups=self._assign_experiment_groups(extension_user_id),
                 )
                 self.db.add(user)
-                logger.info(f"Created new user: {extension_user_id}")
+                logger.info(
+                    f"Created new user: {extension_user_id[:8]}...",
+                    extra={
+                        "user_id": str(user.id) if hasattr(user, "id") else "pending",
+                        "action": "create_user",
+                        "experiment_groups": user.experiment_groups,
+                    },
+                )
 
             await self.db.commit()
             await self.db.refresh(user)
@@ -62,11 +83,30 @@ class AnalyticsService:
 
         except Exception as e:
             await self.db.rollback()
-            logger.error(f"Failed to initialize user {extension_user_id}: {e}")
+            logger.error(
+                f"User initialization failed for {extension_user_id[:8]}...",
+                extra={
+                    "extension_user_id": extension_user_id,
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "action": "initialize_user",
+                },
+                exc_info=True,
+            )
             raise
 
     async def start_session(self, user_id: str, browser_info: Dict[str, Any]) -> UserSessionEnhanced:
         """Start a new user session."""
+        logger.info(
+            f"Starting session for user {user_id[:8]}...",
+            extra={
+                "user_id": user_id,
+                "ip_hash": browser_info.get("ip_hash", "unknown")[:8] + "..." if browser_info.get("ip_hash") else "none",
+                "browser_name": browser_info.get("name"),
+                "action": "start_session",
+            },
+        )
+
         try:
             session_token = self._generate_session_token()
             ip_hash = browser_info.get("ip_hash")
@@ -78,16 +118,34 @@ class AnalyticsService:
             await self.db.commit()
             await self.db.refresh(session)
 
-            logger.info(f"Started session {session.id} for user {user_id}")
+            logger.info(
+                f"Started session {session.id} for user {user_id[:8]}...",
+                extra={
+                    "session_id": str(session.id),
+                    "user_id": user_id,
+                    "session_token": session_token[:12] + "...",
+                    "action": "session_started",
+                    "created_at": session.created_at.isoformat(),
+                },
+            )
             return session
 
         except Exception as e:
             await self.db.rollback()
-            logger.error(f"Failed to start session for user {user_id}: {e}")
+            logger.error(
+                f"Failed to start session for user {user_id[:8]}...",
+                extra={"user_id": user_id, "error": str(e), "error_type": type(e).__name__, "action": "start_session"},
+                exc_info=True,
+            )
             raise
 
     async def end_session(self, session_id: str, end_reason: str, duration_seconds: int) -> None:
         """End a user session."""
+        logger.info(
+            f"Ending session {session_id[:8]}...",
+            extra={"session_id": session_id, "end_reason": end_reason, "duration_seconds": duration_seconds, "action": "end_session"},
+        )
+
         try:
             stmt = select(UserSessionEnhanced).where(UserSessionEnhanced.id == session_id)
             result = await self.db.execute(stmt)
@@ -99,34 +157,68 @@ class AnalyticsService:
                 session.duration_seconds = duration_seconds
 
                 await self.db.commit()
-                logger.info(f"Ended session {session_id} with reason: {end_reason}")
+                logger.info(
+                    f"Ended session {session_id[:8]}...",
+                    extra={
+                        "session_id": session_id,
+                        "user_id": session.user_id,
+                        "end_reason": end_reason,
+                        "duration_seconds": duration_seconds,
+                        "ended_at": session.ended_at.isoformat(),
+                        "action": "session_ended",
+                    },
+                )
             else:
-                logger.warning(f"Session {session_id} not found for ending")
+                logger.warning(
+                    f"Session {session_id[:8]}... not found for ending",
+                    extra={"session_id": session_id, "end_reason": end_reason, "action": "session_not_found"},
+                )
 
         except Exception as e:
             await self.db.rollback()
-            logger.error(f"Failed to end session {session_id}: {e}")
+            logger.error(
+                f"Failed to end session {session_id[:8]}...",
+                extra={
+                    "session_id": session_id,
+                    "end_reason": end_reason,
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "action": "end_session",
+                },
+                exc_info=True,
+            )
             raise
 
     async def process_event_batch(self, session_id: str, events: List[EventSchema], user_id: str) -> None:
         """Process analytics events with deduplication and aggregation."""
+        logger.info(
+            f"Processing event batch for session {session_id[:8]}...",
+            extra={
+                "session_id": session_id,
+                "user_id": user_id[:8] + "..." if user_id else None,
+                "event_count": len(events),
+                "event_types": [e.type for e in events],
+                "action": "process_event_batch",
+            },
+        )
+
         try:
             # Check if user and session exist (they may not for anonymous tracking)
             user_exists = False
             session_exists = False
-            
+
             if user_id and not user_id.startswith("anon_"):
                 # Check if user exists
                 stmt = select(User).where(User.id == user_id)
                 result = await self.db.execute(stmt)
                 user_exists = result.scalar_one_or_none() is not None
-            
+
             if session_id:
                 # Check if session exists
                 stmt = select(UserSessionEnhanced).where(UserSessionEnhanced.id == session_id)
                 result = await self.db.execute(stmt)
                 session_exists = result.scalar_one_or_none() is not None
-            
+
             # Deduplicate events by hash
             seen_hashes = set()
             unique_events = []
@@ -141,9 +233,24 @@ class AnalyticsService:
                 logger.debug("No unique events to process")
                 return
 
-            # Batch insert events
+            # Batch insert events with post_id validation
             event_models = []
             for event in unique_events:
+                # Validate post_id exists before setting it
+                post_id = None
+                if event.metadata and event.metadata.get("post_id"):
+                    potential_post_id = event.metadata.get("post_id")
+
+                    # Check if post exists
+                    stmt = select(Post).where(Post.post_id == potential_post_id)
+                    result = await self.db.execute(stmt)
+                    post_exists = result.scalar_one_or_none() is not None
+
+                    if post_exists:
+                        post_id = potential_post_id
+                    else:
+                        logger.warning(f"Post {potential_post_id} does not exist, setting post_id to None for event {event.type}")
+
                 event_models.append(
                     AnalyticsEvent(
                         user_id=user_id if user_exists else None,  # Only set if user exists
@@ -154,26 +261,81 @@ class AnalyticsService:
                         event_label=event.label,
                         event_metadata=event.metadata,
                         client_timestamp=event.client_timestamp,
-                        post_id=event.metadata.get("post_id") if event.metadata else None,
+                        post_id=post_id,  # Only set if post exists
                     )
                 )
 
             self.db.add_all(event_models)
             await self.db.commit()
 
-            logger.info(f"Processed {len(unique_events)} unique events for session {session_id}")
+            logger.info(
+                f"Processed {len(unique_events)} unique events for session {session_id[:8]}...",
+                extra={
+                    "session_id": session_id,
+                    "user_id": user_id[:8] + "..." if user_id else None,
+                    "total_events": len(events),
+                    "unique_events": len(unique_events),
+                    "duplicates_filtered": len(events) - len(unique_events),
+                    "user_exists": user_exists,
+                    "session_exists": session_exists,
+                    "action": "events_processed",
+                },
+            )
 
             # Update aggregated metrics asynchronously
             await self._update_aggregated_metrics(user_id, session_id, unique_events)
 
         except Exception as e:
             await self.db.rollback()
-            logger.error(f"Failed to process event batch for session {session_id}: {e}")
+            logger.error(
+                f"Failed to process event batch for session {session_id[:8]}...",
+                extra={
+                    "session_id": session_id,
+                    "user_id": user_id[:8] + "..." if user_id else None,
+                    "event_count": len(events),
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "action": "process_event_batch",
+                },
+                exc_info=True,
+            )
             raise
 
     async def track_post_interaction(self, user_id: str, post_id: str, interaction_type: str, metrics: Dict[str, Any]) -> UserPostAnalytics:
         """Track user interaction with a post."""
+        logger.info(
+            f"Tracking post interaction for user {user_id[:8]}...",
+            extra={
+                "user_id": user_id,
+                "post_id": post_id,
+                "interaction_type": interaction_type,
+                "metrics_keys": list(metrics.keys()) if metrics else [],
+                "action": "track_post_interaction",
+            },
+        )
+
         try:
+            # Ensure user exists; create minimal placeholder if missing to avoid FK errors
+            stmt_user = select(User).where(User.id == user_id)
+            result_user = await self.db.execute(stmt_user)
+            user = result_user.scalar_one_or_none()
+            if not user:
+                user = User(
+                    id=user_id,  # Use provided ID (should be UUID from extension)
+                    extension_user_id=user_id,
+                    browser_info=None,
+                    timezone=None,
+                    locale=None,
+                    experiment_groups=[],
+                )
+                self.db.add(user)
+                # Flush so the user row exists for FK constraints in the same transaction
+                await self.db.flush()
+                logger.info(
+                    "Created placeholder user for interaction",
+                    extra={"user_id": user_id, "action": "create_placeholder_user"},
+                )
+
             # Check for existing analytics record
             stmt = select(UserPostAnalytics).where(and_(UserPostAnalytics.user_id == user_id, UserPostAnalytics.post_id == post_id))
             result = await self.db.execute(stmt)
@@ -220,7 +382,15 @@ class AnalyticsService:
                     analytics.interaction_at = current_time
 
                 self.db.add(analytics)
-                logger.info(f"Created post analytics for user {user_id}, post {post_id}")
+                logger.info(
+                    f"Created post analytics for user {user_id[:8]}...",
+                    extra={
+                        "user_id": user_id,
+                        "post_id": post_id,
+                        "interaction_type": interaction_type,
+                        "action": "created_post_analytics",
+                    },
+                )
 
             await self.db.commit()
             await self.db.refresh(analytics)
@@ -228,7 +398,18 @@ class AnalyticsService:
 
         except Exception as e:
             await self.db.rollback()
-            logger.error(f"Failed to track post interaction for user {user_id}, post {post_id}: {e}")
+            logger.error(
+                f"Failed to track post interaction for user {user_id[:8]}...",
+                extra={
+                    "user_id": user_id,
+                    "post_id": post_id,
+                    "interaction_type": interaction_type,
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "action": "track_post_interaction",
+                },
+                exc_info=True,
+            )
             raise
 
     async def get_user_dashboard(self, user_id: str, date_from: datetime, date_to: datetime) -> Dict[str, Any]:
@@ -513,3 +694,6 @@ class AnalyticsService:
             metrics["avg_scroll_speed"] = sum(scroll_speeds) / len(scroll_speeds)
 
         return metrics
+
+    # NOTE: The request-based method above is the canonical API. The older positional
+    # variant has been removed to avoid signature conflicts with the endpoint code.

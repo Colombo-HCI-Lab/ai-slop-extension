@@ -2,7 +2,7 @@
 
 from typing import Dict, List, Optional, Any
 from datetime import datetime
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class AnalyticsEvent(BaseModel):
@@ -15,24 +15,25 @@ class AnalyticsEvent(BaseModel):
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Additional event metadata")
     client_timestamp: datetime = Field(..., description="Client-side timestamp", alias="clientTimestamp")
 
-    class Config:
-        populate_by_name = True  # Allow both field name and alias
-        allow_population_by_field_name = True  # Deprecated name kept for compatibility
+    model_config = {"populate_by_name": True}  # Allow both field name and alias
 
-    @validator("client_timestamp")
+    @field_validator("client_timestamp")
+    @classmethod
     def validate_timestamp(cls, v):
         """Ensure timestamp is not too far in the future."""
         # Ensure both datetimes are timezone-aware for comparison
         if v.tzinfo is None:
             # If naive, assume UTC
             from datetime import timezone
+
             v = v.replace(tzinfo=timezone.utc)
-        
+
         current_time = datetime.now(v.tzinfo)  # Use same timezone as input
-        
+
         if v > current_time:
             # Allow small clock differences (5 minutes)
             from datetime import timedelta
+
             max_future = current_time + timedelta(minutes=5)
             if v > max_future:
                 raise ValueError("Timestamp cannot be more than 5 minutes in the future")
@@ -80,7 +81,8 @@ class EventBatchRequest(BaseModel):
     user_id: Optional[str] = Field(None, description="User ID (optional)")
     events: List[AnalyticsEvent] = Field(..., description="List of events")
 
-    @validator("events")
+    @field_validator("events")
+    @classmethod
     def validate_batch_size(cls, v):
         """Ensure batch size is within limits."""
         if len(v) > 1000:

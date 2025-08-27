@@ -32,9 +32,7 @@ class PostResponse(BaseModel):
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
 
-    class Config:
-        orm_mode = True
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class PostsListResponse(BaseModel):
@@ -215,7 +213,7 @@ async def get_post(
         if not post:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Post with ID {post_id} not found")
 
-        return PostResponse.from_orm(post)
+        return PostResponse.model_validate(post)
 
     except HTTPException:
         raise
@@ -277,7 +275,7 @@ async def list_posts(
         total = len(count_result.scalars().all())
 
         return PostsListResponse(
-            posts=[PostResponse.from_orm(post) for post in posts],
+            posts=[PostResponse.model_validate(post) for post in posts],
             total=total,
             limit=limit,
             offset=offset,
@@ -324,7 +322,7 @@ async def update_post(
 
         logger.info("Post updated successfully", post_id=post_id, verdict=post.verdict, confidence=post.confidence)
 
-        return PostResponse.from_orm(post)
+        return PostResponse.model_validate(post)
 
     except HTTPException:
         raise

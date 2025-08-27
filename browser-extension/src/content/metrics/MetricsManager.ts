@@ -6,6 +6,7 @@ import { log, error } from '../../shared/logger';
 import { MetricsCollector } from './MetricsCollector';
 import { MetricsConfig, UserSession } from '../../shared/types';
 import { getUserId } from '../../shared/storage';
+import { initializeAnalyticsUser, endAnalyticsSession } from '../messaging';
 
 export class MetricsManager {
   private collector: MetricsCollector | null = null;
@@ -16,33 +17,60 @@ export class MetricsManager {
     batchSize: 25,
     flushInterval: 30000, // 30 seconds
     enableDebugLogging: false, // Will be overridden by environment
-    privacyMode: 'full' // Research mode: Full data collection
+    privacyMode: 'full', // Research mode: Full data collection
   };
 
   public async initialize(): Promise<void> {
     if (this.isInitialized) return;
 
     try {
-      // Get or create user session
-      const userId = await getUserId();
-      const sessionId = this.generateSessionId();
-      
+      // Get or create extension user ID
+      const extensionUserId = await getUserId();
+
+      // Initialize user + start session in backend (block until ready)
+      let userId = extensionUserId;
+      let sessionId = this.generateSessionId();
+      try {
+        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+        const locale = navigator.language || 'en-US';
+        const browserInfo = {
+          name: 'Chrome',
+          userAgent: navigator.userAgent,
+          platform: navigator.platform,
+          language: navigator.language,
+        } as const;
+
+        const res = await initializeAnalyticsUser({
+          extensionUserId: extensionUserId,
+          timezone: tz,
+          locale: locale,
+          browserInfo: browserInfo as unknown as Record<string, unknown>,
+        });
+        userId = res.user_id;
+        sessionId = res.session_id;
+      } catch (e) {
+        // Fallback to local-only session if backend init fails
+        console.debug('initializeAnalyticsUser failed; using local session', e);
+      }
+
       this.session = {
         userId,
         sessionId,
         startTime: Date.now(),
-        lastActivity: Date.now()
+        lastActivity: Date.now(),
       };
 
       // Initialize metrics collector with full data collection
       const config: MetricsConfig = {
         ...this.defaultConfig,
         enableDebugLogging: process.env.NODE_ENV === 'development',
-        privacyMode: 'full' as const // Research mode: Always full collection
+        privacyMode: 'full' as const, // Research mode: Always full collection
       };
 
       this.collector = new MetricsCollector(config);
       this.collector.setSession(userId, sessionId);
+
+      // Backend session already initialized above (or we fell back to local)
 
       // Track page load and session start
       this.trackEvent({
@@ -53,10 +81,10 @@ export class MetricsManager {
           userAgent: navigator.userAgent,
           viewport: {
             width: window.innerWidth,
-            height: window.innerHeight
+            height: window.innerHeight,
           },
-          timestamp: new Date().toISOString()
-        }
+          timestamp: new Date().toISOString(),
+        },
       });
 
       this.trackEvent({
@@ -64,19 +92,18 @@ export class MetricsManager {
         category: 'session',
         metadata: {
           sessionId,
-          userId
-        }
+          userId,
+        },
       });
 
       // Set up scroll tracking
       this.setupScrollTracking();
-      
+
       // Set up page lifecycle tracking
       this.setupPageLifecycle();
 
       this.isInitialized = true;
       log('MetricsManager initialized', { userId, sessionId });
-
     } catch (err) {
       error('Failed to initialize MetricsManager:', err);
     }
@@ -111,13 +138,17 @@ export class MetricsManager {
         postId,
         elementBounds: {
           width: postElement.getBoundingClientRect().width,
-          height: postElement.getBoundingClientRect().height
-        }
-      }
+          height: postElement.getBoundingClientRect().height,
+        },
+      },
     });
   }
 
-  public trackPostInteraction(postId: string, interactionType: string, metadata?: Record<string, unknown>): void {
+  public trackPostInteraction(
+    postId: string,
+    interactionType: string,
+    metadata?: Record<string, unknown>
+  ): void {
     this.trackEvent({
       type: 'post_interaction',
       category: 'interaction',
@@ -125,19 +156,22 @@ export class MetricsManager {
       metadata: {
         postId,
         interactionType,
-        ...metadata
-      }
+        ...metadata,
+      },
     });
   }
 
-  public trackIconInteraction(postId: string, interactionType: 'click' | 'hover' | 'visible'): void {
+  public trackIconInteraction(
+    postId: string,
+    interactionType: 'click' | 'hover' | 'visible'
+  ): void {
     this.trackEvent({
       type: `icon_${interactionType}`,
       category: 'interaction',
       metadata: {
         postId,
-        timestamp: Date.now()
-      }
+        timestamp: Date.now(),
+      },
     });
   }
 
@@ -147,12 +181,16 @@ export class MetricsManager {
       category: 'chat',
       metadata: {
         postId,
-        sessionId: this.session?.sessionId
-      }
+        sessionId: this.session?.sessionId,
+      },
     });
   }
 
-  public trackDetectionPerformance(postId: string, processingTimeMs: number, verdict: string): void {
+  public trackDetectionPerformance(
+    postId: string,
+    processingTimeMs: number,
+    verdict: string
+  ): void {
     this.trackEvent({
       type: 'detection_performance',
       category: 'performance',
@@ -160,9 +198,13 @@ export class MetricsManager {
       metadata: {
         postId,
         verdict,
-        processingTimeMs
-      }
+        processingTimeMs,
+      },
     });
+  }
+
+  public getSession(): UserSession | null {
+    return this.session;
   }
 
   public async destroy(): Promise<void> {
@@ -170,7 +212,7 @@ export class MetricsManager {
 
     if (this.session) {
       const sessionDuration = Date.now() - this.session.startTime;
-      
+
       this.trackEvent({
         type: 'session_end',
         category: 'session',
@@ -178,13 +220,20 @@ export class MetricsManager {
         metadata: {
           sessionId: this.session.sessionId,
           durationMs: sessionDuration,
-          endReason: 'page_unload'
-        }
+          endReason: 'page_unload',
+        },
       });
+
+      // Also tell backend to end the session (fire-and-forget)
+      endAnalyticsSession({
+        sessionId: this.session.sessionId,
+        durationSeconds: Math.round(sessionDuration / 1000),
+        endReason: 'page_unload',
+      }).catch(e => console.debug('endAnalyticsSession failed', e));
     }
 
     if (this.collector) {
-      await this.collector.flushEvents(); // Final flush
+      void this.collector.flushEvents(); // Final flush (do not block)
       this.collector.destroy();
     }
 
@@ -197,14 +246,14 @@ export class MetricsManager {
 
     const handleScroll = () => {
       if (!this.collector) return;
-      
+
       this.updateLastActivity();
-      
+
       if (!ticking) {
         requestAnimationFrame(() => {
           this.collector?.trackScrollBehavior({
             scrollY: window.scrollY,
-            timestamp: Date.now()
+            timestamp: Date.now(),
           });
           ticking = false;
         });
@@ -222,8 +271,8 @@ export class MetricsManager {
         type: document.hidden ? 'page_hidden' : 'page_visible',
         category: 'navigation',
         metadata: {
-          timestamp: Date.now()
-        }
+          timestamp: Date.now(),
+        },
       });
     });
 
@@ -235,9 +284,13 @@ export class MetricsManager {
     // Track user activity
     const activityEvents = ['click', 'keypress', 'mousemove'];
     activityEvents.forEach(eventType => {
-      document.addEventListener(eventType, () => {
-        this.updateLastActivity();
-      }, { passive: true });
+      document.addEventListener(
+        eventType,
+        () => {
+          this.updateLastActivity();
+        },
+        { passive: true }
+      );
     });
   }
 

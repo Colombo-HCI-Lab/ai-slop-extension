@@ -85,7 +85,12 @@ export async function requestAiSlop(body: {
   post_url?: string;
   has_videos?: boolean;
 }): Promise<ApiDetectionResponse> {
-  logger.log('POST', PROCESS_ENDPOINT, { post_id: body.post_id, images: body.image_urls.length, videos: body.video_urls.length, has_videos: body.has_videos });
+  logger.log('POST', PROCESS_ENDPOINT, {
+    post_id: body.post_id,
+    images: body.image_urls.length,
+    videos: body.video_urls.length,
+    has_videos: body.has_videos,
+  });
   return fetchJsonWithRetry<ApiDetectionResponse>(PROCESS_ENDPOINT, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -113,7 +118,7 @@ export async function getChatHistory(postId: string, userId: string): Promise<Ch
 }
 
 export async function sendMetricsBatch(
-  sessionId: string, 
+  sessionId: string,
   events: Array<{
     type: string;
     category: string;
@@ -121,18 +126,136 @@ export async function sendMetricsBatch(
     label?: string;
     metadata?: Record<string, unknown>;
     clientTimestamp: string;
-  }>
+  }>,
+  userId?: string
 ): Promise<void> {
   const url = `${API_BASE_URL}/analytics/events/batch`;
   const body = {
     session_id: sessionId,
-    events: events
+    user_id: userId,
+    events: events,
   };
-  
+
   logger.log('POST', url, { eventCount: events.length, sessionId });
-  await fetchJsonWithRetry<{ status: string }>(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+  await fetchJsonWithRetry<{ status: string }>(
+    url,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+    { retries: 3, backoffBaseMs: 500 }
+  );
+}
+
+// --- Additional Analytics endpoints ---
+
+export async function initializeUser(body: {
+  extension_user_id: string;
+  browser_info: Record<string, unknown>;
+  timezone: string;
+  locale: string;
+  client_ip?: string | null;
+}): Promise<{ user_id: string; session_id: string; experiment_groups: string[] }> {
+  const url = `${API_BASE_URL}/analytics/users/initialize`;
+  logger.log('POST', url, { extensionUserId: body.extension_user_id });
+  return fetchJsonWithRetry(
+    url,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+    { retries: 3, backoffBaseMs: 500 }
+  );
+}
+
+export async function endSession(body: {
+  session_id: string;
+  end_reason: string;
+  duration_seconds: number;
+}): Promise<{ status: string }> {
+  const url = `${API_BASE_URL}/analytics/sessions/end`;
+  logger.log('POST', url, { sessionId: body.session_id, reason: body.end_reason });
+  return fetchJsonWithRetry(
+    url,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+    { retries: 3, backoffBaseMs: 500 }
+  );
+}
+
+export async function trackPostInteraction(
+  postId: string,
+  body: {
+    user_id: string;
+    interaction_type: string;
+    backend_response_time_ms?: number;
+    time_to_interaction_ms?: number;
+    reading_time_ms?: number;
+    scroll_depth_percentage?: number;
+    viewport_time_ms?: number;
+  }
+): Promise<{ status: string; analytics_id: string }> {
+  const url = `${API_BASE_URL}/analytics/posts/${encodeURIComponent(postId)}/interactions`;
+  logger.log('POST', url, { postId, interaction: body.interaction_type });
+  return fetchJsonWithRetry(
+    url,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+    { retries: 3, backoffBaseMs: 500 }
+  );
+}
+
+export async function recordPerformanceMetric(body: {
+  metric_name: string;
+  metric_value: number;
+  metric_unit?: string;
+  endpoint?: string;
+  metadata?: Record<string, unknown>;
+}): Promise<{ status: string }> {
+  const url = `${API_BASE_URL}/analytics/performance/metrics`;
+  logger.log('POST', url, { name: body.metric_name, value: body.metric_value });
+  return fetchJsonWithRetry(
+    url,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+    { retries: 3, backoffBaseMs: 500 }
+  );
+}
+
+export async function createOrUpdateChatSession(body: {
+  session_id: string; // chat session token
+  user_post_analytics_id: string;
+  duration_ms: number;
+  message_count: number;
+  user_message_count: number;
+  assistant_message_count: number;
+  suggested_question_clicks: number;
+  satisfaction_rating?: number;
+  ended_by?: string;
+}): Promise<{ status: string; session_id: string }> {
+  const url = `${API_BASE_URL}/analytics/chat/sessions`;
+  logger.log('POST', url, {
+    chatSessionId: body.session_id,
+    analyticsId: body.user_post_analytics_id,
   });
+  return fetchJsonWithRetry(
+    url,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+    { retries: 3, backoffBaseMs: 500 }
+  );
 }

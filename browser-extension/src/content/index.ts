@@ -17,7 +17,7 @@ if (!__DEV__) {
   try {
     // Initialize metrics collection first
     await metricsManager.initialize();
-    
+
     // Then initialize the main functionality
     new FacebookPostObserver();
     new FloatingChatWindow();

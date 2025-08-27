@@ -29,20 +29,20 @@ export interface UserDataExport {
 export class PrivacyManager {
   private settings: PrivacySettings;
   private consentStatus: ConsentStatus;
-  
+
   private readonly defaultSettings: PrivacySettings = {
     privacyMode: 'full',
     dataCollection: true,
     errorReporting: true,
     performanceTracking: true,
-    chatHistory: true
+    chatHistory: true,
   };
 
   constructor() {
     this.settings = this.defaultSettings;
     this.consentStatus = {
       hasConsent: true, // Pre-consented research users
-      gdprApplies: false
+      gdprApplies: false,
     };
   }
 
@@ -50,19 +50,18 @@ export class PrivacyManager {
     try {
       // Load saved privacy settings
       await this.loadSettings();
-      
+
       // Research mode: All users have pre-consented to full data collection
       this.consentStatus.hasConsent = true;
       this.consentStatus.consentDate = new Date();
       this.consentStatus.consentVersion = 'research-v1.0';
       this.consentStatus.gdprApplies = false; // Research exemption
-      
+
       log('PrivacyManager initialized', {
         gdprApplies: this.consentStatus.gdprApplies,
         hasConsent: this.consentStatus.hasConsent,
-        privacyMode: this.settings.privacyMode
+        privacyMode: this.settings.privacyMode,
       });
-      
     } catch (err) {
       error('Failed to initialize PrivacyManager:', err);
       // Even on error, maintain research mode settings
@@ -95,12 +94,12 @@ export class PrivacyManager {
     try {
       // In a real implementation, this would call the backend
       log('Exporting user data for GDPR request', { userId });
-      
+
       return {
         userData: { userId, settings: this.settings },
         events: [], // Would be populated from backend
         interactions: [], // Would be populated from backend
-        exportedAt: new Date().toISOString()
+        exportedAt: new Date().toISOString(),
       };
     } catch (err) {
       error('Failed to export user data:', err);
@@ -111,25 +110,25 @@ export class PrivacyManager {
   public async deleteUserData(userId: string): Promise<void> {
     try {
       log('Deleting user data for GDPR request', { userId });
-      
+
       // Clear local storage
       await chrome.storage.local.remove([
         'ai-slop-user-id',
         'ai-slop-privacy-settings',
         'ai-slop-consent-status',
-        'ai-slop-metrics'
+        'ai-slop-metrics',
       ]);
-      
+
       // In a real implementation, this would also call backend
       // await this.callBackendDeleteUser(userId);
-      
+
       // Reset privacy manager
       this.settings = this.defaultSettings;
       this.consentStatus = {
         hasConsent: false,
-        gdprApplies: this.isGDPRRegion()
+        gdprApplies: this.isGDPRRegion(),
       };
-      
+
       log('User data deletion completed');
     } catch (err) {
       error('Failed to delete user data:', err);
@@ -158,7 +157,7 @@ export class PrivacyManager {
   private async saveSettings(): Promise<void> {
     try {
       await chrome.storage.local.set({
-        'ai-slop-privacy-settings': this.settings
+        'ai-slop-privacy-settings': this.settings,
       });
     } catch (err) {
       error('Failed to save privacy settings:', err);
@@ -174,14 +173,14 @@ export class PrivacyManager {
           hasConsent: saved.hasConsent,
           consentDate: saved.consentDate ? new Date(saved.consentDate) : undefined,
           consentVersion: saved.consentVersion,
-          gdprApplies: true
+          gdprApplies: true,
         };
-        
+
         // Check if consent is still valid (12 months)
         if (this.consentStatus.consentDate) {
           const consentAge = Date.now() - this.consentStatus.consentDate.getTime();
           const maxAge = 365 * 24 * 60 * 60 * 1000; // 1 year in milliseconds
-          
+
           if (consentAge > maxAge) {
             log('Consent has expired, requesting new consent');
             this.consentStatus.hasConsent = false;
@@ -200,8 +199,8 @@ export class PrivacyManager {
           hasConsent: this.consentStatus.hasConsent,
           consentDate: this.consentStatus.consentDate?.toISOString(),
           consentVersion: this.consentStatus.consentVersion,
-          gdprApplies: this.consentStatus.gdprApplies
-        }
+          gdprApplies: this.consentStatus.gdprApplies,
+        },
       });
     } catch (err) {
       error('Failed to save consent status:', err);
@@ -212,7 +211,7 @@ export class PrivacyManager {
     // In a real implementation, this would show a consent banner/modal
     // For now, we'll log and assume consent for development
     log('GDPR consent required - showing consent banner');
-    
+
     // Simulate user giving consent for development
     if (process.env.NODE_ENV === 'development') {
       await this.giveConsent();
@@ -230,20 +229,45 @@ export class PrivacyManager {
   private isGDPRRegion(): boolean {
     try {
       const gdprCountries = [
-        'AT', 'BE', 'BG', 'CY', 'CZ', 'DE', 'DK', 'EE', 'ES', 'FI',
-        'FR', 'GR', 'HR', 'HU', 'IE', 'IT', 'LT', 'LU', 'LV', 'MT',
-        'NL', 'PL', 'PT', 'RO', 'SE', 'SI', 'SK'
+        'AT',
+        'BE',
+        'BG',
+        'CY',
+        'CZ',
+        'DE',
+        'DK',
+        'EE',
+        'ES',
+        'FI',
+        'FR',
+        'GR',
+        'HR',
+        'HU',
+        'IE',
+        'IT',
+        'LT',
+        'LU',
+        'LV',
+        'MT',
+        'NL',
+        'PL',
+        'PT',
+        'RO',
+        'SE',
+        'SI',
+        'SK',
       ];
-      
+
       // Check timezone for rough location estimation
       const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
       const language = navigator.language;
-      
+
       // Simple heuristics - in production you'd use proper geolocation
-      return gdprCountries.some(country => 
-        timezone.includes(country) || 
-        language.toUpperCase().includes(country) ||
-        timezone.includes('Europe')
+      return gdprCountries.some(
+        country =>
+          timezone.includes(country) ||
+          language.toUpperCase().includes(country) ||
+          timezone.includes('Europe')
       );
     } catch (error) {
       log('Could not determine GDPR region:', error);

@@ -15,7 +15,7 @@ export class MetricsCollector {
     totalDistance: 0,
     pauseCount: 0,
     primaryDirection: 'down',
-    averageSpeed: 0
+    averageSpeed: 0,
   };
   private performanceObserver: PerformanceObserver | null = null;
   private config: MetricsConfig;
@@ -40,17 +40,14 @@ export class MetricsCollector {
   private initializeObservers(): void {
     try {
       // Initialize intersection observer for post visibility
-      this.postVisibilityObserver = new IntersectionObserver(
-        this.handlePostVisibility.bind(this),
-        {
-          threshold: [0, 0.25, 0.5, 0.75, 1.0],
-          rootMargin: '50px'
-        }
-      );
+      this.postVisibilityObserver = new IntersectionObserver(this.handlePostVisibility.bind(this), {
+        threshold: [0, 0.25, 0.5, 0.75, 1.0],
+        rootMargin: '50px',
+      });
 
       // Performance observer for API timings
       if ('PerformanceObserver' in window) {
-        this.performanceObserver = new PerformanceObserver((list) => {
+        this.performanceObserver = new PerformanceObserver(list => {
           for (const entry of list.getEntries()) {
             if (entry.entryType === 'measure' && entry.name.startsWith('api-')) {
               this.trackPerformance(entry.name, entry.duration);
@@ -76,7 +73,7 @@ export class MetricsCollector {
       if (entry.isIntersecting) {
         // Post entered viewport
         this.postViewTimes.set(postId, currentTime);
-        
+
         this.addEvent({
           type: 'post_viewport_enter',
           category: 'interaction',
@@ -86,10 +83,10 @@ export class MetricsCollector {
             intersectionRatio: entry.intersectionRatio,
             boundingRect: {
               width: entry.boundingClientRect.width,
-              height: entry.boundingClientRect.height
-            }
+              height: entry.boundingClientRect.height,
+            },
           },
-          clientTimestamp: new Date().toISOString()
+          clientTimestamp: new Date().toISOString(),
         });
       } else {
         // Post left viewport
@@ -97,16 +94,16 @@ export class MetricsCollector {
         if (startTime) {
           const viewportTime = currentTime - startTime;
           this.postViewTimes.delete(postId);
-          
+
           this.addEvent({
             type: 'post_viewport_exit',
             category: 'interaction',
             value: viewportTime,
             metadata: {
               postId,
-              viewportTimeMs: viewportTime
+              viewportTimeMs: viewportTime,
             },
-            clientTimestamp: new Date().toISOString()
+            clientTimestamp: new Date().toISOString(),
           });
         }
       }
@@ -119,59 +116,63 @@ export class MetricsCollector {
     }
   }
 
-  public trackScrollBehavior = this.debounce((scrollData: { scrollY: number; timestamp: number }): void => {
-    const { scrollY, timestamp } = scrollData;
-    
-    if (this.lastScrollTime > 0) {
-      const timeDiff = timestamp - this.lastScrollTime;
-      const distanceDiff = Math.abs(scrollY - this.lastScrollY);
-      
-      if (timeDiff > 0) {
-        const speed = distanceDiff / timeDiff; // pixels per millisecond
-        this.scrollSpeeds.push(speed);
-        
-        // Keep only recent speeds (last 10)
-        if (this.scrollSpeeds.length > 10) {
-          this.scrollSpeeds.shift();
-        }
-        
-        this.scrollMetrics.totalDistance += distanceDiff;
-        if (scrollY > this.lastScrollY) {
-          this.scrollMetrics.primaryDirection = 'down';
-        } else if (scrollY < this.lastScrollY) {
-          this.scrollMetrics.primaryDirection = 'up';
+  public trackScrollBehavior = this.debounce(
+    (scrollData: { scrollY: number; timestamp: number }): void => {
+      const { scrollY, timestamp } = scrollData;
+
+      if (this.lastScrollTime > 0) {
+        const timeDiff = timestamp - this.lastScrollTime;
+        const distanceDiff = Math.abs(scrollY - this.lastScrollY);
+
+        if (timeDiff > 0) {
+          const speed = distanceDiff / timeDiff; // pixels per millisecond
+          this.scrollSpeeds.push(speed);
+
+          // Keep only recent speeds (last 10)
+          if (this.scrollSpeeds.length > 10) {
+            this.scrollSpeeds.shift();
+          }
+
+          this.scrollMetrics.totalDistance += distanceDiff;
+          if (scrollY > this.lastScrollY) {
+            this.scrollMetrics.primaryDirection = 'down';
+          } else if (scrollY < this.lastScrollY) {
+            this.scrollMetrics.primaryDirection = 'up';
+          }
         }
       }
-    }
-    
-    this.lastScrollTime = timestamp;
-    this.lastScrollY = scrollY;
-    
-    // Report if we have enough data
-    if (this.scrollSpeeds.length >= 5) {
-      const avgSpeed = this.scrollSpeeds.reduce((sum, s) => sum + s, 0) / this.scrollSpeeds.length;
-      this.scrollMetrics.averageSpeed = avgSpeed;
-      
-      this.addEvent({
-        type: 'scroll_behavior',
-        category: 'interaction',
-        value: avgSpeed,
-        metadata: {
-          totalDistance: this.scrollMetrics.totalDistance,
-          direction: this.scrollMetrics.primaryDirection,
-          speedSamples: this.scrollSpeeds.length
-        },
-        clientTimestamp: new Date().toISOString()
-      });
-    }
-  }, 200);
+
+      this.lastScrollTime = timestamp;
+      this.lastScrollY = scrollY;
+
+      // Report if we have enough data
+      if (this.scrollSpeeds.length >= 5) {
+        const avgSpeed =
+          this.scrollSpeeds.reduce((sum, s) => sum + s, 0) / this.scrollSpeeds.length;
+        this.scrollMetrics.averageSpeed = avgSpeed;
+
+        this.addEvent({
+          type: 'scroll_behavior',
+          category: 'interaction',
+          value: avgSpeed,
+          metadata: {
+            totalDistance: this.scrollMetrics.totalDistance,
+            direction: this.scrollMetrics.primaryDirection,
+            speedSamples: this.scrollSpeeds.length,
+          },
+          clientTimestamp: new Date().toISOString(),
+        });
+      }
+    },
+    200
+  );
 
   public trackEvent(event: Omit<AnalyticsEvent, 'clientTimestamp'>): void {
     const fullEvent: AnalyticsEvent = {
       ...event,
-      clientTimestamp: new Date().toISOString()
+      clientTimestamp: new Date().toISOString(),
     };
-    
+
     this.addEvent(fullEvent);
   }
 
@@ -195,18 +196,16 @@ export class MetricsCollector {
     const events = [...this.eventBuffer];
     this.eventBuffer = [];
 
-    try {
-      await sendMetricsBatch({
-        sessionId: this.sessionId,
-        events
+    // Fire-and-forget to background; handle failure by re-queuing next cycle
+    sendMetricsBatch({ sessionId: this.sessionId, userId: this.userId, events })
+      .then(() => {
+        log(`Flushed ${events.length} analytics events`);
+      })
+      .catch(err => {
+        error('Failed to send metrics batch:', err);
+        // Re-add failed events to buffer (best-effort)
+        this.eventBuffer.unshift(...events.slice(0, this.config.batchSize));
       });
-      
-      log(`Flushed ${events.length} analytics events`);
-    } catch (err) {
-      error('Failed to send metrics batch:', err);
-      // Re-add failed events to buffer with exponential backoff
-      this.eventBuffer.unshift(...events.slice(0, this.config.batchSize));
-    }
   }
 
   private trackPerformance(name: string, duration: number): void {
@@ -217,9 +216,9 @@ export class MetricsCollector {
       label: name,
       metadata: {
         endpoint: name.replace('api-', ''),
-        durationMs: duration
+        durationMs: duration,
       },
-      clientTimestamp: new Date().toISOString()
+      clientTimestamp: new Date().toISOString(),
     });
   }
 
@@ -237,7 +236,7 @@ export class MetricsCollector {
     if (this.flushInterval) {
       clearInterval(this.flushInterval);
     }
-    
+
     this.flushInterval = window.setInterval(() => {
       this.flushEvents();
     }, this.config.flushInterval);
@@ -247,25 +246,25 @@ export class MetricsCollector {
     if (this.postVisibilityObserver) {
       this.postVisibilityObserver.disconnect();
     }
-    
+
     if (this.performanceObserver) {
       this.performanceObserver.disconnect();
     }
-    
+
     if (this.flushInterval) {
       clearInterval(this.flushInterval);
     }
-    
+
     // Final flush
     this.flushEvents();
-    
+
     log('MetricsCollector destroyed');
   }
 
   // Utility functions
   private debounce<T extends (...args: any[]) => void>(func: T, wait: number): T {
     let timeout: number | undefined;
-    
+
     return ((...args: Parameters<T>) => {
       clearTimeout(timeout);
       timeout = window.setTimeout(() => func.apply(this, args), wait);
@@ -274,12 +273,12 @@ export class MetricsCollector {
 
   private throttle<T extends (...args: any[]) => void>(func: T, limit: number): T {
     let inThrottle: boolean;
-    
+
     return ((...args: Parameters<T>) => {
       if (!inThrottle) {
         func.apply(this, args);
         inThrottle = true;
-        setTimeout(() => inThrottle = false, limit);
+        setTimeout(() => (inThrottle = false), limit);
       }
     }) as T;
   }

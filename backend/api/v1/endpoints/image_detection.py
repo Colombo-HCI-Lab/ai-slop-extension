@@ -46,13 +46,12 @@ def _validate_image_file(file: UploadFile) -> None:
 
 
 @router.get("/image/models", response_model=ImageModelsResponse)
-async def get_available_models():
+async def get_available_models(service: ImageDetectionServiceProtocol = Depends(get_image_detection_service)):
     """
     Get list of available image detection models.
     """
 
     try:
-        service = ImageDetectionService.get_instance()
         image_models = service.get_available_models()
 
         return ImageModelsResponse(
