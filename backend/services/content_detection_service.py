@@ -356,7 +356,7 @@ class ContentDetectionService:
         video_conf: Optional[float],
     ) -> Tuple[str, float]:
         """
-        Calculate overall verdict using equal-weighted average of available modalities.
+        Calculate overall verdict using the modality with highest AI probability.
 
         Args:
             text_result: Text analysis result
@@ -368,47 +368,47 @@ class ContentDetectionService:
         Returns:
             Tuple of (verdict, confidence)
         """
-        # Gather available probabilities (only modalities present) and confidences for reporting
-        probs: List[float] = []
-        confs: List[float] = []
+        # Collect candidates as (modality, probability, confidence)
+        candidates: List[Tuple[str, float, Optional[float]]] = []
 
         if hasattr(text_result, "text_ai_probability") and text_result.text_ai_probability is not None:
-            probs.append(float(text_result.text_ai_probability))
-            # Use text confidence if available, otherwise legacy overall confidence
-            confs.append(float(getattr(text_result, "text_confidence", None) or text_result.confidence))
+            candidates.append(
+                (
+                    "text",
+                    float(text_result.text_ai_probability),
+                    float(getattr(text_result, "text_confidence", None) or text_result.confidence),
+                )
+            )
 
         if image_ai_prob is not None:
-            probs.append(float(image_ai_prob))
-            if image_conf is not None:
-                confs.append(float(image_conf))
+            candidates.append(("image", float(image_ai_prob), float(image_conf) if image_conf is not None else None))
 
         if video_ai_prob is not None:
-            probs.append(float(video_ai_prob))
-            if video_conf is not None:
-                confs.append(float(video_conf))
+            candidates.append(("video", float(video_ai_prob), float(video_conf) if video_conf is not None else None))
 
         # If no probabilities available, fall back to text-only verdict
-        if not probs:
+        if not candidates:
             return text_result.verdict, text_result.confidence
 
-        # Equal-weighted average across available modalities, ignoring confidence for the decision
-        avg_prob = sum(probs) / len(probs)
+        # Choose the modality with the highest AI probability
+        top_modality, top_prob, top_conf = max(candidates, key=lambda x: x[1])
 
-        # A simple confidence to return; not used in fusion
-        overall_conf = sum(confs) / len(confs) if confs else text_result.confidence
+        # Confidence to return: use the selected modality's confidence if available, else fall back to text
+        overall_conf = top_conf if top_conf is not None else text_result.confidence
 
-        # Determine verdict from average probability
-        if avg_prob >= settings.fusion_ai_threshold:
+        # Determine verdict from highest probability
+        if top_prob >= settings.fusion_ai_threshold:
             verdict = "ai_slop"
-        elif avg_prob <= settings.fusion_human_threshold:
+        elif top_prob <= settings.fusion_human_threshold:
             verdict = "human_content"
         else:
             verdict = "uncertain"
 
         logger.debug(
-            "Calculated equal-weight verdict",
-            modality_count=len(probs),
-            average_probability=round(avg_prob, 3),
+            "Calculated max-probability verdict",
+            considered_modalities=len(candidates),
+            top_modality=top_modality,
+            top_probability=round(top_prob, 3),
             returned_confidence=round(overall_conf, 3),
             verdict=verdict,
         )
