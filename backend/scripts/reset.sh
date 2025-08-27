@@ -15,10 +15,6 @@ echo "🛑 Killing existing backend processes..."
 echo "🗄️ Resetting database schema..."
 ./scripts/reset-schema.sh
 
-# Clean up posts storage
-echo "🧹 Cleaning up posts storage..."
-./scripts/clear-bucket.sh
-
 # Remove tmp data
 rm -rf tmp
 

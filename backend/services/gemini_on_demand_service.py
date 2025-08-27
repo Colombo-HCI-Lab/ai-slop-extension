@@ -3,7 +3,6 @@ from typing import List, Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from services.gcs_storage_service import GCSStorageService
 from services.gemini_recovery_service import gemini_recovery_service
 from utils.logging import get_logger
 
@@ -51,9 +50,7 @@ class GeminiOnDemandService:
                 mime_type = self._get_mime_type_from_media_type(media_type)
                 display_name = f"{media_type}_{post_id}_{hash(media_url) % 10000}"
 
-                gemini_uri = await gemini_recovery_service._upload_to_gemini_from_storage(
-                    storage_path, mime_type, display_name, GCSStorageService()
-                )
+                gemini_uri = await gemini_recovery_service._upload_to_gemini_from_storage(storage_path, mime_type, display_name)
 
                 if gemini_uri:
                     # Update database with new Gemini URI

@@ -27,6 +27,12 @@ uv venv --python 3.10 && uv sync
 uv run python -m uvicorn main:app --reload --port 4000
 ```
 
+### Storage
+- Temporary media files are saved to a local directory specified by `TMP_DIR`.
+- Local development defaults to `tmp/` under `backend/` (configurable via `.env`).
+- Deployed environments set `TMP_DIR=/ai-slop-extension/tmp`.
+- No Google Cloud Storage or gcsfuse is used.
+
 ## Features
 
 - **Multi-format Detection** - Text, images, and videos

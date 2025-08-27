@@ -46,7 +46,7 @@ class Settings(BaseSettings):
 
     # Server settings
     host: str = "0.0.0.0"
-    port: int = 4000
+    port: int = Field(default=4000, env="PORT")  # Read from PORT env var, default to 4000 for local dev
     debug: bool = True  # Enable debug mode to show Swagger docs by default
 
     # File upload settings
@@ -58,16 +58,14 @@ class Settings(BaseSettings):
     max_image_size: int = 10 * 1024 * 1024  # 10MB for images
     max_batch_size: int = 10  # Maximum images in batch request
 
-    # Directory settings (for local processing only)
+    # Directory for temporary media storage
+    # Default to local relative path; deployment can override via TMP_DIR
     tmp_dir: Path = Field(default_factory=lambda: Path("tmp"))
 
-    # Google Cloud Storage settings (required for media storage)
-    gcs_bucket_name: str = ""  # GCS bucket for media storage (required)
-    gcs_project_id: Optional[str] = None  # Auto-detect if None
-    gcs_credentials_path: Optional[str] = None  # Service account key file path
+    # Google Cloud Storage settings removed; storage is via local TMP_DIR backed by GCS Fuse
 
     # Video Model settings
-    default_model: str = "slowfast_r50"
+    default_model: str = "x3d_m"
     available_models: List[str] = ["slowfast_r50", "slowfast_r101", "x3d_m"]
     model_cache_size: int = 2  # Number of models to keep in memory
     device: Optional[str] = None  # Auto-detect if None
@@ -105,8 +103,8 @@ class Settings(BaseSettings):
 
     # Database connection settings
     database_echo: bool = False
-    database_pool_size: int = 5
-    database_max_overflow: int = 10
+    database_pool_size: int = 20
+    database_max_overflow: int = 30
     database_pool_timeout: float = 30.0
     database_pool_recycle: int = 3600
 
@@ -126,7 +124,7 @@ class Settings(BaseSettings):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-        # Ensure directories exist
+        # Ensure temporary directory exists
         self.tmp_dir.mkdir(parents=True, exist_ok=True)
 
         # Auto-detect device if not specified or set to "auto"

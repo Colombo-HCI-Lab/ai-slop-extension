@@ -104,11 +104,15 @@ export async function sendChat(body: {
   user_id: string;
 }): Promise<ChatResponse> {
   logger.log('POST', CHAT_ENDPOINT, { post_id: body.post_id });
-  return fetchJsonWithRetry<ChatResponse>(CHAT_ENDPOINT, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  return fetchJsonWithRetry<ChatResponse>(
+    CHAT_ENDPOINT,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+    { timeoutMs: 35000, retries: 2, backoffBaseMs: 400 }
+  );
 }
 
 export async function getChatHistory(postId: string, userId: string): Promise<ChatHistoryResponse> {

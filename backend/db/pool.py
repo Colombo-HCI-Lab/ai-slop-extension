@@ -67,11 +67,7 @@ class DatabasePool:
             )
 
             cls._logger.info(
-                "Database pool created successfully",
-                pool_size=pool_size,
-                max_overflow=max_overflow,
-                pool_timeout=pool_timeout,
-                database_url=settings.database_url.split("@")[1],  # Log without credentials
+                f"Database pool created successfully - pool_size={pool_size}, max_overflow={max_overflow}, pool_timeout={pool_timeout}"
             )
 
         except Exception as e:

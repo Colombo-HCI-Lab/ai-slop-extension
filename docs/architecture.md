@@ -61,7 +61,9 @@ AI Slop Detection is a distributed system for detecting AI-generated content on 
 
 ### Infrastructure
 - **Production**: Google Cloud Run
-- **Storage**: Google Cloud Storage
+- **Storage**: Ephemeral local filesystem via `TMP_DIR` (no cloud bucket)
+  - Local dev: saves under a relative `tmp/` directory
+  - Deployed: saves under `/ai-slop-extension/tmp`
 - **Database**: Cloud SQL (Production), Local PostgreSQL (Development)
 - **CI/CD**: Google Cloud Build
 

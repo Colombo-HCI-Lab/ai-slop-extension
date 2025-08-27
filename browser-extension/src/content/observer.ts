@@ -1178,8 +1178,8 @@ export class FacebookPostObserver {
 
     // Find the best position for consistent icon placement
     // Strategy: Always try to position relative to the post element itself for consistency
-    let targetElement: HTMLElement = postElement;
-    let injectionMethod = 'Direct post positioning';
+    const targetElement: HTMLElement = postElement;
+    const injectionMethod = 'Direct post positioning';
 
     // Ensure the post element can contain an absolutely positioned child
     const currentPosition = getComputedStyle(postElement).position;
@@ -1208,7 +1208,7 @@ export class FacebookPostObserver {
             container.appendChild(iconContainer);
             log(`[AI-Slop] ✅ Icon injected using fallback container`);
             break;
-          } catch (fallbackError) {
+          } catch {
             continue;
           }
         }

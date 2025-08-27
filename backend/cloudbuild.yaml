@@ -6,22 +6,19 @@
 # Prerequisites:
 # - Enable Cloud Build, Cloud Run, and Container Registry APIs
 # - Set up Cloud SQL instance (PostgreSQL) for database
-# - Create GCS bucket for media storage
 # - Generate Gemini API key
-# - Store GCS service account key in Secret Manager as 'gcs-service-account-key'
-# - Grant Cloud Build service account access to Secret Manager
+# - Grant Cloud Build service account access to Secret Manager (if using secrets)
 #
 # Usage:
 # gcloud builds submit --config cloudbuild.yaml \
-#   --substitutions _GEMINI_API_KEY="your-api-key",_GCS_BUCKET_NAME="your-bucket",_DB_USER="appuser",_DB_PASSWORD="password",_DB_HOST="/cloudsql/PROJECT:REGION:INSTANCE"
+#   --substitutions _GEMINI_API_KEY="your-api-key",_DB_USER="appuser",_DB_PASSWORD="password",_DB_HOST="/cloudsql/PROJECT:REGION:INSTANCE"
 #
 # For development deployment:
 # gcloud builds submit --config cloudbuild.yaml \
-#   --substitutions _DEBUG="true",_MEMORY="4Gi",_CPU="2",_GEMINI_API_KEY="key",_GCS_BUCKET_NAME="bucket",_DB_USER="user",_DB_PASSWORD="pass",_DB_HOST="host"
+#   --substitutions _DEBUG="true",_MEMORY="4Gi",_CPU="2",_GEMINI_API_KEY="key",_DB_USER="user",_DB_PASSWORD="pass",_DB_HOST="host"
 #
 # Required substitution variables:
 # - _GEMINI_API_KEY: Google Gemini API key for chat functionality
-# - _GCS_BUCKET_NAME: Google Cloud Storage bucket name for media storage  
 # - _DB_USER: Database username
 # - _DB_PASSWORD: Database password
 # - _DB_HOST: Database host (use /cloudsql/PROJECT:REGION:INSTANCE for Cloud SQL)
@@ -37,51 +34,17 @@ steps:
     id: 'pull-cache'
     waitFor: ['-']  # Start immediately
 
-  # Setup GCS credentials from Secret Manager (runs in parallel with cache pull)
-  - name: 'gcr.io/cloud-builders/gcloud'
-    entrypoint: 'bash'
-    args:
-    - '-c'
-    - |
-      echo "$$GCS_SERVICE_ACCOUNT_KEY" > /workspace/gcs-key.json
-      echo "GCS credentials written to /workspace/gcs-key.json"
-    secretEnv: ['GCS_SERVICE_ACCOUNT_KEY']
-    id: 'setup-gcs-credentials'
-    waitFor: ['-']  # Start immediately
-
-  # Copy credentials to backend directory for Docker build
-  - name: 'gcr.io/cloud-builders/gcloud'
-    entrypoint: 'bash'
-    args:
-    - '-c'
-    - |
-      cp /workspace/gcs-key.json ./backend/gcs-key.json
-      echo "GCS credentials copied to backend directory"
-    id: 'copy-credentials'
-    waitFor: ['setup-gcs-credentials']  # Only wait for credentials, not cache
-
   # Build backend Docker image (waits for both cache and credentials)
   - name: 'gcr.io/cloud-builders/docker'
     args: [ 'build', '--cache-from', 'gcr.io/$PROJECT_ID/ai-slop-backend:latest', '-t', 'gcr.io/$PROJECT_ID/ai-slop-backend:latest', './backend' ]
     id: 'build-backend'
-    waitFor: ['copy-credentials', 'pull-cache']  # Wait for both cache and credentials
+    waitFor: ['pull-cache']  # Wait for cache pull
 
   # Push backend image to Container Registry
   - name: 'gcr.io/cloud-builders/docker'
     args: [ 'push', 'gcr.io/$PROJECT_ID/ai-slop-backend:latest' ]
     id: 'push-backend'
     waitFor: [ 'build-backend' ]
-
-  # Clean up credentials from workspace (runs in parallel with deployment)
-  - name: 'gcr.io/cloud-builders/gcloud'
-    entrypoint: 'bash'
-    args:
-    - '-c'
-    - |
-      rm -f /workspace/gcs-key.json ./backend/gcs-key.json
-      echo "Credentials cleaned up from workspace"
-    id: 'cleanup-credentials'
-    waitFor: ['push-backend']  # Can start as soon as push begins
 
   # Deploy backend to Cloud Run (only waits for push, not cleanup)
   - name: 'gcr.io/cloud-builders/gcloud'
@@ -99,7 +62,7 @@ steps:
       - '--port'
       - '8000'
       - '--set-env-vars'
-      - 'DEBUG=${_DEBUG},DEVICE=${_DEVICE},DEFAULT_MODEL=${_DEFAULT_MODEL},LOG_LEVEL=${_LOG_LEVEL},GEMINI_API_KEY=${_GEMINI_API_KEY},GCS_BUCKET_NAME=${_GCS_BUCKET_NAME},GCS_PROJECT_ID=$PROJECT_ID,GCS_CREDENTIALS_PATH=/app/gcs-key.json,DB_NAME=${_DB_NAME},DB_USER=${_DB_USER},DB_PASSWORD=${_DB_PASSWORD},DB_HOST=${_DB_HOST},DB_PORT=${_DB_PORT}'
+      - 'DEBUG=${_DEBUG},DEVICE=${_DEVICE},DEFAULT_MODEL=${_DEFAULT_MODEL},LOG_LEVEL=${_LOG_LEVEL},GEMINI_API_KEY=${_GEMINI_API_KEY},DB_NAME=${_DB_NAME},DB_USER=${_DB_USER},DB_PASSWORD=${_DB_PASSWORD},DB_HOST=${_DB_HOST},DB_PORT=${_DB_PORT}'
       - '--memory'
       - '$_MEMORY'
       - '--cpu'
@@ -115,12 +78,6 @@ steps:
 
 # Set timeout for the entire build
 timeout: 3600s
-
-# Available secrets from Secret Manager
-availableSecrets:
-  secretManager:
-  - versionName: projects/colombo-hci-lab/secrets/gcs-service-account-key/versions/latest
-    env: 'GCS_SERVICE_ACCOUNT_KEY'
 
 # Configure build options
 options:
@@ -138,10 +95,9 @@ substitutions:
   _CPU: '4'
   _MAX_INSTANCES: '1'
   _MIN_INSTANCES: '0'
-  _TIMEOUT: '900s'
+  _TIMEOUT: '1800s'
   # Required environment variables (must be provided during build)
   _GEMINI_API_KEY: ''   # Set via gcloud builds submit --substitutions
-  _GCS_BUCKET_NAME: ''  # Set via gcloud builds submit --substitutions
   # Database connection components
   _DB_NAME: 'ai_slop_extension'  # Database name
   _DB_USER: ''          # Database user (set via substitutions)

@@ -5,7 +5,7 @@ Prevents double media processing across services by tracking media state.
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Optional, Set
+from typing import Any, Dict, Optional, Set
 
 from utils.logging import get_logger
 
@@ -24,6 +24,12 @@ class MediaProcessingRecord:
     gemini_uri: Optional[str] = None
     processing_stage: str = "pending"  # pending, downloaded, uploaded, analyzed
     content_hash: Optional[str] = None
+    # Detection results
+    detection_result: Optional[Dict[str, Any]] = None
+    ai_probability: Optional[float] = None
+    confidence: Optional[float] = None
+    model_used: Optional[str] = None
+    detection_error: Optional[str] = None
 
 
 class MediaProcessingRegistry:
@@ -102,14 +108,87 @@ class MediaProcessingRegistry:
         media_key = f"{post_id}:{media_url}"
         return self._registry.get(media_key)
 
+    def update_detection_results(
+        self,
+        media_key: str,
+        ai_probability: float,
+        confidence: float,
+        model_used: str,
+        detection_result: Optional[Dict[str, Any]] = None,
+        error: Optional[str] = None,
+    ) -> None:
+        """Update media detection results."""
+        if media_key in self._registry:
+            record = self._registry[media_key]
+            record.ai_probability = ai_probability
+            record.confidence = confidence
+            record.model_used = model_used
+            record.detection_result = detection_result
+            record.detection_error = error
+
+            # Mark as analyzed if successful
+            if error is None:
+                record.processing_stage = "analyzed"
+
+            logger.debug(
+                "Updated detection results",
+                media_key=media_key,
+                ai_probability=ai_probability,
+                confidence=confidence,
+                model_used=model_used,
+            )
+
+    def get_detection_summary(self, post_id: str) -> Dict[str, Any]:
+        """Get detection summary for all media in a post."""
+        post_media = []
+        for key, record in self._registry.items():
+            if record.post_id == post_id:
+                post_media.append(
+                    {
+                        "url": record.media_url,
+                        "type": record.media_type,
+                        "stage": record.processing_stage,
+                        "ai_probability": record.ai_probability,
+                        "confidence": record.confidence,
+                        "model_used": record.model_used,
+                        "has_error": record.detection_error is not None,
+                    }
+                )
+
+        # Calculate aggregates
+        analyzed = [m for m in post_media if m["ai_probability"] is not None]
+        if analyzed:
+            avg_ai_prob = sum(m["ai_probability"] for m in analyzed) / len(analyzed)
+            avg_confidence = sum(m["confidence"] for m in analyzed) / len(analyzed)
+        else:
+            avg_ai_prob = None
+            avg_confidence = None
+
+        return {
+            "post_id": post_id,
+            "total_media": len(post_media),
+            "analyzed_count": len(analyzed),
+            "avg_ai_probability": avg_ai_prob,
+            "avg_confidence": avg_confidence,
+            "media_details": post_media,
+        }
+
     def get_registry_stats(self) -> Dict[str, int]:
         """Get processing statistics."""
         stages = {}
+        detected_count = 0
+        error_count = 0
+
         for record in self._registry.values():
             stage = record.processing_stage
             stages[stage] = stages.get(stage, 0) + 1
 
-        return {"total_media": len(self._registry), "by_stage": stages}
+            if record.ai_probability is not None:
+                detected_count += 1
+            if record.detection_error is not None:
+                error_count += 1
+
+        return {"total_media": len(self._registry), "detected": detected_count, "errors": error_count, "by_stage": stages}
 
     def clear_registry(self) -> None:
         """Clear the registry (for testing or cleanup)."""

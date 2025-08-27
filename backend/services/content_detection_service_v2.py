@@ -1,4 +1,4 @@
-"""Content AI detection service for text, images, and videos with unified processing."""
+"""Improved content AI detection service using unified media processing."""
 
 import asyncio
 from datetime import datetime
@@ -17,8 +17,8 @@ from utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-class ContentDetectionService:
-    """Service for detecting AI-generated content across text, images, and videos with unified processing."""
+class ContentDetectionServiceV2:
+    """Improved service for detecting AI-generated content with unified media processing."""
 
     def __init__(self):
         """Initialize the content detection service."""
@@ -31,7 +31,7 @@ class ContentDetectionService:
         db: AsyncSession,
     ) -> ContentDetectionResponse:
         """
-        Detect AI-generated content across all modalities using unified processing.
+        Detect AI-generated content across all modalities with unified processing.
 
         Args:
             request: Detection request with content, image URLs, and video URLs
@@ -56,7 +56,7 @@ class ContentDetectionService:
         # Get media information from database
         media_info = await self._get_post_media_info(request.post_id, db)
 
-        # Run all analyses in parallel using unified service
+        # Run all analyses in parallel
         analysis_tasks = []
 
         # Text analysis
@@ -70,14 +70,11 @@ class ContentDetectionService:
         else:
             analysis_tasks.append(self._create_empty_media_result())
 
-        # Video analysis using unified service - check both video_urls and has_videos flag
-        if request.video_urls or request.has_videos:
-            # Get actual video URLs from database (includes yt-dlp synthetic URLs)
-            video_urls = await self._get_video_urls_from_db(request.post_id, db)
-            if video_urls:
-                analysis_tasks.append(self.media_service.analyze_media_batch(video_urls, MediaType.VIDEO, request.post_id, media_info, db))
-            else:
-                analysis_tasks.append(self._create_empty_media_result())
+        # Video analysis using unified service
+        if request.video_urls:
+            analysis_tasks.append(
+                self.media_service.analyze_media_batch(request.video_urls, MediaType.VIDEO, request.post_id, media_info, db)
+            )
         else:
             analysis_tasks.append(self._create_empty_media_result())
 
@@ -87,54 +84,25 @@ class ContentDetectionService:
         image_results, image_ai_prob, image_conf = results[1]
         video_results, video_ai_prob, video_conf = results[2]
 
-        # Update database with all analysis results
-        await self._update_post_with_media_analysis(request.post_id, image_ai_prob, image_conf, video_ai_prob, video_conf, db)
+        # Update database with analysis results
+        await self._update_post_with_results(request.post_id, text_result, image_ai_prob, image_conf, video_ai_prob, video_conf, db)
 
         # Create and return aggregated response
         return self._create_aggregated_response(
             request.post_id, text_result, image_results, video_results, image_ai_prob, image_conf, video_ai_prob, video_conf
         )
 
-    async def _get_post_media_info(self, post_id: str, db: AsyncSession) -> Dict[str, Any]:
-        """Get media information from database for the post."""
-        from sqlalchemy import select
-
-        from db.models import PostMedia
-
-        result = await db.execute(select(PostMedia).where(PostMedia.post_id == post_id))
-        media_records = result.scalars().all()
-
-        media_info = {}
-        for media in media_records:
-            # Map URL to media ID and storage path
-            media_info[media.media_url] = {
-                "media_id": media.id,
-                "storage_path": media.storage_path,
-                "storage_type": media.storage_type,
-                "gemini_uri": media.gemini_file_uri,
-                "media_type": media.media_type,
-            }
-
-        return media_info
-
-    async def _get_video_urls_from_db(self, post_id: str, db: AsyncSession) -> List[str]:
-        """Get video URLs from database for analysis (includes yt-dlp synthetic URLs)."""
-        from sqlalchemy import select
-
-        from db.models import PostMedia
-
-        result = await db.execute(select(PostMedia).where(PostMedia.post_id == post_id, PostMedia.media_type == "video"))
-        media_records = result.scalars().all()
-
-        video_urls = []
-        for media in media_records:
-            if media.media_url:
-                video_urls.append(media.media_url)
-
-        return video_urls
-
     async def _check_cached_results(self, post_id: str, db: AsyncSession) -> Optional[ContentDetectionResponse]:
-        """Check for cached detection results."""
+        """
+        Check for cached detection results.
+
+        Args:
+            post_id: Facebook post ID
+            db: Database session
+
+        Returns:
+            Cached response if available, None otherwise
+        """
         from sqlalchemy import select
         from db.models import Post
 
@@ -163,70 +131,125 @@ class ContentDetectionService:
                 video_confidence=post.video_confidence,
                 image_analysis=[],  # Could retrieve from post_media if needed
                 video_analysis=[],  # Could retrieve from post_media if needed
-                debug_info={"from_cache": True, "unified_processing": True},
+                debug_info={"from_cache": True},
                 timestamp=datetime.now().isoformat(),
             )
 
         return None
 
+    async def _get_post_media_info(self, post_id: str, db: AsyncSession) -> Dict[str, Any]:
+        """
+        Get media information from database for the post.
+
+        Args:
+            post_id: Facebook post ID
+            db: Database session
+
+        Returns:
+            Dictionary mapping URLs to media information
+        """
+        from sqlalchemy import select
+        from db.models import PostMedia
+
+        result = await db.execute(select(PostMedia).where(PostMedia.post_id == post_id))
+        media_records = result.scalars().all()
+
+        media_info = {}
+        for media in media_records:
+            media_info[media.media_url] = {
+                "media_id": media.id,
+                "storage_path": media.storage_path,
+                "storage_type": media.storage_type,
+                "gemini_uri": media.gemini_file_uri,
+                "media_type": media.media_type,
+                "content_hash": media.content_hash,
+            }
+
+        logger.debug("Retrieved media info from database", post_id=post_id, media_count=len(media_info))
+
+        return media_info
+
     async def _analyze_text(self, request: ContentDetectionRequest, db: AsyncSession):
-        """Analyze text content."""
-        # Convert content detection request to text detection request
+        """
+        Analyze text content for AI generation.
+
+        Args:
+            request: Detection request
+            db: Database session
+
+        Returns:
+            Text analysis result
+        """
         text_request = DetectRequest(post_id=request.post_id, content=request.content, author=request.author, metadata=request.metadata)
         return await self.text_service.detect(text_request, db)
 
     async def _create_empty_media_result(self):
-        """Create empty result for missing media type."""
+        """
+        Create empty result for missing media type.
+
+        Returns:
+            Tuple of (empty_list, None, None)
+        """
         await asyncio.sleep(0)  # Yield to event loop
         return [], None, None
 
-    # NOTE: _analyze_images and _analyze_videos methods have been replaced
-    # by the unified media processing service (UnifiedMediaService) which provides
-    # consistent handling for both image and video analysis through the
-    # MediaAnalyzer architecture. This eliminates code duplication and ensures
-    # uniform error handling, logging, and result formatting across all media types.
-
-    async def _update_post_with_media_analysis(
+    async def _update_post_with_results(
         self,
         post_id: str,
+        text_result: Any,
         image_ai_probability: Optional[float],
         image_confidence: Optional[float],
         video_ai_probability: Optional[float],
         video_confidence: Optional[float],
         db: AsyncSession,
     ) -> None:
-        """Update the post in database with image and video analysis results."""
-        from sqlalchemy import select
+        """
+        Update post in database with all analysis results.
 
+        Args:
+            post_id: Facebook post ID
+            text_result: Text analysis result
+            image_ai_probability: Average AI probability for images
+            image_confidence: Average confidence for images
+            video_ai_probability: Average AI probability for videos
+            video_confidence: Average confidence for videos
+            db: Database session
+        """
+        from sqlalchemy import select
         from db.models import Post
 
-        # Find the post that was created by text analysis
         result = await db.execute(select(Post).where(Post.post_id == post_id))
         post = result.scalar_one_or_none()
 
         if post:
-            # Update the post with media analysis results
+            # Update with all analysis results
+            post.verdict = text_result.verdict
+            post.confidence = text_result.confidence
+            post.explanation = text_result.explanation
+            post.text_ai_probability = getattr(text_result, "text_ai_probability", None)
+            post.text_confidence = getattr(text_result, "text_confidence", None)
             post.image_ai_probability = image_ai_probability
             post.image_confidence = image_confidence
             post.video_ai_probability = video_ai_probability
             post.video_confidence = video_confidence
 
             await db.commit()
+
             logger.info(
-                "Updated post with media analysis",
+                "Updated post with all analysis results",
                 post_id=post_id,
-                image_ai_probability=image_ai_probability,
-                image_confidence=image_confidence,
-                video_ai_probability=video_ai_probability,
-                video_confidence=video_confidence,
+                verdict=post.verdict,
+                confidence=post.confidence,
+                has_image_analysis=image_ai_probability is not None,
+                has_video_analysis=video_ai_probability is not None,
             )
         else:
-            logger.warning("Post not found for media analysis update", post_id=post_id)
+            logger.warning("Post not found for updating results", post_id=post_id)
 
     def _create_aggregated_response(
         self,
         post_id: str,
-        text_result,
+        text_result: Any,
         image_results: List[Dict[str, Any]],
         video_results: List[Dict[str, Any]],
         image_ai_probability: Optional[float] = None,
@@ -234,18 +257,32 @@ class ContentDetectionService:
         video_ai_probability: Optional[float] = None,
         video_confidence: Optional[float] = None,
     ) -> ContentDetectionResponse:
-        """Create aggregated response from all modality analyses."""
+        """
+        Create aggregated response from all modality analyses.
 
-        # For now, use text analysis as primary verdict
-        # In the future, this could implement sophisticated fusion logic
-        overall_verdict = text_result.verdict
-        overall_confidence = text_result.confidence
+        Args:
+            post_id: Facebook post ID
+            text_result: Text analysis result
+            image_results: List of image analysis results
+            video_results: List of video analysis results
+            image_ai_probability: Average AI probability for images
+            image_confidence: Average confidence for images
+            video_ai_probability: Average AI probability for videos
+            video_confidence: Average confidence for videos
 
-        # Count successful media analyses
+        Returns:
+            Aggregated detection response
+        """
+        # Use weighted verdict calculation if multiple modalities present
+        overall_verdict, overall_confidence = self._calculate_overall_verdict(
+            text_result, image_ai_probability, image_confidence, video_ai_probability, video_confidence
+        )
+
+        # Count successful analyses
         successful_images = len([r for r in image_results if r.get("status") == "success"])
         successful_videos = len([r for r in video_results if r.get("status") == "success"])
 
-        # Build explanation with improved messaging
+        # Build explanation
         explanations = []
         if text_result.explanation:
             explanations.append(text_result.explanation)
@@ -291,4 +328,87 @@ class ContentDetectionService:
             },
         )
 
-    # Legacy local path helper removed; unified pipeline manages storage
+    def _calculate_overall_verdict(
+        self,
+        text_result: Any,
+        image_ai_prob: Optional[float],
+        image_conf: Optional[float],
+        video_ai_prob: Optional[float],
+        video_conf: Optional[float],
+    ) -> Tuple[str, float]:
+        """
+        Calculate overall verdict using weighted combination of modalities.
+
+        Args:
+            text_result: Text analysis result
+            image_ai_prob: Image AI probability
+            image_conf: Image confidence
+            video_ai_prob: Video AI probability
+            video_conf: Video confidence
+
+        Returns:
+            Tuple of (verdict, confidence)
+        """
+        # Collect available modalities with their scores
+        modalities = []
+
+        # Text modality
+        if hasattr(text_result, "text_ai_probability") and text_result.text_ai_probability is not None:
+            modalities.append(
+                {
+                    "probability": text_result.text_ai_probability,
+                    "confidence": text_result.text_confidence or text_result.confidence,
+                    "weight": 1.0,  # Text has standard weight
+                }
+            )
+
+        # Image modality
+        if image_ai_prob is not None:
+            modalities.append(
+                {
+                    "probability": image_ai_prob,
+                    "confidence": image_conf or 0.5,
+                    "weight": 1.2,  # Images slightly more weight
+                }
+            )
+
+        # Video modality
+        if video_ai_prob is not None:
+            modalities.append(
+                {
+                    "probability": video_ai_prob,
+                    "confidence": video_conf or 0.5,
+                    "weight": 1.5,  # Videos have highest weight
+                }
+            )
+
+        # If no modalities with scores, use text verdict
+        if not modalities:
+            return text_result.verdict, text_result.confidence
+
+        # Calculate weighted average
+        total_weight = sum(m["weight"] * m["confidence"] for m in modalities)
+        if total_weight == 0:
+            return text_result.verdict, text_result.confidence
+
+        weighted_probability = sum(m["probability"] * m["weight"] * m["confidence"] for m in modalities) / total_weight
+
+        weighted_confidence = sum(m["confidence"] * m["weight"] for m in modalities) / sum(m["weight"] for m in modalities)
+
+        # Determine verdict based on weighted probability
+        if weighted_probability >= 0.7:
+            verdict = "ai_slop"
+        elif weighted_probability <= 0.3:
+            verdict = "human_content"
+        else:
+            verdict = "uncertain"
+
+        logger.debug(
+            "Calculated weighted verdict",
+            modality_count=len(modalities),
+            weighted_probability=round(weighted_probability, 3),
+            weighted_confidence=round(weighted_confidence, 3),
+            verdict=verdict,
+        )
+
+        return verdict, weighted_confidence

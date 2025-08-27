@@ -1,4 +1,4 @@
-import time
+import asyncio
 from typing import Dict, Optional
 
 import google.generativeai as genai
@@ -27,9 +27,6 @@ class GeminiRecoveryService:
         """
         try:
             from db.models import PostMedia
-            from services.gcs_storage_service import GCSStorageService
-
-            gcs_service = GCSStorageService()
 
             # Find media with storage but missing Gemini URIs
             missing_gemini_result = await db.execute(
@@ -51,33 +48,31 @@ class GeminiRecoveryService:
 
             for media in media_missing_gemini:
                 try:
-                    # Check if file still exists in storage
-                    if media.storage_path.startswith("gs://"):
-                        gcs_path = gcs_service.gcs_uri_to_path(media.storage_path)
+                    # Only local storage is supported
+                    from pathlib import Path
 
-                        if await gcs_service.media_exists(gcs_path):
-                            # File exists in storage, upload to Gemini
-                            mime_type = self._get_mime_type_from_media_type(media.media_type)
-                            display_name = f"{media.media_type}_{media.post_id}_{media.id}"
+                    local_path = Path(media.storage_path) if media.storage_path else None
+                    if local_path and local_path.exists():
+                        mime_type = self._get_mime_type_from_media_type(media.media_type)
+                        display_name = f"{media.media_type}_{media.post_id}_{media.id}"
 
-                            gemini_uri = await self._upload_to_gemini_from_storage(media.storage_path, mime_type, display_name, gcs_service)
+                        gemini_uri = await self._upload_to_gemini_from_storage(str(local_path), mime_type, display_name)
 
-                            if gemini_uri:
-                                # Update database with recovered URI
-                                media.gemini_file_uri = gemini_uri
-                                recovered_uris[media.media_url] = gemini_uri
+                        if gemini_uri:
+                            media.gemini_file_uri = gemini_uri
+                            recovered_uris[media.media_url] = gemini_uri
 
-                                logger.info(
-                                    "Successfully recovered Gemini URI",
-                                    post_id=post_id,
-                                    media_url=media.media_url[:50],
-                                    storage_path=media.storage_path,
-                                    gemini_uri=gemini_uri,
-                                )
-                        else:
-                            logger.warning(
-                                "Storage file missing, cannot recover Gemini URI", post_id=post_id, storage_path=media.storage_path
+                            logger.info(
+                                "Successfully recovered Gemini URI",
+                                post_id=post_id,
+                                media_url=media.media_url[:50],
+                                storage_path=str(local_path),
+                                gemini_uri=gemini_uri,
                             )
+                    else:
+                        logger.warning(
+                            "Local storage file missing, cannot recover Gemini URI", post_id=post_id, storage_path=media.storage_path
+                        )
 
                 except Exception as e:
                     logger.error("Failed to recover Gemini URI for media", post_id=post_id, media_id=media.id, error=str(e))
@@ -98,51 +93,34 @@ class GeminiRecoveryService:
             logger.error("Error in Gemini URI recovery", post_id=post_id, error=str(e))
             return {}
 
-    async def _upload_to_gemini_from_storage(self, storage_path: str, mime_type: str, display_name: str, gcs_service) -> Optional[str]:
-        """Upload file from GCS storage to Gemini (optimized version)."""
+    async def _upload_to_gemini_from_storage(self, storage_path: str, mime_type: str, display_name: str) -> Optional[str]:
+        """Upload file from local storage to Gemini without blocking the event loop."""
         try:
-            import os
-            import tempfile
+            # Upload to Gemini File API directly from the provided local path (run in thread)
+            file = await asyncio.to_thread(
+                genai.upload_file,
+                path=storage_path,
+                mime_type=mime_type,
+                display_name=display_name,
+            )
 
-            # Download from GCS to temporary file
-            gcs_path = gcs_service.gcs_uri_to_path(storage_path)
-            data = await gcs_service.download_media(gcs_path)
+            # Wait for processing with non-blocking sleeps
+            max_retries = 60 if mime_type.startswith("video/") else 10
+            sleep_seconds = 2 if mime_type.startswith("video/") else 1
+            for _ in range(max_retries):
+                file = await asyncio.to_thread(genai.get_file, file.name)
+                state = getattr(file, "state", None)
+                state_name = getattr(state, "name", "") if state else ""
+                if state_name == "ACTIVE":
+                    return file.uri
+                elif state_name == "FAILED":
+                    logger.error("Gemini file processing failed", file_name=file.name)
+                    return None
 
-            # Get appropriate file extension
-            extension_map = {
-                "image/jpeg": ".jpg",
-                "image/png": ".png",
-                "video/mp4": ".mp4",
-                "video/webm": ".webm",
-            }
-            extension = extension_map.get(mime_type, ".tmp")
+                await asyncio.sleep(sleep_seconds)
 
-            with tempfile.NamedTemporaryFile(delete=False, suffix=extension) as temp_file:
-                temp_file.write(data)
-                temp_file_path = temp_file.name
-
-            try:
-                # Upload to Gemini File API
-                file = genai.upload_file(path=temp_file_path, mime_type=mime_type, display_name=display_name)
-
-                # Wait for processing
-                max_retries = 60 if mime_type.startswith("video/") else 10
-                for attempt in range(max_retries):
-                    file = genai.get_file(file.name)
-                    if file.state.name == "ACTIVE":
-                        return file.uri
-                    elif file.state.name == "FAILED":
-                        logger.error("Gemini file processing failed", file_name=file.name)
-                        return None
-
-                    time.sleep(2 if mime_type.startswith("video/") else 1)
-
-                logger.warning("Gemini file processing timeout", file_name=file.name)
-                return None
-
-            finally:
-                # Clean up temporary file
-                os.unlink(temp_file_path)
+            logger.warning("Gemini file processing timeout", file_name=file.name)
+            return None
 
         except Exception as e:
             logger.error("Failed to upload to Gemini from storage", storage_path=storage_path, error=str(e))

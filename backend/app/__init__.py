@@ -22,12 +22,23 @@ async def lifespan(app: FastAPI):
     setup_logging()
     logger = get_logger("app", component="application")
 
-    # Initialize database pool
+    # Initialize database pool with retry and timeout
     from db.pool import database_pool
+    import asyncio
 
-    await database_pool.setup(logger=logger)
+    try:
+        # Try to connect to database with timeout
+        await asyncio.wait_for(
+            database_pool.setup(logger=logger),
+            timeout=10.0,  # 10 second timeout for database connection
+        )
+        logger.info("Database connection established successfully")
+    except asyncio.TimeoutError:
+        logger.warning("Database connection timed out during startup - continuing without database")
+    except Exception as e:
+        logger.warning(f"Database connection failed during startup: {e} - continuing without database")
 
-    # Create tmp directories
+    # Ensure temporary directory exists
     from core.config import settings
 
     settings.tmp_dir.mkdir(parents=True, exist_ok=True)
@@ -44,7 +55,10 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
-    await database_pool.close()
+    try:
+        await database_pool.close()
+    except Exception as e:
+        logger.warning(f"Error closing database pool: {e}")
     logger.info("App shutdown complete")
 
 

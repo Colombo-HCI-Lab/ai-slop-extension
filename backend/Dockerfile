@@ -72,9 +72,6 @@ FROM deps AS runtime
 # Copy application source code (this layer rebuilds on every code change)
 COPY --chown=app:app . .
 
-# Copy GCS credentials if available (for Cloud Run deployment)
-COPY --chown=app:app gcs-key.json* /app/
-
 # Install the project itself (editable install for the current project)
 RUN . "$VIRTUAL_ENV/bin/activate" && uv sync --frozen
 

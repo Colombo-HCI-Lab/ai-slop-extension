@@ -120,6 +120,3 @@ async def detect_image_upload(
     except Exception as e:
         logger.error("Image detection failed", filename=file.filename, error=str(e), exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Image detection failed: {str(e)}")
-
-
-# Note: URL-based image detection has been removed by design.

@@ -1,9 +1,10 @@
 """Analytics API endpoints for metrics collection system."""
 
 from typing import List, Optional, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from schemas.analytics import (
     UserInitRequest,
@@ -20,6 +21,7 @@ from schemas.analytics import (
 from services.analytics_service import AnalyticsService
 from services.monitoring_service import MonitoringService
 from db.session import get_db
+from db.models import UserSession
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -59,6 +61,9 @@ async def initialize_user(
         session = await service.start_session(
             user.id, {**request.browser_info, "ip_hash": _hash_ip(client_ip) if client_ip != "unknown" else None}
         )
+
+        # Ensure chat UserSession is created early to anchor chat history
+        await _ensure_chat_user_session(db, request.extension_user_id)
 
         # Background task for additional processing if needed
         background_tasks.add_task(_enrich_user_data, service, user.id, client_ip)
@@ -491,3 +496,25 @@ def _hash_ip(ip: str) -> str:
     import hashlib
 
     return hashlib.sha256(ip.encode()).hexdigest()[:16]
+
+
+async def _ensure_chat_user_session(db: AsyncSession, user_identifier: str) -> UserSession:
+    """Create a chat UserSession if missing, used to anchor chat history.
+
+    This uses the extension's persistent user identifier so that chat
+    history queries always have a corresponding session.
+    """
+    result = await db.execute(select(UserSession).where(UserSession.user_identifier == user_identifier))
+    existing = result.scalar_one_or_none()
+    if existing:
+        # Update last_active to now for freshness
+        existing.last_active = datetime.now(timezone.utc)
+        await db.commit()
+        await db.refresh(existing)
+        return existing
+
+    new_session = UserSession(user_identifier=user_identifier, last_active=datetime.now(timezone.utc))
+    db.add(new_session)
+    await db.commit()
+    await db.refresh(new_session)
+    return new_session

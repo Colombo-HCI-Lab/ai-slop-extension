@@ -107,6 +107,3 @@ async def detect_video_upload(
         video_processor.cleanup_file(file_path)
         logger.error("Video processing failed (upload)", filename=file.filename, model_name=model_name, error=str(e), exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Video processing failed")
-
-
-# Note: URL-based video detection has been removed by design.

@@ -14,7 +14,7 @@ from db.models import Post
 from schemas.content_detection import ContentDetectionRequest, ContentDetectionResponse
 from services.content_detection_service import ContentDetectionService
 from services.post_media_service import PostMediaService
-from services.ytdlp_video_service import YtDlpVideoService
+
 from utils.logging import get_logger
 
 
@@ -61,7 +61,6 @@ router = APIRouter(tags=["posts"])
 # Initialize services
 detection_service = ContentDetectionService()
 post_media_service = PostMediaService()
-ytdlp_service = YtDlpVideoService()
 
 
 @router.post("/process", response_model=ContentDetectionResponse)
@@ -126,23 +125,9 @@ async def process_post(
                 timestamp=datetime.now().isoformat(),
             )
 
-        # Step 1: Save post and download/upload media to Gemini (ONLY FOR NEW POSTS)
-        # This completes ALL media operations before proceeding
-        logger.info("New post detected - proceeding with media download and analysis", post_id=request.post_id)
+        # Step 1: Save post and process media to Gemini via unified pipeline
+        logger.info("Step 1: Saving post and processing media via unified pipeline", post_id=request.post_id)
         post = await post_media_service.save_post_before_detection(request, db)
-
-        # Step 1.5: Download videos using yt-dlp if post contains videos
-        if request.has_videos and request.post_url:
-            logger.info("Step 1.5: Downloading videos using yt-dlp", post_id=request.post_id, post_url=request.post_url[:100])
-            try:
-                video_path = await ytdlp_service.download_with_retry(request.post_url, request.post_id)
-                if video_path:
-                    logger.info("Video downloaded successfully", post_id=request.post_id, video_path=str(video_path))
-                else:
-                    logger.warning("Video download failed", post_id=request.post_id)
-            except Exception as e:
-                logger.error("yt-dlp video download error", post_id=request.post_id, error=str(e))
-                # Continue with analysis even if video download fails
 
         # Step 2: Wait a moment to ensure all files are written to disk
         import asyncio
@@ -150,7 +135,7 @@ async def process_post(
         await asyncio.sleep(0.5)  # Small delay to ensure file system operations complete
 
         # Step 3: Run detection only after media is fully processed
-        logger.info("Step 2: Running detection with downloaded media", post_id=request.post_id)
+        logger.info("Step 3: Running detection with downloaded media", post_id=request.post_id)
         result = await detection_service.detect(request, db)
 
         # Check if this was a cached result to avoid confusing logs
