@@ -94,10 +94,18 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
+    # Multi-modal fusion settings
+    # Overall AI probability thresholds used for determining verdict
+    # If average AI probability >= fusion_ai_threshold -> ai_slop
+    # If average AI probability <= fusion_human_threshold -> human_content
+    # Else -> uncertain
+    fusion_ai_threshold: float = Field(default=0.2, ge=0.0, le=1.0)
+    fusion_human_threshold: float = Field(default=0.4, ge=0.0, le=1.0)
+
     # Database settings - individual components
     db_name: str = "ai_slop_extension"
     db_user: str = "postgres"
-    db_password: str = "cats"
+    db_password: str = "postgres"
     db_host: str = "localhost"
     db_port: int = 5432
 

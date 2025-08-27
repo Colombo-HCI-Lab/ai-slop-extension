@@ -58,7 +58,7 @@ logger = get_logger(__name__)
 
 router = APIRouter(tags=["posts"])
 
-# Initialize services
+# Initialize services (V2 with weighted multi-modal fusion)
 detection_service = ContentDetectionService()
 post_media_service = PostMediaService()
 
