@@ -17,27 +17,8 @@ class AnalyticsEvent(BaseModel):
 
     model_config = {"populate_by_name": True}  # Allow both field name and alias
 
-    @field_validator("client_timestamp")
-    @classmethod
-    def validate_timestamp(cls, v):
-        """Ensure timestamp is not too far in the future."""
-        # Ensure both datetimes are timezone-aware for comparison
-        if v.tzinfo is None:
-            # If naive, assume UTC
-            from datetime import timezone
-
-            v = v.replace(tzinfo=timezone.utc)
-
-        current_time = datetime.now(v.tzinfo)  # Use same timezone as input
-
-        if v > current_time:
-            # Allow small clock differences (5 minutes)
-            from datetime import timedelta
-
-            max_future = current_time + timedelta(minutes=5)
-            if v > max_future:
-                raise ValueError("Timestamp cannot be more than 5 minutes in the future")
-        return v
+    # Timestamp validation moved to background task for performance
+    # This allows the endpoint to return immediately
 
 
 class UserInitRequest(BaseModel):

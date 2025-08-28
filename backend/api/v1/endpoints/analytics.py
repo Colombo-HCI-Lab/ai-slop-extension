@@ -174,6 +174,8 @@ async def end_session(request: SessionEndRequest, db: AsyncSession = Depends(get
 async def submit_event_batch(request: EventBatchRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     """Submit batch of analytics events with optional user_id."""
     start_time = datetime.now()
+    event_count = len(request.events)
+    
     logger.info(
         f"POST /analytics/events/batch - Processing event batch",
         extra={
@@ -181,75 +183,37 @@ async def submit_event_batch(request: EventBatchRequest, background_tasks: Backg
             "method": "POST",
             "session_id": request.session_id[:8] + "..." if request.session_id else None,
             "user_id": request.user_id[:8] + "..." if request.user_id else None,
-            "event_count": len(request.events),
-            "event_types": list(set(event.type for event in request.events)),
+            "event_count": event_count,
+            "event_types": list(set(event.type for event in request.events[:10])) if request.events else [],  # Sample first 10 for logging
         },
     )
 
     try:
-        # Validate event batch size
-        if len(request.events) > 1000:
+        # Only do minimal validation in the main handler
+        if event_count > 1000:
             raise HTTPException(status_code=400, detail="Batch size exceeds limit (1000)")
 
-        # Validate timestamps (prevent future events)
-        from datetime import timezone
+        if event_count == 0:
+            return {"status": "no_events", "count": 0}
 
-        current_time = datetime.now(timezone.utc)
-        valid_events = []
-
-        for event in request.events:
-            # Ensure event timestamp is timezone-aware for comparison
-            event_time = event.client_timestamp
-            if event_time.tzinfo is None:
-                event_time = event_time.replace(tzinfo=timezone.utc)
-
-            if event_time > current_time:
-                logger.warning(f"Skipping future event: {event.type}")
-                continue
-
-            # Check if event is too old (>7 days)
-            if current_time - event_time > timedelta(days=7):
-                logger.debug(f"Skipping old event: {event.type}")
-                continue
-
-            valid_events.append(event)
-
-        if not valid_events:
-            duration_ms = (datetime.now() - start_time).total_seconds() * 1000
-            logger.warning(
-                f"POST /analytics/events/batch - No valid events",
-                extra={
-                    "endpoint": "/analytics/events/batch",
-                    "method": "POST",
-                    "session_id": request.session_id[:8] + "..." if request.session_id else None,
-                    "total_events": len(request.events),
-                    "valid_events": 0,
-                    "duration_ms": round(duration_ms, 2),
-                    "status": "no_valid_events",
-                },
-            )
-            return {"status": "no_valid_events", "count": 0}
-
-        # Process events asynchronously with optional user_id (fresh DB session inside task)
-        background_tasks.add_task(_process_events_background, request.session_id, valid_events, request.user_id)
+        # Queue ALL events for background processing - validation happens there
+        background_tasks.add_task(_process_events_background, request.session_id, request.events, request.user_id)
 
         duration_ms = (datetime.now() - start_time).total_seconds() * 1000
         logger.info(
-            f"POST /analytics/events/batch - Success",
+            f"POST /analytics/events/batch - Accepted for processing",
             extra={
                 "endpoint": "/analytics/events/batch",
                 "method": "POST",
                 "session_id": request.session_id[:8] + "..." if request.session_id else None,
                 "user_id": request.user_id[:8] + "..." if request.user_id else None,
-                "total_events": len(request.events),
-                "valid_events": len(valid_events),
-                "filtered_events": len(request.events) - len(valid_events),
+                "event_count": event_count,
                 "duration_ms": round(duration_ms, 2),
                 "status": "accepted",
             },
         )
 
-        return {"status": "accepted", "count": len(valid_events)}
+        return {"status": "accepted", "count": event_count}
 
     except Exception as e:
         duration_ms = (datetime.now() - start_time).total_seconds() * 1000
@@ -448,19 +412,54 @@ async def cleanup_old_data(
 async def _process_events_background(session_id: str, events: List[AnalyticsEvent], user_id: Optional[str] = None) -> None:
     """Process events in background using a fresh DB session."""
     from db.pool import database_pool
+    from datetime import timezone, timedelta
 
     db_session = await database_pool.get_session()
     try:
+        # Validate timestamps and filter events (moved from main handler)
+        current_time = datetime.now(timezone.utc)
+        valid_events = []
+        
+        for event in events:
+            # Ensure event timestamp is timezone-aware for comparison
+            event_time = event.client_timestamp
+            if event_time.tzinfo is None:
+                event_time = event_time.replace(tzinfo=timezone.utc)
+
+            # Skip future events
+            if event_time > current_time:
+                logger.debug(f"Skipping future event: {event.type}")
+                continue
+
+            # Skip events older than 7 days
+            if current_time - event_time > timedelta(days=7):
+                logger.debug(f"Skipping old event: {event.type}")
+                continue
+
+            valid_events.append(event)
+
+        if not valid_events:
+            logger.info(f"No valid events to process for session {session_id}")
+            return
+
         # Use provided user_id or generate anonymous one
         if not user_id:
             user_id = f"anon_{session_id[:8]}"
 
         service = AnalyticsService(db_session)
-        await service.process_event_batch(session_id=session_id, events=events, user_id=user_id)
+        await service.process_event_batch(session_id=session_id, events=valid_events, user_id=user_id)
 
-        logger.info(f"Background processed {len(events)} events for session {session_id}")
+        logger.info(
+            f"Background processed {len(valid_events)} of {len(events)} events for session {session_id}",
+            extra={
+                "session_id": session_id,
+                "total_events": len(events),
+                "valid_events": len(valid_events),
+                "filtered_events": len(events) - len(valid_events),
+            }
+        )
     except Exception as e:
-        logger.error(f"Background event processing failed: {e}")
+        logger.error(f"Background event processing failed: {e}", exc_info=True)
     finally:
         await db_session.close()
 

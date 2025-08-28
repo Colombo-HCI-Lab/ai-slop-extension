@@ -81,17 +81,9 @@ class DatabasePool:
             cls._logger.error("Database pool has not been initialized")
             raise RuntimeError("Database pool has not been initialized. Call setup() first.")
 
-        try:
-            # Test the engine connection
-            async with cls._engine.begin() as conn:
-                await conn.execute(text("SELECT 1"))
-
-            # Return new session from factory
-            return cls._session_factory()
-
-        except Exception as e:
-            cls._logger.error(f"Database connection validation failed: {e}")
-            raise
+        # Return new session from factory directly
+        # pool_pre_ping=True in engine config handles connection validation
+        return cls._session_factory()
 
     @classmethod
     async def close(cls):
