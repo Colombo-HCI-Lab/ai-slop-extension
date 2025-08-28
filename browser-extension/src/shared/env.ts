@@ -3,7 +3,7 @@
 // Note: Webpack DefinePlugin replaces the exact expression `process.env.BACKEND_URL`
 // with a string literal at build time. Do not use optional chaining here or
 // the replacement won't occur and `process` will be referenced at runtime.
-declare const process: { env: { BACKEND_URL: string } };
+declare const process: { env: { BACKEND_URL: string; MIXPANEL_PROJECT_TOKEN?: string } };
 
 export const getBackendUrl = (): string => {
   // This expression is replaced by DefinePlugin; no runtime `process` access remains.
@@ -13,3 +13,8 @@ export const getBackendUrl = (): string => {
 };
 
 export const getApiBase = (): string => `${getBackendUrl()}/api/v1`;
+
+export const getMixpanelToken = (): string | undefined => {
+  const token = (process.env.MIXPANEL_PROJECT_TOKEN as unknown as string) || '';
+  return token || undefined;
+};

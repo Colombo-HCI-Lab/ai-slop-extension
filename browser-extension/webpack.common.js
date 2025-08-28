@@ -66,6 +66,7 @@ module.exports = {
     // Define environment variables
     new webpack.DefinePlugin({
       'process.env.BACKEND_URL': JSON.stringify(process.env.BACKEND_URL),
+      'process.env.MIXPANEL_PROJECT_TOKEN': JSON.stringify(process.env.MIXPANEL_PROJECT_TOKEN),
       __DEV__: JSON.stringify(process.env.NODE_ENV !== 'production'),
     }),
     // Copy static assets from public to dist
@@ -108,7 +109,15 @@ module.exports = {
               }
             }
 
-            
+            // Always include Mixpanel endpoints for analytics network access
+            const mixpanelHosts = ['https://api.mixpanel.com/*', 'https://decide.mixpanel.com/*'];
+            manifest.host_permissions = manifest.host_permissions || [];
+            for (const host of mixpanelHosts) {
+              if (!manifest.host_permissions.includes(host)) {
+                manifest.host_permissions.push(host);
+              }
+            }
+
             return JSON.stringify(manifest, null, 2);
           }
         }
@@ -129,9 +138,9 @@ module.exports = {
     clean: true
   },
   // Optimization configuration
+  // Important: avoid code-splitting for content/background to prevent
+  // runtime chunk loading issues in MV3 content scripts.
   optimization: {
-    splitChunks: {
-      chunks: 'all',
-    },
+    splitChunks: false,
   }
 };

@@ -5,6 +5,7 @@
 import { log, error } from '../../shared/logger';
 import { AnalyticsEvent, MetricsConfig, ScrollMetrics, PostTrackingData } from '../../shared/types';
 import { sendMetricsBatch } from '../messaging';
+import { analytics } from '@/shared/analytics';
 
 export class MetricsCollector {
   private userId: string = '';
@@ -182,7 +183,20 @@ export class MetricsCollector {
       return;
     }
 
-    this.eventBuffer.push(this.sanitizeEvent(event));
+    const sanitized = this.sanitizeEvent(event);
+    this.eventBuffer.push(sanitized);
+
+    // Mirror event to Mixpanel immediately (fire-and-forget)
+    try {
+      analytics.track(sanitized.type, {
+        category: sanitized.category,
+        label: sanitized.label,
+        value: sanitized.value,
+        ...((sanitized.metadata || {}) as Record<string, unknown>),
+      });
+    } catch {
+      // no-op
+    }
 
     // Auto-flush if buffer is full
     if (this.eventBuffer.length >= this.config.batchSize) {

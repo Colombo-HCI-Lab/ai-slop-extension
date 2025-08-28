@@ -7,6 +7,7 @@ import { MetricsCollector } from './MetricsCollector';
 import { MetricsConfig, UserSession } from '../../shared/types';
 import { getUserId } from '../../shared/storage';
 import { initializeAnalyticsUser, endAnalyticsSession } from '../messaging';
+import { analytics } from '@/shared/analytics';
 
 export class MetricsManager {
   private collector: MetricsCollector | null = null;
@@ -69,6 +70,14 @@ export class MetricsManager {
 
       this.collector = new MetricsCollector(config);
       this.collector.setSession(userId, sessionId);
+
+      // Hook Mixpanel identity and super props
+      analytics.identify(userId);
+      analytics.registerSuper({
+        session_id: sessionId,
+        platform: 'chrome_extension',
+        environment: process.env.NODE_ENV || 'production',
+      });
 
       // Backend session already initialized above (or we fell back to local)
 

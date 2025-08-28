@@ -59,6 +59,7 @@
     "webpack-merge": "^6.0.1"
   },
   "dependencies": {
-    "chrome-webstore-upload-cli": "^3.3.2"
+    "chrome-webstore-upload-cli": "^3.3.2",
+    "mixpanel-browser": "^2.52.0"
   }
 }

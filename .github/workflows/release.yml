@@ -11,6 +11,7 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    environment: prod
     
     steps:
     - uses: actions/checkout@v4
@@ -23,10 +24,13 @@ jobs:
         cache-dependency-path: browser-extension/package-lock.json
         
     - name: Build extension
+      env:
+        BACKEND_URL: ${{ secrets.BACKEND_URL }}
+        MIXPANEL_PROJECT_TOKEN: ${{ secrets.MIXPANEL_PROJECT_TOKEN }}
       run: |
         cd browser-extension
         npm ci
-        BACKEND_URL=https://ai-slop-backend-662130349150.us-central1.run.app npm run build
+        npm run build
         
     - name: Package extension
       run: |

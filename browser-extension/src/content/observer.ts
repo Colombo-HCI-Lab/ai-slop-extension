@@ -567,6 +567,16 @@ export class FacebookPostObserver {
       }
 
       log(`[AI-Slop] 🔍 Analyzing post ${postId} with backend API...`);
+      // Track request start
+      metricsManager.trackEvent({
+        type: 'detection_request',
+        category: 'ai_detection',
+        metadata: {
+          postId,
+          hasImages: mediaUrls.images.length > 0,
+          hasVideos: mediaUrls.hasVideos,
+        },
+      });
 
       // Send analysis request to backend via background service
       const t0 = performance.now();
@@ -580,6 +590,18 @@ export class FacebookPostObserver {
         videoResults: videoResults,
       });
       const t1 = performance.now();
+
+      // Track response
+      metricsManager.trackEvent({
+        type: 'detection_response',
+        category: 'ai_detection',
+        value: Math.round(t1 - t0),
+        metadata: {
+          postId,
+          isAiSlop: response.isAiSlop,
+          confidence: response.confidence,
+        },
+      });
 
       // Record performance metric to analytics backend (fire-and-forget)
       recordPerformanceMetric({
@@ -1190,6 +1212,9 @@ export class FacebookPostObserver {
       iconContainer.setAttribute('title', 'Human-generated content - Click to open chat');
     }
 
+    // Track icon becoming visible
+    metricsManager.trackIconInteraction(postId, 'visible');
+
     // Add click handler with event prevention to avoid clicking the underlying post
     iconContainer.addEventListener('click', event => {
       // Prevent event bubbling to avoid clicking the underlying post
@@ -1212,8 +1237,16 @@ export class FacebookPostObserver {
           .catch(e => console.debug('sendPostInteraction failed', e));
       }
 
+      // Also track explicit click
+      metricsManager.trackIconInteraction(postId, 'click');
+
       // Open chat immediately for responsive UX
       this.openChatForPost(postElement, postId, content, analysisResult);
+    });
+
+    // Track hover
+    iconContainer.addEventListener('mouseenter', () => {
+      metricsManager.trackIconInteraction(postId, 'hover');
     });
 
     // Find the best position for consistent icon placement
@@ -1283,6 +1316,9 @@ export class FacebookPostObserver {
     }
   ): void {
     log(`[AI-Slop] 💬 Opening chat for post ${postId}`);
+
+    // Track chat start
+    metricsManager.trackChatStart(postId);
 
     // Check if a chat window for this post already exists
     const existingChat = document.querySelector(`.detect-chat-window[data-post-id="${postId}"]`);
@@ -1694,6 +1730,12 @@ export class FacebookPostObserver {
     messagesContainer?.scrollTo(0, messagesContainer.scrollHeight);
 
     try {
+      // Track send
+      metricsManager.trackEvent({
+        type: 'chat_message_send',
+        category: 'chat',
+        metadata: { postId },
+      });
       // Send message to background script to handle chat API
       const response = await sendChat({
         postId: postId,
@@ -1723,6 +1765,13 @@ export class FacebookPostObserver {
           m2.messageCount += 1;
         }
       }
+
+      // Track response
+      metricsManager.trackEvent({
+        type: 'chat_message_received',
+        category: 'chat',
+        metadata: { postId },
+      });
 
       // Add suggested questions
       if (response.suggested_questions && response.suggested_questions.length > 0) {
@@ -1756,6 +1805,12 @@ export class FacebookPostObserver {
       logError('Chat request failed:', error);
       loadingDiv.textContent = '❌ Sorry, I encountered an error. Please try again.';
       loadingDiv.classList.remove('loading');
+      metricsManager.trackEvent({
+        type: 'chat_error',
+        category: 'chat',
+        label: 'send_failed',
+        metadata: { postId },
+      });
     }
 
     // Scroll to bottom
@@ -1778,6 +1833,13 @@ export class FacebookPostObserver {
       // Delegate network call to background for consistent CORS/timeout handling
       const historyData = await fetchChatHistory({ postId, userId });
       log(`[AI-Slop] Loaded ${historyData.total_messages} previous messages`);
+
+      metricsManager.trackEvent({
+        type: 'chat_history_loaded',
+        category: 'chat',
+        value: historyData.total_messages || 0,
+        metadata: { postId },
+      });
 
       // Clear existing messages (except loading indicators)
       const existingMessages = messagesContainer.querySelectorAll('.message-bubble');
@@ -1812,6 +1874,11 @@ export class FacebookPostObserver {
     } catch (error) {
       logError(`[AI-Slop] Error loading chat history:`, error);
       // Don't show error to user, just continue without history
+      metricsManager.trackEvent({
+        type: 'chat_history_error',
+        category: 'chat',
+        metadata: { postId },
+      });
     }
   }
 
