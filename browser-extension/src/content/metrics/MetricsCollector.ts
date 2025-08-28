@@ -26,26 +26,39 @@ export class MetricsCollector {
   private scrollSpeeds: number[] = [];
   private postViewTimes: Map<string, number> = new Map();
   private postCumulativeView: Map<string, number> = new Map();
-  
-  // Event throttling and sampling
+
+  // Event throttling and sampling - Reduced rates to minimize analytics volume
   private throttledEvents: Map<string, number> = new Map();
   private samplingRates: Record<string, number> = {
-    'video_progress': 0.2,
-    'icon_injected': 0.1, 
-    'icon_injected_fallback': 0.1,
-    'scroll_behavior': 0.3,
-    'video_play': 0.5,
-    'video_pause': 0.5,
-    'page_hidden': 0.5,
-    'page_visible': 0.5
+    video_progress: 0.05, // Reduced from 0.2 to 0.05 (5%)
+    icon_injected: 0.02, // Reduced from 0.1 to 0.02 (2%)
+    icon_injected_fallback: 0.02, // Reduced from 0.1 to 0.02 (2%)
+    scroll_behavior: 0.05, // Reduced from 0.3 to 0.05 (5%)
+    video_play: 0.1, // Reduced from 0.5 to 0.1 (10%)
+    video_pause: 0.1, // Reduced from 0.5 to 0.1 (10%)
+    post_view: 0.1, // Added sampling for post views (10%)
+    post_viewport_enter: 0.05, // Added sampling (5%)
+    post_viewport_exit: 0.05, // Added sampling (5%)
   };
   private eventThrottleTimes: Record<string, number> = {
-    'video_progress': 10000, // 10 seconds
-    'scroll_behavior': 5000,  // 5 seconds  
-    'icon_injected': 30000,   // 30 seconds
-    'video_play': 2000,       // 2 seconds
-    'video_pause': 2000       // 2 seconds
+    video_progress: 30000, // Increased from 10s to 30s
+    scroll_behavior: 15000, // Increased from 5s to 15s
+    icon_injected: 60000, // Increased from 30s to 60s
+    video_play: 5000, // Increased from 2s to 5s
+    video_pause: 5000, // Increased from 2s to 5s
+    post_viewport_enter: 10000, // Added throttling (10s)
+    post_viewport_exit: 10000, // Added throttling (10s)
   };
+
+  // Events to completely skip (too low value for research)
+  private skippedEvents: Set<string> = new Set([
+    'page_hidden',
+    'page_visible',
+    'chat_input_focus',
+    'chat_input_blur',
+    'chat_overlay_drag_start',
+    'chat_overlay_drag_end',
+  ]);
 
   constructor(config: MetricsConfig) {
     this.config = config;
@@ -278,8 +291,13 @@ export class MetricsCollector {
   }
 
   private shouldLogEvent(eventType: string): boolean {
+    // Skip completely blocked events
+    if (this.skippedEvents.has(eventType)) {
+      return false;
+    }
+
     const now = Date.now();
-    
+
     // Check throttling
     const throttleTime = this.eventThrottleTimes[eventType];
     if (throttleTime) {
@@ -289,13 +307,13 @@ export class MetricsCollector {
       }
       this.throttledEvents.set(eventType, now);
     }
-    
+
     // Check sampling
     const samplingRate = this.samplingRates[eventType];
     if (samplingRate && Math.random() > samplingRate) {
       return false;
     }
-    
+
     return true;
   }
 

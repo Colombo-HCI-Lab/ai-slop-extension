@@ -192,15 +192,19 @@ class AnalyticsService:
     async def process_event_batch(self, session_id: str, events: List[EventSchema], user_id: str) -> None:
         """Process analytics events with deduplication and aggregation."""
         
-        # Server-side event filtering for noisy events  
-        low_value_events = {'video_progress', 'icon_injected', 'icon_injected_fallback', 'scroll_behavior'}
+        # Server-side event filtering for noisy events (more aggressive filtering)
+        low_value_events = {
+            'video_progress', 'icon_injected', 'icon_injected_fallback', 'scroll_behavior',
+            'post_viewport_enter', 'post_viewport_exit', 'post_view'
+        }
         
-        # Filter out excessive low-value events, keep only 1 in 10 
+        # Very aggressive filtering - keep only 2% of low-value events
         filtered_events = []
         for event in events:
             if event.type in low_value_events:
-                # Keep only 10% of low-value events
-                if hash(f"{event.type}_{event.client_timestamp}") % 10 == 0:
+                # Keep only 2% of very low-value events (was 10%)
+                hash_value = hash(f"{event.type}_{event.client_timestamp}") % 50
+                if hash_value == 0:  # 1 in 50 = 2%
                     filtered_events.append(event)
             else:
                 filtered_events.append(event)

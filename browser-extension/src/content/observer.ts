@@ -280,13 +280,13 @@ export class FacebookPostObserver {
       });
     }, 3000);
 
-    // Set up periodic rescanning to catch any posts that are still missed
+    // Set up periodic rescanning to catch any posts that are still missed (reduced frequency)
     setInterval(() => {
-      log('[AI-Slop] Periodic post scan to ensure no posts are missed');
+      // Reduced logging frequency for periodic scans
       this.processExistingPosts().catch(error => {
         logError('[AI-Slop] Error in periodic post processing:', error);
       });
-    }, 10000); // Every 10 seconds
+    }, 30000); // Increased from 10s to 30s to reduce processing load
   }
 
   /**
@@ -624,7 +624,10 @@ export class FacebookPostObserver {
   /**
    * Tracks video interactions inside a post
    */
-  private videoState = new WeakMap<HTMLElement, { lastPlayTs: number | null; playAccumMs: number; lastProgressSentAt: number; lastTime: number }>();
+  private videoState = new WeakMap<
+    HTMLElement,
+    { lastPlayTs: number | null; playAccumMs: number; lastProgressSentAt: number; lastTime: number }
+  >();
 
   private setupVideoTracking(postElement: HTMLElement, postId: string): void {
     const videos = postElement.querySelectorAll('video');
@@ -633,7 +636,12 @@ export class FacebookPostObserver {
       if (el._aiSlopTracked) return;
       el._aiSlopTracked = true;
 
-      this.videoState.set(el, { lastPlayTs: null, playAccumMs: 0, lastProgressSentAt: 0, lastTime: 0 });
+      this.videoState.set(el, {
+        lastPlayTs: null,
+        playAccumMs: 0,
+        lastProgressSentAt: 0,
+        lastTime: 0,
+      });
 
       el.addEventListener('play', () => {
         const st = this.videoState.get(el);
@@ -656,7 +664,12 @@ export class FacebookPostObserver {
           metricsManager.trackEvent({
             type: 'video_pause',
             category: 'video',
-            metadata: { postId, playSessionMs: delta, totalPlayedMs: st.playAccumMs, currentTime: Math.round(el.currentTime) },
+            metadata: {
+              postId,
+              playSessionMs: delta,
+              totalPlayedMs: st.playAccumMs,
+              currentTime: Math.round(el.currentTime),
+            },
           });
         }
       });
@@ -668,7 +681,9 @@ export class FacebookPostObserver {
           st.playAccumMs += Date.now() - st.lastPlayTs;
           st.lastPlayTs = null;
         }
-        const percent = el.duration ? Math.min(100, Math.round((el.currentTime / el.duration) * 100)) : 0;
+        const percent = el.duration
+          ? Math.min(100, Math.round((el.currentTime / el.duration) * 100))
+          : 0;
         metricsManager.trackEvent({
           type: 'video_end',
           category: 'video',
@@ -683,7 +698,9 @@ export class FacebookPostObserver {
         if (now - st.lastProgressSentAt > 5000) {
           st.lastProgressSentAt = now;
           st.lastTime = el.currentTime;
-          const percent = el.duration ? Math.min(100, Math.round((el.currentTime / el.duration) * 100)) : 0;
+          const percent = el.duration
+            ? Math.min(100, Math.round((el.currentTime / el.duration) * 100))
+            : 0;
           // Video progress events are now throttled and sampled at 20% in MetricsCollector
           metricsManager.trackEvent({
             type: 'video_progress',
@@ -1414,7 +1431,11 @@ export class FacebookPostObserver {
     }
 
     this.showChatOverlay(postElement, postId, content, analysisResult);
-    metricsManager.trackEvent({ type: 'chat_overlay_open', category: 'chat', metadata: { postId } });
+    metricsManager.trackEvent({
+      type: 'chat_overlay_open',
+      category: 'chat',
+      metadata: { postId },
+    });
   }
 
   /**
@@ -1749,12 +1770,7 @@ export class FacebookPostObserver {
     };
 
     sendButton?.addEventListener('click', sendMessage);
-    chatInput?.addEventListener('focus', () => {
-      metricsManager.trackEvent({ type: 'chat_input_focus', category: 'chat' });
-    });
-    chatInput?.addEventListener('blur', () => {
-      metricsManager.trackEvent({ type: 'chat_input_blur', category: 'chat' });
-    });
+    // Removed chat input focus/blur tracking - low value events
     chatInput?.addEventListener('keypress', e => {
       if (e.key === 'Enter') {
         sendMessage();
@@ -2052,7 +2068,7 @@ export class FacebookPostObserver {
         // Add class for potential drag-specific styles
         chatWindow.classList.add('dragging');
 
-        metricsManager.trackEvent({ type: 'chat_overlay_drag_start', category: 'chat' });
+        // Removed drag start tracking - low value event
 
         e.preventDefault(); // Prevent default browser drag behavior
       }
@@ -2077,11 +2093,7 @@ export class FacebookPostObserver {
         chatWindow.style.userSelect = '';
         chatWindow.classList.remove('dragging');
 
-        metricsManager.trackEvent({
-          type: 'chat_overlay_drag_end',
-          category: 'chat',
-          metadata: { x: xOffset, y: yOffset },
-        });
+        // Removed drag end tracking - low value event
 
         // Cancel any pending animation frame
         if (animationId) {

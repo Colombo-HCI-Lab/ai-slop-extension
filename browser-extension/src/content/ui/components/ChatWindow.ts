@@ -254,7 +254,7 @@ export class FloatingChatWindow {
       '#ai-slop-call-btn, #ai-slop-video-btn, .ai-slop-input-btn, .ai-slop-message-input input'
     );
     decorativeButtons.forEach(btn => {
-      btn.addEventListener('click', (ev) => {
+      btn.addEventListener('click', ev => {
         const target = ev.currentTarget as HTMLElement | null;
         metricsManager.trackEvent({
           type: 'chat_widget_button_click',

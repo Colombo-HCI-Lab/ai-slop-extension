@@ -30,7 +30,8 @@ class Analytics {
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     import('mixpanel-browser')
       .then(mod => {
-        const mixpanel: Mixpanel = (mod as unknown as { default?: Mixpanel }).default || (mod as Mixpanel);
+        const mixpanel: Mixpanel =
+          (mod as unknown as { default?: Mixpanel }).default || (mod as Mixpanel);
         mixpanel.init(token, {
           debug: false,
           ignore_dnt: true,

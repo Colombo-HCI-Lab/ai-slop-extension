@@ -15,8 +15,8 @@ export class MetricsManager {
   private isInitialized: boolean = false;
 
   private readonly defaultConfig: MetricsConfig = {
-    batchSize: 25,
-    flushInterval: 30000, // 30 seconds
+    batchSize: 50, // Increased from 25 to 50 - batch more events together
+    flushInterval: 60000, // Increased from 30s to 60s - flush less frequently
     enableDebugLogging: false, // Will be overridden by environment
     privacyMode: 'full', // Research mode: Full data collection
   };
@@ -274,16 +274,7 @@ export class MetricsManager {
   }
 
   private setupPageLifecycle(): void {
-    // Track page visibility changes
-    document.addEventListener('visibilitychange', () => {
-      this.trackEvent({
-        type: document.hidden ? 'page_hidden' : 'page_visible',
-        category: 'navigation',
-        metadata: {
-          timestamp: Date.now(),
-        },
-      });
-    });
+    // Page visibility tracking removed - low value for analytics
 
     // Track page unload
     window.addEventListener('beforeunload', () => {
