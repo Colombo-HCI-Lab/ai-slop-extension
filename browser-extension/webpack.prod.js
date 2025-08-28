@@ -15,5 +15,8 @@ module.exports = merge(common, {
   // Enable production mode for maximum optimization
   mode: 'production',
   // Disable source maps in production for better performance
-  devtool: false
+  devtool: false,
+  optimization: {
+    minimize: true
+  }
 });

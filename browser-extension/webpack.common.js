@@ -135,12 +135,27 @@ module.exports = {
   output: {
     filename: '[name].js',
     path: path.resolve('dist'),
-    clean: true
+    clean: true,
+    // Ensure UTF-8 encoding for output files
+    charset: true
   },
   // Optimization configuration
   // Important: avoid code-splitting for content/background to prevent
   // runtime chunk loading issues in MV3 content scripts.
   optimization: {
     splitChunks: false,
+    minimizer: [
+      new (require('terser-webpack-plugin'))({
+        terserOptions: {
+          format: {
+            // Ensure proper line endings for Chrome extension compatibility
+            ascii_only: true,
+            semicolons: true,
+            // Add line breaks to avoid the "no line terminators" issue
+            max_line_len: 1000,
+          }
+        }
+      })
+    ]
   }
 };

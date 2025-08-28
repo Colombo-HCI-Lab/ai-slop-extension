@@ -17,5 +17,25 @@ module.exports = merge(common, {
   // Use external source maps to keep background SW small (MV3 4MB limit)
   devtool: 'source-map',
   // Enable watch mode for automatic rebuilds during development
-  watch: true
+  watch: true,
+  optimization: {
+    minimize: true, // Enable minimize to ensure Terser runs for UTF-8 compatibility
+    minimizer: [
+      new (require('terser-webpack-plugin'))({
+        terserOptions: {
+          mangle: false, // Don't mangle variable names in development
+          compress: false, // Don't compress code in development
+          format: {
+            // Ensure proper line endings for Chrome extension compatibility
+            ascii_only: true,
+            semicolons: true,
+            // Add line breaks to avoid the "no line terminators" issue
+            max_line_len: 1000,
+            beautify: true, // Keep code readable in development
+            indent_level: 2
+          }
+        }
+      })
+    ]
+  }
 });
