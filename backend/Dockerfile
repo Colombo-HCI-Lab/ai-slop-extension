@@ -100,4 +100,4 @@ HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
 
 # Run uvicorn as Python module from the venv (no shell activation needed)
 # Use shell to expand PORT variable, then exec to proper signal handling
-CMD ["sh", "-c", "python -m uvicorn main:app --host 0.0.0.0 --port ${PORT} --workers 4"]
+CMD ["sh", "-c", "python -m uvicorn main:app --host 0.0.0.0 --port ${PORT} --workers 1"]
