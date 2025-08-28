@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, func, and_, desc, asc
 from sqlalchemy.orm import selectinload
 
-from db.models import User, UserPostAnalytics, UserSessionAnalytics, ChatSession, AnalyticsEvent, UserPerformanceAnalytics, Post
+from db.models import User, UserPostAnalytics, UserSessionAnalytics, ChatSession, AnalyticsEvent, Post
 from schemas.analytics import (
     AnalyticsEvent as EventSchema,
     UserCreate,
@@ -16,7 +16,6 @@ from schemas.analytics import (
     UserSessionAnalyticsCreate,
     ChatSessionCreate,
     AnalyticsEventCreate,
-    UserPerformanceAnalyticsRequest,
 )
 from utils.logging import get_logger
 
@@ -112,7 +111,9 @@ class AnalyticsService:
             ip_hash = browser_info.get("ip_hash")
             user_agent = browser_info.get("user_agent")
 
-            session = UserSessionAnalytics(id=session_id, user_id=user_id, session_token=session_token, ip_hash=ip_hash, user_agent=user_agent)
+            session = UserSessionAnalytics(
+                id=session_id, user_id=user_id, session_token=session_token, ip_hash=ip_hash, user_agent=user_agent
+            )
 
             self.db.add(session)
             await self.db.commit()
@@ -479,30 +480,6 @@ class AnalyticsService:
 
         except Exception as e:
             logger.error(f"Failed to generate dashboard for user {user_id}: {e}")
-            raise
-
-    async def record_performance_metric(self, metric_request: UserPerformanceAnalyticsRequest) -> UserPerformanceAnalytics:
-        """Record a performance metric."""
-        try:
-            metric = UserPerformanceAnalytics(
-                session_id=metric_request.session_id,
-                metric_name=metric_request.metric_name,
-                metric_value=metric_request.metric_value,
-                metric_unit=metric_request.metric_unit,
-                endpoint=metric_request.endpoint,
-                metric_metadata=metric_request.metadata,
-            )
-
-            self.db.add(metric)
-            await self.db.commit()
-            await self.db.refresh(metric)
-
-            logger.debug(f"Recorded performance metric: {metric_request.metric_name}")
-            return metric
-
-        except Exception as e:
-            await self.db.rollback()
-            logger.error(f"Failed to record performance metric {metric_request.metric_name}: {e}")
             raise
 
     async def _update_aggregated_metrics(self, user_id: str, session_id: str, events: List[EventSchema]) -> None:

@@ -16,7 +16,6 @@ from schemas.analytics import (
     PostInteractionRequest,
     ChatSessionMetrics,
     UserDashboardResponse,
-    UserPerformanceAnalyticsRequest,
 )
 from services.analytics_service import AnalyticsService
 from services.monitoring_service import MonitoringService
@@ -302,59 +301,6 @@ async def get_user_dashboard(user_id: str, date_from: Optional[datetime] = None,
         raise HTTPException(status_code=500, detail="Failed to retrieve dashboard")
 
 
-@router.post("/performance/metrics")
-async def record_performance_metric(request: UserPerformanceAnalyticsRequest, background_tasks: BackgroundTasks):
-    """Record system performance metric."""
-    start_time = datetime.now()
-    logger.info(
-        f"POST /analytics/performance/metrics - Recording performance metric",
-        extra={
-            "endpoint": "/analytics/performance/metrics",
-            "method": "POST",
-            "metric_name": request.metric_name,
-            "metric_value": request.metric_value,
-            "metric_unit": request.metric_unit,
-            "target_endpoint": request.endpoint,
-        },
-    )
-
-    try:
-        # Process in background with fresh DB session to avoid leaks
-        background_tasks.add_task(_record_performance_metric_background, request)
-
-        duration_ms = (datetime.now() - start_time).total_seconds() * 1000
-        logger.info(
-            f"POST /analytics/performance/metrics - Success",
-            extra={
-                "endpoint": "/analytics/performance/metrics",
-                "method": "POST",
-                "metric_name": request.metric_name,
-                "metric_value": request.metric_value,
-                "duration_ms": round(duration_ms, 2),
-                "status": "accepted",
-            },
-        )
-
-        return {"status": "accepted"}
-
-    except Exception as e:
-        duration_ms = (datetime.now() - start_time).total_seconds() * 1000
-        logger.error(
-            f"POST /analytics/performance/metrics - Failed",
-            extra={
-                "endpoint": "/analytics/performance/metrics",
-                "method": "POST",
-                "metric_name": request.metric_name,
-                "error": str(e),
-                "error_type": type(e).__name__,
-                "duration_ms": round(duration_ms, 2),
-                "status": "error",
-            },
-            exc_info=True,
-        )
-        raise HTTPException(status_code=500, detail="Failed to record metric")
-
-
 @router.post("/chat/sessions")
 async def create_chat_session(request: ChatSessionMetrics):
     """Create or update chat session metrics."""
@@ -469,25 +415,6 @@ async def _process_events_background(session_id: str, events: List[AnalyticsEven
     except Exception as e:
         await db_session.rollback()
         logger.error(f"Error processing events in background: {e}")
-        raise
-    finally:
-        await db_session.close()
-
-
-async def _record_performance_metric_background(request: UserPerformanceAnalyticsRequest) -> None:
-    """Record performance metric in background using a fresh DB session."""
-    from db.pool import database_pool
-
-    db_session = await database_pool.get_session()
-    try:
-        service = AnalyticsService(db_session)
-        await service.record_performance_metric(request)
-        logger.debug(f"Background recorded metric: {request.metric_name}")
-
-        await db_session.commit()
-    except Exception as e:
-        await db_session.rollback()
-        logger.error(f"Error recording performance metric in background: {e}")
         raise
     finally:
         await db_session.close()

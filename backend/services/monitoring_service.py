@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, text
 
-from db.models import AnalyticsEvent, UserPerformanceAnalytics, User, UserSessionAnalytics
+from db.models import AnalyticsEvent, User, UserSessionAnalytics
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -22,18 +22,19 @@ class MonitoringService:
     async def record_api_performance(
         self, endpoint: str, method: str, duration_ms: float, status_code: int, error: Optional[str] = None
     ) -> None:
-        """Record API endpoint performance metrics."""
+        """Record API endpoint performance metrics via logging only."""
         try:
-            metric = UserPerformanceAnalytics(
-                metric_name="api_response_time",
-                metric_value=duration_ms,
-                metric_unit="ms",
-                endpoint=f"{method} {endpoint}",
-                metric_metadata={"method": method, "status_code": status_code, "error": error, "timestamp": datetime.utcnow().isoformat()},
+            # Log performance metrics instead of storing in database
+            logger.info(
+                f"API Performance: {method} {endpoint}",
+                extra={
+                    "endpoint": f"{method} {endpoint}",
+                    "duration_ms": duration_ms,
+                    "status_code": status_code,
+                    "error": error,
+                    "metric_type": "api_performance",
+                },
             )
-
-            self.db.add(metric)
-            await self.db.commit()
 
             # Log slow endpoints
             if duration_ms > 1000:
@@ -102,36 +103,16 @@ class MonitoringService:
             return {"status": "unhealthy", "error": str(e)}
 
     async def _get_api_performance_stats(self) -> Dict[str, any]:
-        """Get API performance statistics for the last hour."""
-        try:
-            one_hour_ago = datetime.utcnow() - timedelta(hours=1)
-
-            stmt = select(
-                func.avg(UserPerformanceAnalytics.metric_value).label("avg_response_time"),
-                func.max(UserPerformanceAnalytics.metric_value).label("max_response_time"),
-                func.count(UserPerformanceAnalytics.id).label("total_requests"),
-                func.count(UserPerformanceAnalytics.id).filter(UserPerformanceAnalytics.metric_value > 1000).label("slow_requests"),
-            ).where(UserPerformanceAnalytics.metric_name == "api_response_time", UserPerformanceAnalytics.timestamp >= one_hour_ago)
-
-            result = await self.db.execute(stmt)
-            row = result.first()
-
-            if not row or row.total_requests == 0:
-                return {"status": "no_data", "message": "No API performance data available"}
-
-            slow_request_rate = (row.slow_requests / row.total_requests) * 100 if row.total_requests > 0 else 0
-
-            return {
-                "status": "healthy" if slow_request_rate < 5 else "degraded",
-                "avg_response_time_ms": float(row.avg_response_time) if row.avg_response_time else 0,
-                "max_response_time_ms": float(row.max_response_time) if row.max_response_time else 0,
-                "total_requests": row.total_requests,
-                "slow_requests": row.slow_requests,
-                "slow_request_rate_percent": slow_request_rate,
-            }
-
-        except Exception as e:
-            return {"status": "error", "error": str(e)}
+        """Get API performance statistics - returns placeholder since table removed."""
+        return {
+            "status": "no_data",
+            "message": "API performance metrics moved to logging only",
+            "avg_response_time_ms": 0,
+            "max_response_time_ms": 0,
+            "total_requests": 0,
+            "slow_requests": 0,
+            "slow_request_rate_percent": 0,
+        }
 
     async def _get_user_activity_stats(self) -> Dict[str, any]:
         """Get user activity statistics."""

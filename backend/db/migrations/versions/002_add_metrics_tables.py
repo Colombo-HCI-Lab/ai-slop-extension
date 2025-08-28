@@ -154,27 +154,9 @@ def upgrade() -> None:
     op.create_index("ix_analytics_event_session", "analytics_event", ["session_id"])
     op.create_index("ix_analytics_event_category", "analytics_event", ["event_category"])
 
-    # Performance metrics table for system monitoring
-    op.create_table(
-        "user_performance_analytics",
-        sa.Column("id", sa.String(36), primary_key=True),
-        sa.Column("session_id", sa.String(36), sa.ForeignKey("user_session_analytics.id", ondelete="CASCADE")),
-        sa.Column("metric_name", sa.String(100), nullable=False),
-        sa.Column("metric_value", sa.Float(), nullable=False),
-        sa.Column("metric_unit", sa.String(50)),
-        sa.Column("endpoint", sa.String(255)),
-        sa.Column("timestamp", sa.DateTime(timezone=True), server_default=sa.text("now()")),
-        sa.Column("metric_metadata", sa.JSON()),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()")),
-    )
-    op.create_index("ix_user_performance_analytics_name_time", "user_performance_analytics", ["metric_name", "timestamp"])
-    op.create_index("ix_user_performance_analytics_session", "user_performance_analytics", ["session_id"])
-
 
 def downgrade() -> None:
     """Downgrade schema."""
-    op.drop_table("user_performance_analytics")
     op.drop_table("analytics_event")
     op.drop_table("chat_session")
     op.drop_table("user_session_analytics")

@@ -110,17 +110,6 @@ class UserDashboardResponse(BaseModel):
     behavior_metrics: Dict[str, Any] = Field(..., description="Behavioral metrics")
 
 
-class UserPerformanceAnalyticsRequest(BaseModel):
-    """Request to record performance metric."""
-
-    session_id: Optional[str] = Field(None, description="Session ID")
-    metric_name: str = Field(..., description="Metric name")
-    metric_value: float = Field(..., description="Metric value")
-    metric_unit: Optional[str] = Field(None, description="Unit of measurement")
-    endpoint: Optional[str] = Field(None, description="Related API endpoint")
-    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Additional metadata")
-
-
 class AnalyticsEventCreate(BaseModel):
     """Create analytics event in database."""
 
