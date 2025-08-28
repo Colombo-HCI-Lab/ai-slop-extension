@@ -29,12 +29,12 @@ class AnalyticsService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def initialize_user(self, extension_user_id: str, browser_info: Dict[str, Any], timezone: str, locale: str) -> User:
+    async def initialize_user(self, user_id: str, session_id: str, browser_info: Dict[str, Any], timezone: str, locale: str) -> User:
         """Initialize or update user with deduplication."""
         logger.info(
-            f"Initializing user: {extension_user_id[:8]}...",
+            f"Initializing user: {user_id[:8]}...",
             extra={
-                "extension_user_id": extension_user_id,
+                "user_id": user_id,
                 "timezone": timezone,
                 "locale": locale,
                 "browser_name": browser_info.get("name"),
@@ -44,7 +44,7 @@ class AnalyticsService:
 
         try:
             # Check for existing user
-            stmt = select(User).where(User.extension_user_id == extension_user_id)
+            stmt = select(User).where(User.id == user_id)
             result = await self.db.execute(stmt)
             user = result.scalar_one_or_none()
 
@@ -55,23 +55,23 @@ class AnalyticsService:
                 user.timezone = timezone
                 user.locale = locale
                 logger.info(
-                    f"Updated existing user: {extension_user_id[:8]}...",
+                    f"Updated existing user: {user_id[:8]}...",
                     extra={"user_id": str(user.id), "action": "update_user", "last_active_at": user.last_active_at.isoformat()},
                 )
             else:
                 # Create new user with A/B test assignment
                 user = User(
-                    extension_user_id=extension_user_id,
+                    id=user_id,
                     browser_info=browser_info,
                     timezone=timezone,
                     locale=locale,
-                    experiment_groups=self._assign_experiment_groups(extension_user_id),
+                    experiment_groups=self._assign_experiment_groups(user_id),
                 )
                 self.db.add(user)
                 logger.info(
-                    f"Created new user: {extension_user_id[:8]}...",
+                    f"Created new user: {user_id[:8]}...",
                     extra={
-                        "user_id": str(user.id) if hasattr(user, "id") else "pending",
+                        "user_id": user_id,
                         "action": "create_user",
                         "experiment_groups": user.experiment_groups,
                     },
@@ -84,9 +84,9 @@ class AnalyticsService:
         except Exception as e:
             await self.db.rollback()
             logger.error(
-                f"User initialization failed for {extension_user_id[:8]}...",
+                f"User initialization failed for {user_id[:8]}...",
                 extra={
-                    "extension_user_id": extension_user_id,
+                    "user_id": user_id,
                     "error": str(e),
                     "error_type": type(e).__name__,
                     "action": "initialize_user",
@@ -95,7 +95,7 @@ class AnalyticsService:
             )
             raise
 
-    async def start_session(self, user_id: str, browser_info: Dict[str, Any]) -> UserSessionAnalytics:
+    async def start_session(self, user_id: str, session_id: str, browser_info: Dict[str, Any]) -> UserSessionAnalytics:
         """Start a new user session."""
         logger.info(
             f"Starting session for user {user_id[:8]}...",
@@ -112,7 +112,7 @@ class AnalyticsService:
             ip_hash = browser_info.get("ip_hash")
             user_agent = browser_info.get("user_agent")
 
-            session = UserSessionAnalytics(user_id=user_id, session_token=session_token, ip_hash=ip_hash, user_agent=user_agent)
+            session = UserSessionAnalytics(id=session_id, user_id=user_id, session_token=session_token, ip_hash=ip_hash, user_agent=user_agent)
 
             self.db.add(session)
             await self.db.commit()
@@ -349,7 +349,6 @@ class AnalyticsService:
             if not user:
                 user = User(
                     id=user_id,  # Use provided ID (should be UUID from extension)
-                    extension_user_id=user_id,
                     browser_info=None,
                     timezone=None,
                     locale=None,

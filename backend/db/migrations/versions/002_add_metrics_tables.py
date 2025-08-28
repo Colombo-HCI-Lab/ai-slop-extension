@@ -19,26 +19,23 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    # Create user table with behavioral metrics
+    # Create user table with behavioral metrics (simplified without extension_user_id)
     op.create_table(
         "user",
-        sa.Column("id", sa.String(36), primary_key=True),
-        sa.Column("extension_user_id", sa.String(255), unique=True, nullable=False),
+        sa.Column("id", sa.String(36), primary_key=True),  # This will be the user_id from browser extension
         sa.Column("avg_scroll_speed", sa.Float()),
         sa.Column("avg_posts_per_minute", sa.Float()),
-        sa.Column("total_posts_viewed", sa.Integer(), default=0),
-        sa.Column("total_interactions", sa.Integer(), default=0),
+        sa.Column("total_posts_viewed", sa.Integer(), server_default="0", nullable=False),
+        sa.Column("total_interactions", sa.Integer(), server_default="0", nullable=False),
         sa.Column("browser_info", sa.JSON()),
         sa.Column("timezone", sa.String(50)),
         sa.Column("locale", sa.String(10)),
         sa.Column("experiment_groups", sa.JSON()),  # For A/B testing
-        sa.Column("first_seen_at", sa.DateTime(timezone=True), server_default=sa.text("now()")),
-        sa.Column("last_active_at", sa.DateTime(timezone=True), server_default=sa.text("now()")),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()")),
+        sa.Column("first_seen_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("last_active_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
     )
-    op.create_index("ix_user_extension_user_id", "user", ["extension_user_id"])
-    op.create_index("ix_user_last_active", "user", ["last_active_at"])
 
     # Enhanced post table modifications
     op.add_column("post", sa.Column("content_length", sa.Integer()))

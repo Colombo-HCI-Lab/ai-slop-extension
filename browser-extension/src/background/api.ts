@@ -155,14 +155,15 @@ export async function sendMetricsBatch(
 // --- Additional Analytics endpoints ---
 
 export async function initializeUser(body: {
-  extension_user_id: string;
+  user_id: string;
+  session_id: string;
   browser_info: Record<string, unknown>;
   timezone: string;
   locale: string;
   client_ip?: string | null;
 }): Promise<{ user_id: string; session_id: string; experiment_groups: string[] }> {
   const url = `${API_BASE_URL}/analytics/users/initialize`;
-  logger.log('POST', url, { extensionUserId: body.extension_user_id });
+  logger.log('POST', url, { userId: body.user_id });
   return fetchJsonWithRetry(
     url,
     {

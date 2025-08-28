@@ -79,9 +79,10 @@ export function setupBackgroundMessaging(): void {
     }
 
     if (message.type === MessageType.AnalyticsUserInit) {
-      logger.log('ANALYTICS_USER_INIT received', { extensionUserId: message.extensionUserId });
+      logger.log('ANALYTICS_USER_INIT received', { userId: message.userId, sessionId: message.sessionId });
       initializeUserApi({
-        extension_user_id: message.extensionUserId,
+        user_id: message.userId,
+        session_id: message.sessionId,
         timezone: message.timezone,
         locale: message.locale,
         browser_info: message.browserInfo,

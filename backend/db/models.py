@@ -252,14 +252,11 @@ class User(Base):
 
     __tablename__ = "user"
 
+    # Primary key is the user_id from browser extension (UUID)
     id: Mapped[str] = mapped_column(
         String(36),
         primary_key=True,
-        default=lambda: str(uuid.uuid4()),
     )
-
-    # Unique identifier from browser extension
-    extension_user_id: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
 
     # Behavioral metrics
     avg_scroll_speed: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
@@ -311,7 +308,7 @@ class User(Base):
 
     def __repr__(self) -> str:
         """String representation."""
-        return f"<User(id={self.id}, extension_user_id={self.extension_user_id})>"
+        return f"<User(id={self.id})>"
 
 
 class UserPostAnalytics(Base):

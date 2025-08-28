@@ -24,7 +24,8 @@ class AnalyticsEvent(BaseModel):
 class UserInitRequest(BaseModel):
     """Request to initialize a user."""
 
-    extension_user_id: str = Field(..., description="Unique extension user identifier")
+    user_id: str = Field(..., description="Unique user identifier from browser extension")
+    session_id: str = Field(..., description="Session identifier from browser extension")
     browser_info: Dict[str, Any] = Field(..., description="Browser and environment information")
     timezone: str = Field(..., description="User timezone")
     locale: str = Field(..., description="User locale")
@@ -153,7 +154,7 @@ class UserPostAnalyticsCreate(BaseModel):
 class UserCreate(BaseModel):
     """Create user entry."""
 
-    extension_user_id: str
+    user_id: str
     browser_info: Optional[Dict[str, Any]] = None
     timezone: Optional[str] = None
     locale: Optional[str] = None

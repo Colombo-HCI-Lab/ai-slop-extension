@@ -5,7 +5,7 @@
 import { log, error } from '../../shared/logger';
 import { MetricsCollector } from './MetricsCollector';
 import { MetricsConfig, UserSession } from '../../shared/types';
-import { getUserId } from '../../shared/storage';
+import { getUserId, getSessionId } from '../../shared/storage';
 import { initializeAnalyticsUser, endAnalyticsSession } from '../messaging';
 import { analytics } from '@/shared/analytics';
 
@@ -25,12 +25,13 @@ export class MetricsManager {
     if (this.isInitialized) return;
 
     try {
-      // Get or create extension user ID
-      const extensionUserId = await getUserId();
+      // Get or create user ID and session ID from storage
+      const userId = getUserId();
+      const sessionId = getSessionId();
 
       // Initialize user + start session in backend (block until ready)
-      let userId = extensionUserId;
-      let sessionId = this.generateSessionId();
+      let backendUserId = userId;
+      let backendSessionId = sessionId;
       try {
         const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
         const locale = navigator.language || 'en-US';
@@ -42,21 +43,23 @@ export class MetricsManager {
         } as const;
 
         const res = await initializeAnalyticsUser({
-          extensionUserId: extensionUserId,
+          userId: userId,
+          sessionId: sessionId,
           timezone: tz,
           locale: locale,
           browserInfo: browserInfo as unknown as Record<string, unknown>,
         });
-        userId = res.user_id;
-        sessionId = res.session_id;
+        backendUserId = res.user_id;
+        // Keep frontend sessionId instead of overriding with backend response
+        backendSessionId = sessionId;
       } catch (e) {
         // Fallback to local-only session if backend init fails
         console.debug('initializeAnalyticsUser failed; using local session', e);
       }
 
       this.session = {
-        userId,
-        sessionId,
+        userId: backendUserId,
+        sessionId: backendSessionId,
         startTime: Date.now(),
         lastActivity: Date.now(),
       };
@@ -69,12 +72,12 @@ export class MetricsManager {
       };
 
       this.collector = new MetricsCollector(config);
-      this.collector.setSession(userId, sessionId);
+      this.collector.setSession(backendUserId, backendSessionId);
 
       // Hook Mixpanel identity and super props
-      analytics.identify(userId);
+      analytics.identify(backendUserId);
       analytics.registerSuper({
-        session_id: sessionId,
+        session_id: backendSessionId,
         platform: 'chrome_extension',
         environment: process.env.NODE_ENV || 'production',
       });
@@ -100,8 +103,8 @@ export class MetricsManager {
         type: 'session_start',
         category: 'session',
         metadata: {
-          sessionId,
-          userId,
+          sessionId: backendSessionId,
+          userId: backendUserId,
         },
       });
 
@@ -112,7 +115,7 @@ export class MetricsManager {
       this.setupPageLifecycle();
 
       this.isInitialized = true;
-      log('MetricsManager initialized', { userId, sessionId });
+      log('MetricsManager initialized', { userId: backendUserId, sessionId: backendSessionId });
     } catch (err) {
       error('Failed to initialize MetricsManager:', err);
     }
@@ -305,9 +308,7 @@ export class MetricsManager {
     return 'full';
   }
 
-  private generateSessionId(): string {
-    return `sess_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  }
+  // Removed generateSessionId() - now using getSessionId() from storage
 }
 
 // Singleton instance for the content script

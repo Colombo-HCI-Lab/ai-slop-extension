@@ -38,7 +38,7 @@ async def initialize_user(request: UserInitRequest, background_tasks: Background
         extra={
             "endpoint": "/analytics/users/initialize",
             "method": "POST",
-            "extension_user_id": request.extension_user_id[:8] + "...",
+            "user_id": request.user_id[:8] + "...",
             "timezone": request.timezone,
             "locale": request.locale,
             "browser_name": request.browser_info.get("name"),
@@ -53,19 +53,20 @@ async def initialize_user(request: UserInitRequest, background_tasks: Background
 
             service = AnalyticsService(db)
             user = await service.initialize_user(
-                extension_user_id=request.extension_user_id,
+                user_id=request.user_id,
+                session_id=request.session_id,
                 browser_info=request.browser_info,
                 timezone=request.timezone,
                 locale=request.locale,
             )
 
-            # Start new session
+            # Start new session with provided session_id
             session = await service.start_session(
-                user.id, {**request.browser_info, "ip_hash": _hash_ip(client_ip) if client_ip != "unknown" else None}
+                user.id, request.session_id, {**request.browser_info, "ip_hash": _hash_ip(client_ip) if client_ip != "unknown" else None}
             )
 
             # Ensure chat UserSession is created early to anchor chat history
-            await _ensure_chat_user_session(db, request.extension_user_id)
+            await _ensure_chat_user_session(db, request.user_id)
 
             # Background task for additional processing if needed
             background_tasks.add_task(_enrich_user_data, service, user.id, client_ip)
@@ -95,7 +96,7 @@ async def initialize_user(request: UserInitRequest, background_tasks: Background
             extra={
                 "endpoint": "/analytics/users/initialize",
                 "method": "POST",
-                "extension_user_id": request.extension_user_id[:8] + "...",
+                "user_id": request.user_id[:8] + "...",
                 "error": str(e),
                 "error_type": type(e).__name__,
                 "duration_ms": round(duration_ms, 2),

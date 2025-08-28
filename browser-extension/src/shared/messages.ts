@@ -60,7 +60,8 @@ export type MetricsBatch = {
 
 export type AnalyticsUserInit = {
   type: MessageType.AnalyticsUserInit;
-  extensionUserId: string;
+  userId: string;
+  sessionId: string;
   timezone: string;
   locale: string;
   browserInfo: Record<string, unknown>;

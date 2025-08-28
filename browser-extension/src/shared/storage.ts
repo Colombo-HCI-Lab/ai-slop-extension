@@ -13,3 +13,25 @@ export const getUserId = (): string => {
     return `anon-${Math.random().toString(36).slice(2)}`;
   }
 };
+
+export const getSessionId = (): string => {
+  try {
+    let sessionId = sessionStorage.getItem(STORAGE_KEYS.sessionId);
+    if (!sessionId) {
+      sessionId = crypto.randomUUID();
+      sessionStorage.setItem(STORAGE_KEYS.sessionId, sessionId);
+    }
+    return sessionId;
+  } catch {
+    // Fallback in environments without sessionStorage
+    return `sess-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  }
+};
+
+export const clearSession = (): void => {
+  try {
+    sessionStorage.removeItem(STORAGE_KEYS.sessionId);
+  } catch {
+    // Ignore errors in environments without sessionStorage
+  }
+};
