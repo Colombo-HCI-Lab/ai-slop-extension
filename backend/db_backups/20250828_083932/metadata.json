@@ -1,0 +1,9 @@
+{
+  "timestamp": "2025-08-28T03:10:11Z",
+  "database": "ai_slop_extension",
+  "tables": ["post","post_media"]",
+  "table_counts": {
+    "post":     26,
+    "post_media":     53
+  }
+}
