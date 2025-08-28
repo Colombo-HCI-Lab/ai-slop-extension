@@ -105,7 +105,7 @@ substitutions:
   _DEVICE: 'cpu'
   _DEFAULT_MODEL: 'slowfast_r50'
   _LOG_LEVEL: 'INFO'
-  _MEMORY: '8Gi'
+  _MEMORY: '16Gi'
   _CPU: '4'
   _MAX_INSTANCES: '1'
   _MIN_INSTANCES: '0'
