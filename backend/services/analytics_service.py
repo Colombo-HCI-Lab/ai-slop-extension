@@ -191,16 +191,34 @@ class AnalyticsService:
 
     async def process_event_batch(self, session_id: str, events: List[EventSchema], user_id: str) -> None:
         """Process analytics events with deduplication and aggregation."""
+        
+        # Server-side event filtering for noisy events  
+        low_value_events = {'video_progress', 'icon_injected', 'icon_injected_fallback', 'scroll_behavior'}
+        
+        # Filter out excessive low-value events, keep only 1 in 10 
+        filtered_events = []
+        for event in events:
+            if event.type in low_value_events:
+                # Keep only 10% of low-value events
+                if hash(f"{event.type}_{event.client_timestamp}") % 10 == 0:
+                    filtered_events.append(event)
+            else:
+                filtered_events.append(event)
+        
         logger.info(
             f"Processing event batch for session {session_id[:8]}...",
             extra={
                 "session_id": session_id,
                 "user_id": user_id[:8] + "..." if user_id else None,
-                "event_count": len(events),
-                "event_types": [e.type for e in events],
+                "original_event_count": len(events),
+                "filtered_event_count": len(filtered_events),
+                "filtered_out": len(events) - len(filtered_events),
+                "event_types": [e.type for e in filtered_events],
                 "action": "process_event_batch",
             },
         )
+        
+        events = filtered_events  # Use filtered events for processing
 
         try:
             # Check if user and session exist (they may not for anonymous tracking)

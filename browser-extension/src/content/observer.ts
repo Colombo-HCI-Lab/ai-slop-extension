@@ -684,6 +684,7 @@ export class FacebookPostObserver {
           st.lastProgressSentAt = now;
           st.lastTime = el.currentTime;
           const percent = el.duration ? Math.min(100, Math.round((el.currentTime / el.duration) * 100)) : 0;
+          // Video progress events are now throttled and sampled at 20% in MetricsCollector
           metricsManager.trackEvent({
             type: 'video_progress',
             category: 'video',
@@ -1335,6 +1336,7 @@ export class FacebookPostObserver {
     try {
       targetElement.appendChild(iconContainer);
       log(`[AI-Slop] ✅ Icon injected successfully for post ${postId} with consistent positioning`);
+      // Only log icon injection for critical debugging, sampling applied in MetricsCollector
       metricsManager.trackEvent({
         type: 'icon_injected',
         category: 'interaction',
@@ -1354,7 +1356,7 @@ export class FacebookPostObserver {
             }
             container.appendChild(iconContainer);
             log(`[AI-Slop] ✅ Icon injected using fallback container`);
-            metricsManager.trackEvent({ type: 'icon_injected_fallback', category: 'interaction', metadata: { postId } });
+            // Removed excessive icon injection fallback logging
             break;
           } catch {
             continue;

@@ -26,6 +26,26 @@ export class MetricsCollector {
   private scrollSpeeds: number[] = [];
   private postViewTimes: Map<string, number> = new Map();
   private postCumulativeView: Map<string, number> = new Map();
+  
+  // Event throttling and sampling
+  private throttledEvents: Map<string, number> = new Map();
+  private samplingRates: Record<string, number> = {
+    'video_progress': 0.2,
+    'icon_injected': 0.1, 
+    'icon_injected_fallback': 0.1,
+    'scroll_behavior': 0.3,
+    'video_play': 0.5,
+    'video_pause': 0.5,
+    'page_hidden': 0.5,
+    'page_visible': 0.5
+  };
+  private eventThrottleTimes: Record<string, number> = {
+    'video_progress': 10000, // 10 seconds
+    'scroll_behavior': 5000,  // 5 seconds  
+    'icon_injected': 30000,   // 30 seconds
+    'video_play': 2000,       // 2 seconds
+    'video_pause': 2000       // 2 seconds
+  };
 
   constructor(config: MetricsConfig) {
     this.config = config;
@@ -199,6 +219,11 @@ export class MetricsCollector {
   );
 
   public trackEvent(event: Omit<AnalyticsEvent, 'clientTimestamp'>): void {
+    // Apply throttling and sampling filters
+    if (!this.shouldLogEvent(event.type)) {
+      return;
+    }
+
     const fullEvent: AnalyticsEvent = {
       ...event,
       clientTimestamp: new Date().toISOString(),
@@ -250,6 +275,28 @@ export class MetricsCollector {
         // Re-add failed events to buffer (best-effort)
         this.eventBuffer.unshift(...events.slice(0, this.config.batchSize));
       });
+  }
+
+  private shouldLogEvent(eventType: string): boolean {
+    const now = Date.now();
+    
+    // Check throttling
+    const throttleTime = this.eventThrottleTimes[eventType];
+    if (throttleTime) {
+      const lastLoggedTime = this.throttledEvents.get(eventType) || 0;
+      if (now - lastLoggedTime < throttleTime) {
+        return false;
+      }
+      this.throttledEvents.set(eventType, now);
+    }
+    
+    // Check sampling
+    const samplingRate = this.samplingRates[eventType];
+    if (samplingRate && Math.random() > samplingRate) {
+      return false;
+    }
+    
+    return true;
   }
 
   private trackPerformance(name: string, duration: number): void {
