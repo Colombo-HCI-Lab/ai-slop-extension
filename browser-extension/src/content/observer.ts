@@ -10,10 +10,8 @@ import {
   sendChatSessionMetrics,
 } from '@/content/messaging';
 import { metricsManager } from './metrics/MetricsManager';
-import {
-  POST_CONTENT_SELECTOR as POST_SELECTOR,
-  ALLOWED_GROUP_NAMES as GROUPS,
-} from '@/content/dom/selectors';
+import { POST_CONTENT_SELECTOR as POST_SELECTOR } from '@/content/dom/selectors';
+import { isInAllowedGroupNow } from '@/content/utils/group';
 import { ChatMessage } from '@/content/types';
 // Chat session metrics state attached to chat window elements
 interface ChatMetrics {
@@ -49,29 +47,14 @@ export class FacebookPostObserver {
   /** Selector for extracting post content */
   private readonly POST_CONTENT_SELECTOR = POST_SELECTOR;
 
-  /** List of allowed Facebook group names where the extension should work */
-  private readonly ALLOWED_GROUP_NAMES = GROUPS;
-
   /**
    * Checks if the current page is in an allowed Facebook group
    * @returns boolean indicating if the extension should be active
    */
   private isInAllowedGroup(): boolean {
-    const currentGroupName = this.getCurrentGroupName();
-
-    if (!currentGroupName) {
-      // Not in a group, extension should NOT work
-      return false;
-    }
-
-    const isAllowed = this.ALLOWED_GROUP_NAMES.some(
-      allowedName =>
-        currentGroupName.toLowerCase().includes(allowedName.toLowerCase()) ||
-        allowedName.toLowerCase().includes(currentGroupName.toLowerCase())
-    );
-
-    log(`[AI-Slop] Group filtering - Current group: "${currentGroupName}", Allowed: ${isAllowed}`);
-    return isAllowed;
+    const allowed = isInAllowedGroupNow();
+    log(`[AI-Slop] Group filtering - Allowed: ${allowed}`);
+    return allowed;
   }
 
   /**
@@ -543,6 +526,11 @@ export class FacebookPostObserver {
       // Allow posts with no text content if they have media (media-only posts)
       if (trimmedContent.length === 0 && !hasMedia) {
         log(`[AI-Slop] ⏭️ Post ${postId} has no content and no media, skipping analysis`);
+        metricsManager.trackEvent({
+          type: 'post_skipped_empty',
+          category: 'post',
+          metadata: { postId },
+        });
         return;
       }
 
@@ -562,6 +550,11 @@ export class FacebookPostObserver {
           log(
             `[AI-Slop] ⏭️ Post ${postId} has repetitive text content (${trimmedContent.length} chars, ${facebookCount} "Facebook" occurrences), skipping analysis`
           );
+          metricsManager.trackEvent({
+            type: 'post_skipped_repetitive',
+            category: 'post',
+            metadata: { postId, length: trimmedContent.length, facebookCount },
+          });
           return;
         }
       }
@@ -619,10 +612,86 @@ export class FacebookPostObserver {
 
       // Store analysis result and inject icon
       this.injectFactCheckIcon(postElement, postId, content, response);
+
+      // Setup media/video tracking inside this post (if present)
+      this.setupVideoTracking(postElement, postId);
     } catch (error) {
       logError(`[AI-Slop] ❌ Error analyzing post ${postId}:`, error);
       // Don't show icon if analysis fails to avoid confusion
     }
+  }
+
+  /**
+   * Tracks video interactions inside a post
+   */
+  private videoState = new WeakMap<HTMLElement, { lastPlayTs: number | null; playAccumMs: number; lastProgressSentAt: number; lastTime: number }>();
+
+  private setupVideoTracking(postElement: HTMLElement, postId: string): void {
+    const videos = postElement.querySelectorAll('video');
+    videos.forEach(v => {
+      const el = v as HTMLVideoElement & { _aiSlopTracked?: boolean };
+      if (el._aiSlopTracked) return;
+      el._aiSlopTracked = true;
+
+      this.videoState.set(el, { lastPlayTs: null, playAccumMs: 0, lastProgressSentAt: 0, lastTime: 0 });
+
+      el.addEventListener('play', () => {
+        const st = this.videoState.get(el);
+        if (!st) return;
+        st.lastPlayTs = Date.now();
+        metricsManager.trackEvent({
+          type: 'video_play',
+          category: 'video',
+          metadata: { postId, duration: Math.round(el.duration || 0) },
+        });
+      });
+
+      el.addEventListener('pause', () => {
+        const st = this.videoState.get(el);
+        if (!st) return;
+        if (st.lastPlayTs) {
+          const delta = Date.now() - st.lastPlayTs;
+          st.playAccumMs += delta;
+          st.lastPlayTs = null;
+          metricsManager.trackEvent({
+            type: 'video_pause',
+            category: 'video',
+            metadata: { postId, playSessionMs: delta, totalPlayedMs: st.playAccumMs, currentTime: Math.round(el.currentTime) },
+          });
+        }
+      });
+
+      el.addEventListener('ended', () => {
+        const st = this.videoState.get(el);
+        if (!st) return;
+        if (st.lastPlayTs) {
+          st.playAccumMs += Date.now() - st.lastPlayTs;
+          st.lastPlayTs = null;
+        }
+        const percent = el.duration ? Math.min(100, Math.round((el.currentTime / el.duration) * 100)) : 0;
+        metricsManager.trackEvent({
+          type: 'video_end',
+          category: 'video',
+          metadata: { postId, totalPlayedMs: st.playAccumMs, percentWatched: percent },
+        });
+      });
+
+      el.addEventListener('timeupdate', () => {
+        const st = this.videoState.get(el);
+        if (!st) return;
+        const now = Date.now();
+        if (now - st.lastProgressSentAt > 5000) {
+          st.lastProgressSentAt = now;
+          st.lastTime = el.currentTime;
+          const percent = el.duration ? Math.min(100, Math.round((el.currentTime / el.duration) * 100)) : 0;
+          metricsManager.trackEvent({
+            type: 'video_progress',
+            category: 'video',
+            metadata: { postId, currentTime: Math.round(el.currentTime), percent },
+          });
+        }
+      });
+    });
   }
 
   /**
@@ -1266,6 +1335,11 @@ export class FacebookPostObserver {
     try {
       targetElement.appendChild(iconContainer);
       log(`[AI-Slop] ✅ Icon injected successfully for post ${postId} with consistent positioning`);
+      metricsManager.trackEvent({
+        type: 'icon_injected',
+        category: 'interaction',
+        metadata: { postId },
+      });
     } catch (error) {
       logError(`[AI-Slop] ❌ Failed to append icon for post ${postId}:`, error);
 
@@ -1280,6 +1354,7 @@ export class FacebookPostObserver {
             }
             container.appendChild(iconContainer);
             log(`[AI-Slop] ✅ Icon injected using fallback container`);
+            metricsManager.trackEvent({ type: 'icon_injected_fallback', category: 'interaction', metadata: { postId } });
             break;
           } catch {
             continue;
@@ -1337,6 +1412,7 @@ export class FacebookPostObserver {
     }
 
     this.showChatOverlay(postElement, postId, content, analysisResult);
+    metricsManager.trackEvent({ type: 'chat_overlay_open', category: 'chat', metadata: { postId } });
   }
 
   /**
@@ -1627,6 +1703,7 @@ export class FacebookPostObserver {
 
     // Close chat window fast; send metrics in background
     closeButton?.addEventListener('click', () => {
+      metricsManager.trackEvent({ type: 'chat_overlay_close', category: 'chat' });
       const metrics =
         (chatWindow as unknown as HTMLElement & { _chatMetrics?: ChatMetrics })._chatMetrics ||
         null;
@@ -1648,6 +1725,12 @@ export class FacebookPostObserver {
 
     // Minimize chat window
     minimizeButton?.addEventListener('click', () => {
+      const minimized = chatWindow.classList.contains('minimized');
+      metricsManager.trackEvent({
+        type: 'chat_overlay_minimize_toggle',
+        category: 'chat',
+        label: minimized ? 'restore' : 'minimize',
+      });
       if (chatWindow.classList.contains('minimized')) {
         chatWindow.classList.remove('minimized');
       } else {
@@ -1664,6 +1747,12 @@ export class FacebookPostObserver {
     };
 
     sendButton?.addEventListener('click', sendMessage);
+    chatInput?.addEventListener('focus', () => {
+      metricsManager.trackEvent({ type: 'chat_input_focus', category: 'chat' });
+    });
+    chatInput?.addEventListener('blur', () => {
+      metricsManager.trackEvent({ type: 'chat_input_blur', category: 'chat' });
+    });
     chatInput?.addEventListener('keypress', e => {
       if (e.key === 'Enter') {
         sendMessage();
@@ -1672,6 +1761,7 @@ export class FacebookPostObserver {
 
     // Ignore analysis
     ignoreButton?.addEventListener('click', () => {
+      metricsManager.trackEvent({ type: 'chat_ignore_analysis', category: 'chat' });
       const analysisResult = chatWindow.querySelector('.analysis-result');
       if (analysisResult) {
         analysisResult.innerHTML = `
@@ -1960,6 +2050,8 @@ export class FacebookPostObserver {
         // Add class for potential drag-specific styles
         chatWindow.classList.add('dragging');
 
+        metricsManager.trackEvent({ type: 'chat_overlay_drag_start', category: 'chat' });
+
         e.preventDefault(); // Prevent default browser drag behavior
       }
     };
@@ -1982,6 +2074,12 @@ export class FacebookPostObserver {
         header.style.cursor = 'grab';
         chatWindow.style.userSelect = '';
         chatWindow.classList.remove('dragging');
+
+        metricsManager.trackEvent({
+          type: 'chat_overlay_drag_end',
+          category: 'chat',
+          metadata: { x: xOffset, y: yOffset },
+        });
 
         // Cancel any pending animation frame
         if (animationId) {

@@ -25,6 +25,7 @@ export class MetricsCollector {
   private lastScrollY: number = 0;
   private scrollSpeeds: number[] = [];
   private postViewTimes: Map<string, number> = new Map();
+  private postCumulativeView: Map<string, number> = new Map();
 
   constructor(config: MetricsConfig) {
     this.config = config;
@@ -75,6 +76,17 @@ export class MetricsCollector {
         // Post entered viewport
         this.postViewTimes.set(postId, currentTime);
 
+        // Fire explicit read start
+        this.addEvent({
+          type: 'post_read_start',
+          category: 'interaction',
+          metadata: {
+            postId,
+            intersectionRatio: entry.intersectionRatio,
+          },
+          clientTimestamp: new Date().toISOString(),
+        });
+
         this.addEvent({
           type: 'post_viewport_enter',
           category: 'interaction',
@@ -96,6 +108,11 @@ export class MetricsCollector {
           const viewportTime = currentTime - startTime;
           this.postViewTimes.delete(postId);
 
+          // Update cumulative time
+          const prev = this.postCumulativeView.get(postId) || 0;
+          const total = prev + viewportTime;
+          this.postCumulativeView.set(postId, total);
+
           this.addEvent({
             type: 'post_viewport_exit',
             category: 'interaction',
@@ -103,6 +120,19 @@ export class MetricsCollector {
             metadata: {
               postId,
               viewportTimeMs: viewportTime,
+            },
+            clientTimestamp: new Date().toISOString(),
+          });
+
+          // Fire explicit read end with cumulative total so far
+          this.addEvent({
+            type: 'post_read_end',
+            category: 'interaction',
+            value: viewportTime,
+            metadata: {
+              postId,
+              sessionViewMs: viewportTime,
+              cumulativeViewMs: total,
             },
             clientTimestamp: new Date().toISOString(),
           });

@@ -1,4 +1,5 @@
 // Messenger-style floating chat window component
+import { metricsManager } from '@/content/metrics/MetricsManager';
 
 export class FloatingChatWindow {
   /** Chat window container */
@@ -10,6 +11,7 @@ export class FloatingChatWindow {
   /** Current state of the chat window */
   private isVisible: boolean = false;
   private isMinimized: boolean = false;
+  private visibleStartedAt: number | null = null;
 
   /** Status elements */
   private statusIndicator: HTMLDivElement | null = null;
@@ -24,6 +26,7 @@ export class FloatingChatWindow {
   private setupMessageListener(): void {
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message.type === 'TOGGLE_CHAT_WINDOW') {
+        metricsManager.trackEvent({ type: 'chat_widget_toggle', category: 'chat_widget' });
         this.toggleChatWindow();
         sendResponse({ success: true });
       }
@@ -46,6 +49,8 @@ export class FloatingChatWindow {
     }
 
     this.isVisible = true;
+    metricsManager.trackEvent({ type: 'chat_widget_show', category: 'chat_widget' });
+    this.visibleStartedAt = Date.now();
 
     if (this.isMinimized) {
       if (this.minimizedChat) this.minimizedChat.style.display = 'block';
@@ -57,6 +62,17 @@ export class FloatingChatWindow {
   /** Hides the chat window */
   private hideChatWindow(): void {
     this.isVisible = false;
+    metricsManager.trackEvent({ type: 'chat_widget_hide', category: 'chat_widget' });
+    if (this.visibleStartedAt) {
+      const duration = Date.now() - this.visibleStartedAt;
+      metricsManager.trackEvent({
+        type: 'chat_widget_visible_duration',
+        category: 'chat_widget',
+        value: duration,
+        metadata: { durationMs: duration },
+      });
+      this.visibleStartedAt = null;
+    }
     if (this.chatWindow) this.chatWindow.style.display = 'none';
     if (this.minimizedChat) this.minimizedChat.style.display = 'none';
   }
@@ -225,14 +241,26 @@ export class FloatingChatWindow {
     const expandBtn = this.minimizedChat.querySelector('#ai-slop-expand-btn');
 
     closeBtn?.addEventListener('click', () => this.hideChatWindow());
-    minimizeBtn?.addEventListener('click', () => this.minimizeChat());
-    expandBtn?.addEventListener('click', () => this.expandChat());
+    minimizeBtn?.addEventListener('click', () => {
+      metricsManager.trackEvent({ type: 'chat_widget_minimize', category: 'chat_widget' });
+      this.minimizeChat();
+    });
+    expandBtn?.addEventListener('click', () => {
+      metricsManager.trackEvent({ type: 'chat_widget_expand', category: 'chat_widget' });
+      this.expandChat();
+    });
 
     const decorativeButtons = this.chatWindow.querySelectorAll(
       '#ai-slop-call-btn, #ai-slop-video-btn, .ai-slop-input-btn, .ai-slop-message-input input'
     );
     decorativeButtons.forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', (ev) => {
+        const target = ev.currentTarget as HTMLElement | null;
+        metricsManager.trackEvent({
+          type: 'chat_widget_button_click',
+          category: 'chat_widget',
+          label: target?.id || target?.getAttribute('title') || 'unknown',
+        });
         this.showNotImplementedMessage();
       });
     });
@@ -243,6 +271,17 @@ export class FloatingChatWindow {
     this.isMinimized = true;
     if (this.chatWindow) this.chatWindow.style.display = 'none';
     if (this.minimizedChat) this.minimizedChat.style.display = 'block';
+    // Consider minimize as end of visible session
+    if (this.visibleStartedAt) {
+      const duration = Date.now() - this.visibleStartedAt;
+      metricsManager.trackEvent({
+        type: 'chat_widget_visible_duration',
+        category: 'chat_widget',
+        value: duration,
+        metadata: { durationMs: duration, endedBy: 'minimize' },
+      });
+      this.visibleStartedAt = null;
+    }
   }
 
   /** Expands the chat window */
@@ -250,6 +289,8 @@ export class FloatingChatWindow {
     this.isMinimized = false;
     if (this.minimizedChat) this.minimizedChat.style.display = 'none';
     if (this.chatWindow) this.chatWindow.style.display = 'flex';
+    // Start new visible session
+    this.visibleStartedAt = Date.now();
   }
 
   /** Shows a temporary notification */
