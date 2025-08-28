@@ -2,11 +2,10 @@
 
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.session import get_db
+from db.async_session import get_async_session
 from schemas.chat import ChatRequest, ChatResponse, Message
 from services.chat_service import chat_service as chat_service_singleton
 from utils.logging import get_logger
@@ -31,7 +30,6 @@ chat_service = chat_service_singleton
 @router.post("/send", response_model=ChatResponse)
 async def send_message(
     request: ChatRequest,
-    db: AsyncSession = Depends(get_db),
 ) -> ChatResponse:
     """
     Send a message about a post and get AI response with multimodal support.
@@ -48,7 +46,8 @@ async def send_message(
             message_length=len(request.message),
         )
 
-        response = await chat_service.send_message(request, db)
+        async with get_async_session() as db:
+            response = await chat_service.send_message(request, db)
 
         logger.info(
             "Chat response generated",
@@ -72,7 +71,6 @@ async def send_message(
 async def get_chat_history(
     post_id: str,
     user_id: str = Query(..., description="User identifier to get user-specific chat history"),
-    db: AsyncSession = Depends(get_db),
 ) -> ChatHistoryResponse:
     """
     Get user-specific chat history for a post.
@@ -84,7 +82,8 @@ async def get_chat_history(
     try:
         logger.info("Getting user-specific chat history", post_id=post_id, user_id=user_id)
 
-        messages = await chat_service.get_user_chat_history(post_id, user_id, db)
+        async with get_async_session() as db:
+            messages = await chat_service.get_user_chat_history(post_id, user_id, db)
 
         return ChatHistoryResponse(
             post_id=post_id,

@@ -86,6 +86,31 @@ class DatabasePool:
         return cls._session_factory()
 
     @classmethod
+    async def get_session_context(cls):
+        """Get a database session as an async context manager."""
+        if not cls._session_factory:
+            cls._logger.error("Database pool has not been initialized")
+            raise RuntimeError("Database pool has not been initialized. Call setup() first.")
+
+        session = cls._session_factory()
+
+        class SessionContext:
+            def __init__(self, session):
+                self.session = session
+
+            async def __aenter__(self):
+                return self.session
+
+            async def __aexit__(self, exc_type, exc_val, exc_tb):
+                if exc_type:
+                    await self.session.rollback()
+                else:
+                    await self.session.commit()
+                await self.session.close()
+
+        return SessionContext(session)
+
+    @classmethod
     async def close(cls):
         """Close the database connection pool."""
         if not cls._engine:

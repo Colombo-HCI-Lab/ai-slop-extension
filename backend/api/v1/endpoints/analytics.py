@@ -2,9 +2,9 @@
 
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Request
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from schemas.analytics import (
     UserInitRequest,
@@ -20,7 +20,7 @@ from schemas.analytics import (
 )
 from services.analytics_service import AnalyticsService
 from services.monitoring_service import MonitoringService
-from db.session import get_db
+from db.async_session import get_async_session
 from db.models import UserSession
 from utils.logging import get_logger
 
@@ -30,9 +30,7 @@ router = APIRouter(prefix="/analytics", tags=["analytics"])
 
 
 @router.post("/users/initialize", response_model=UserInitResponse)
-async def initialize_user(
-    request: UserInitRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db), http_request: Request = None
-):
+async def initialize_user(request: UserInitRequest, background_tasks: BackgroundTasks, http_request: Request = None):
     """Initialize or update user profile with metrics."""
     start_time = datetime.now()
     logger.info(
@@ -49,42 +47,46 @@ async def initialize_user(
     )
 
     try:
-        # Extract client IP for rate limiting and geolocation
-        client_ip = request.client_ip or (http_request.client.host if http_request else "unknown")
+        async with get_async_session() as db:
+            # Extract client IP for rate limiting and geolocation
+            client_ip = request.client_ip or (http_request.client.host if http_request else "unknown")
 
-        service = AnalyticsService(db)
-        user = await service.initialize_user(
-            extension_user_id=request.extension_user_id, browser_info=request.browser_info, timezone=request.timezone, locale=request.locale
-        )
+            service = AnalyticsService(db)
+            user = await service.initialize_user(
+                extension_user_id=request.extension_user_id,
+                browser_info=request.browser_info,
+                timezone=request.timezone,
+                locale=request.locale,
+            )
 
-        # Start new session
-        session = await service.start_session(
-            user.id, {**request.browser_info, "ip_hash": _hash_ip(client_ip) if client_ip != "unknown" else None}
-        )
+            # Start new session
+            session = await service.start_session(
+                user.id, {**request.browser_info, "ip_hash": _hash_ip(client_ip) if client_ip != "unknown" else None}
+            )
 
-        # Ensure chat UserSession is created early to anchor chat history
-        await _ensure_chat_user_session(db, request.extension_user_id)
+            # Ensure chat UserSession is created early to anchor chat history
+            await _ensure_chat_user_session(db, request.extension_user_id)
 
-        # Background task for additional processing if needed
-        background_tasks.add_task(_enrich_user_data, service, user.id, client_ip)
+            # Background task for additional processing if needed
+            background_tasks.add_task(_enrich_user_data, service, user.id, client_ip)
 
-        response = UserInitResponse(user_id=user.id, session_id=session.id, experiment_groups=user.experiment_groups or [])
+            response = UserInitResponse(user_id=user.id, session_id=session.id, experiment_groups=user.experiment_groups or [])
 
-        duration_ms = (datetime.now() - start_time).total_seconds() * 1000
-        logger.info(
-            f"POST /analytics/users/initialize - Success",
-            extra={
-                "endpoint": "/analytics/users/initialize",
-                "method": "POST",
-                "user_id": str(user.id),
-                "session_id": str(session.id),
-                "duration_ms": round(duration_ms, 2),
-                "experiment_groups": user.experiment_groups,
-                "status": "success",
-            },
-        )
+            duration_ms = (datetime.now() - start_time).total_seconds() * 1000
+            logger.info(
+                f"POST /analytics/users/initialize - Success",
+                extra={
+                    "endpoint": "/analytics/users/initialize",
+                    "method": "POST",
+                    "user_id": str(user.id),
+                    "session_id": str(session.id),
+                    "duration_ms": round(duration_ms, 2),
+                    "experiment_groups": user.experiment_groups,
+                    "status": "success",
+                },
+            )
 
-        return response
+            return response
 
     except Exception as e:
         duration_ms = (datetime.now() - start_time).total_seconds() * 1000
@@ -105,7 +107,7 @@ async def initialize_user(
 
 
 @router.post("/sessions/start")
-async def start_session(request: SessionStartRequest, db: AsyncSession = Depends(get_db)):
+async def start_session(request: SessionStartRequest):
     """Start a new user session."""
     start_time = datetime.now()
     logger.info(
@@ -120,8 +122,9 @@ async def start_session(request: SessionStartRequest, db: AsyncSession = Depends
     )
 
     try:
-        service = AnalyticsService(db)
-        session = await service.start_session(user_id=request.user_id, browser_info=request.browser_info)
+        async with get_async_session() as db:
+            service = AnalyticsService(db)
+            session = await service.start_session(user_id=request.user_id, browser_info=request.browser_info)
 
         duration_ms = (datetime.now() - start_time).total_seconds() * 1000
         logger.info(
@@ -157,13 +160,16 @@ async def start_session(request: SessionStartRequest, db: AsyncSession = Depends
 
 
 @router.post("/sessions/end")
-async def end_session(request: SessionEndRequest, db: AsyncSession = Depends(get_db)):
+async def end_session(request: SessionEndRequest):
     """End a user session."""
     try:
-        service = AnalyticsService(db)
-        await service.end_session(session_id=request.session_id, end_reason=request.end_reason, duration_seconds=request.duration_seconds)
+        async with get_async_session() as db:
+            service = AnalyticsService(db)
+            await service.end_session(
+                session_id=request.session_id, end_reason=request.end_reason, duration_seconds=request.duration_seconds
+            )
 
-        return {"status": "ended"}
+            return {"status": "ended"}
 
     except Exception as e:
         logger.error(f"Session end failed: {e}")
@@ -171,11 +177,11 @@ async def end_session(request: SessionEndRequest, db: AsyncSession = Depends(get
 
 
 @router.post("/events/batch")
-async def submit_event_batch(request: EventBatchRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+async def submit_event_batch(request: EventBatchRequest, background_tasks: BackgroundTasks):
     """Submit batch of analytics events with optional user_id."""
     start_time = datetime.now()
     event_count = len(request.events)
-    
+
     logger.info(
         f"POST /analytics/events/batch - Processing event batch",
         extra={
@@ -236,30 +242,31 @@ async def submit_event_batch(request: EventBatchRequest, background_tasks: Backg
 
 
 @router.post("/posts/{post_id}/interactions")
-async def track_post_interaction(post_id: str, request: PostInteractionRequest, db: AsyncSession = Depends(get_db)):
+async def track_post_interaction(post_id: str, request: PostInteractionRequest):
     """Track user interaction with a post."""
     try:
-        service = AnalyticsService(db)
+        async with get_async_session() as db:
+            service = AnalyticsService(db)
 
-        # Validate interaction type
-        valid_types = ["viewed", "clicked", "ignored", "chatted", "feedback_positive", "feedback_negative", "feedback_unsure"]
-        if request.interaction_type not in valid_types:
-            raise HTTPException(status_code=400, detail=f"Invalid interaction type: {request.interaction_type}")
+            # Validate interaction type
+            valid_types = ["viewed", "clicked", "ignored", "chatted", "feedback_positive", "feedback_negative", "feedback_unsure"]
+            if request.interaction_type not in valid_types:
+                raise HTTPException(status_code=400, detail=f"Invalid interaction type: {request.interaction_type}")
 
-        analytics = await service.track_post_interaction(
-            user_id=request.user_id,
-            post_id=post_id,
-            interaction_type=request.interaction_type,
-            metrics={
-                "backend_response_time_ms": request.backend_response_time_ms,
-                "time_to_interaction_ms": request.time_to_interaction_ms,
-                "reading_time_ms": request.reading_time_ms,
-                "scroll_depth_percentage": request.scroll_depth_percentage,
-                "viewport_time_ms": request.viewport_time_ms,
-            },
-        )
+            analytics = await service.track_post_interaction(
+                user_id=request.user_id,
+                post_id=post_id,
+                interaction_type=request.interaction_type,
+                metrics={
+                    "backend_response_time_ms": request.backend_response_time_ms,
+                    "time_to_interaction_ms": request.time_to_interaction_ms,
+                    "reading_time_ms": request.reading_time_ms,
+                    "scroll_depth_percentage": request.scroll_depth_percentage,
+                    "viewport_time_ms": request.viewport_time_ms,
+                },
+            )
 
-        return {"status": "tracked", "analytics_id": analytics.id}
+            return {"status": "tracked", "analytics_id": analytics.id}
 
     except Exception as e:
         logger.error(f"Post interaction tracking failed: {e}")
@@ -267,26 +274,25 @@ async def track_post_interaction(post_id: str, request: PostInteractionRequest, 
 
 
 @router.get("/dashboard/{user_id}", response_model=Dict[str, Any])
-async def get_user_dashboard(
-    user_id: str, date_from: Optional[datetime] = None, date_to: Optional[datetime] = None, db: AsyncSession = Depends(get_db)
-):
+async def get_user_dashboard(user_id: str, date_from: Optional[datetime] = None, date_to: Optional[datetime] = None):
     """Get user analytics dashboard data."""
     try:
-        service = AnalyticsService(db)
+        async with get_async_session() as db:
+            service = AnalyticsService(db)
 
-        # Default to last 30 days
-        if not date_from:
-            date_from = datetime.utcnow() - timedelta(days=30)
-        if not date_to:
-            date_to = datetime.utcnow()
+            # Default to last 30 days
+            if not date_from:
+                date_from = datetime.utcnow() - timedelta(days=30)
+            if not date_to:
+                date_to = datetime.utcnow()
 
-        # Validate date range
-        if date_from > date_to:
-            raise HTTPException(status_code=400, detail="Invalid date range")
+            # Validate date range
+            if date_from > date_to:
+                raise HTTPException(status_code=400, detail="Invalid date range")
 
-        dashboard_data = await service.get_user_dashboard(user_id=user_id, date_from=date_from, date_to=date_to)
+            dashboard_data = await service.get_user_dashboard(user_id=user_id, date_from=date_from, date_to=date_to)
 
-        return dashboard_data
+            return dashboard_data
 
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -296,9 +302,7 @@ async def get_user_dashboard(
 
 
 @router.post("/performance/metrics")
-async def record_performance_metric(
-    request: UserPerformanceAnalyticsRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)
-):
+async def record_performance_metric(request: UserPerformanceAnalyticsRequest, background_tasks: BackgroundTasks):
     """Record system performance metric."""
     start_time = datetime.now()
     logger.info(
@@ -351,7 +355,7 @@ async def record_performance_metric(
 
 
 @router.post("/chat/sessions")
-async def create_chat_session(request: ChatSessionMetrics, db: AsyncSession = Depends(get_db)):
+async def create_chat_session(request: ChatSessionMetrics):
     """Create or update chat session metrics."""
     try:
         # This would integrate with the existing chat system
@@ -370,33 +374,33 @@ async def health_check():
 
 
 @router.get("/system/health")
-async def system_health_check(db: AsyncSession = Depends(get_db)):
+async def system_health_check():
     """Comprehensive system health check."""
     try:
-        monitoring_service = MonitoringService(db)
-        health_data = await monitoring_service.get_system_health()
-        return health_data
+        async with get_async_session() as db:
+            monitoring_service = MonitoringService(db)
+            health_data = await monitoring_service.get_system_health()
+            return health_data
     except Exception as e:
         logger.error(f"System health check failed: {e}")
         return {"status": "error", "timestamp": datetime.utcnow().isoformat(), "error": str(e)}
 
 
 @router.get("/system/alerts")
-async def get_performance_alerts(db: AsyncSession = Depends(get_db)):
+async def get_performance_alerts():
     """Get current performance alerts."""
     try:
-        monitoring_service = MonitoringService(db)
-        alerts = await monitoring_service.get_performance_alerts()
-        return {"alerts": alerts}
+        async with get_async_session() as db:
+            monitoring_service = MonitoringService(db)
+            alerts = await monitoring_service.get_performance_alerts()
+            return {"alerts": alerts}
     except Exception as e:
         logger.error(f"Failed to get performance alerts: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve alerts")
 
 
 @router.post("/system/cleanup")
-async def cleanup_old_data(
-    days_to_keep: int = 30, background_tasks: BackgroundTasks = BackgroundTasks(), db: AsyncSession = Depends(get_db)
-):
+async def cleanup_old_data(days_to_keep: int = 30, background_tasks: BackgroundTasks = BackgroundTasks()):
     """No-op: analytics cleanup disabled to retain all records."""
     try:
         # Explicitly do nothing; return a disabled status
@@ -419,7 +423,7 @@ async def _process_events_background(session_id: str, events: List[AnalyticsEven
         # Validate timestamps and filter events (moved from main handler)
         current_time = datetime.now(timezone.utc)
         valid_events = []
-        
+
         for event in events:
             # Ensure event timestamp is timezone-aware for comparison
             event_time = event.client_timestamp
@@ -440,6 +444,7 @@ async def _process_events_background(session_id: str, events: List[AnalyticsEven
 
         if not valid_events:
             logger.info(f"No valid events to process for session {session_id}")
+            await db_session.close()
             return
 
         # Use provided user_id or generate anonymous one
@@ -456,10 +461,14 @@ async def _process_events_background(session_id: str, events: List[AnalyticsEven
                 "total_events": len(events),
                 "valid_events": len(valid_events),
                 "filtered_events": len(events) - len(valid_events),
-            }
+            },
         )
+
+        await db_session.commit()
     except Exception as e:
-        logger.error(f"Background event processing failed: {e}", exc_info=True)
+        await db_session.rollback()
+        logger.error(f"Error processing events in background: {e}")
+        raise
     finally:
         await db_session.close()
 
@@ -473,8 +482,12 @@ async def _record_performance_metric_background(request: UserPerformanceAnalytic
         service = AnalyticsService(db_session)
         await service.record_performance_metric(request)
         logger.debug(f"Background recorded metric: {request.metric_name}")
+
+        await db_session.commit()
     except Exception as e:
-        logger.error(f"Background metric recording failed: {e}")
+        await db_session.rollback()
+        logger.error(f"Error recording performance metric in background: {e}")
+        raise
     finally:
         await db_session.close()
 

@@ -3,13 +3,12 @@
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from db.session import get_db
+from db.async_session import get_async_session
 from db.models import Post
 from schemas.content_detection import ContentDetectionRequest, ContentDetectionResponse
 from services.content_detection_service import ContentDetectionService
@@ -21,7 +20,7 @@ from utils.logging import get_logger
 class PostResponse(BaseModel):
     """Response for a single post."""
 
-    id: str = Field(..., description="Internal database ID")
+    id: Optional[str] = Field(default=None, description="Internal database ID")
     post_id: str = Field(..., description="Facebook post ID")
     content: str = Field(..., description="Post content")
     author: Optional[str] = Field(None, description="Post author")
@@ -66,7 +65,6 @@ post_media_service = PostMediaService()
 @router.post("/process", response_model=ContentDetectionResponse)
 async def process_post(
     request: ContentDetectionRequest,
-    db: AsyncSession = Depends(get_db),
 ) -> ContentDetectionResponse:
     """
     Process a post for AI content detection.
@@ -93,81 +91,82 @@ async def process_post(
             author=request.author,
         )
 
-        # STEP 0: Check if post already has detection results (MOVED TO FRONT)
-        result = await db.execute(select(Post).where(Post.post_id == request.post_id))
-        existing_post = result.scalar_one_or_none()
+        async with get_async_session() as db:
+            # STEP 0: Check if post already has detection results (MOVED TO FRONT)
+            result = await db.execute(select(Post).where(Post.post_id == request.post_id))
+            existing_post = result.scalar_one_or_none()
 
-        # If post exists and has been processed (verdict != "pending"), return cached results
-        if existing_post and existing_post.verdict != "pending":
-            logger.info(
-                "Returning cached detection results - no media download needed",
-                post_id=request.post_id,
-                verdict=existing_post.verdict,
-                confidence=existing_post.confidence,
-                bandwidth_saved=True,
-            )
+            # If post exists and has been processed (verdict != "pending"), return cached results
+            if existing_post and existing_post.verdict != "pending":
+                logger.info(
+                    "Returning cached detection results - no media download needed",
+                    post_id=request.post_id,
+                    verdict=existing_post.verdict,
+                    confidence=existing_post.confidence,
+                    bandwidth_saved=True,
+                )
 
-            # Build cached response from database
-            return ContentDetectionResponse(
-                post_id=request.post_id,
-                verdict=existing_post.verdict,
-                confidence=existing_post.confidence,
-                explanation=existing_post.explanation,
-                text_ai_probability=existing_post.text_ai_probability,
-                text_confidence=existing_post.text_confidence,
-                image_ai_probability=existing_post.image_ai_probability,
-                image_confidence=existing_post.image_confidence,
-                video_ai_probability=existing_post.video_ai_probability,
-                video_confidence=existing_post.video_confidence,
-                image_analysis=[],  # Could retrieve from post_media if needed
-                video_analysis=[],  # Could retrieve from post_media if needed
-                debug_info={"from_cache": True, "media_downloads_skipped": True},
-                timestamp=datetime.now().isoformat(),
-            )
+                # Build cached response from database
+                return ContentDetectionResponse(
+                    post_id=request.post_id,
+                    verdict=existing_post.verdict,
+                    confidence=existing_post.confidence,
+                    explanation=existing_post.explanation,
+                    text_ai_probability=existing_post.text_ai_probability,
+                    text_confidence=existing_post.text_confidence,
+                    image_ai_probability=existing_post.image_ai_probability,
+                    image_confidence=existing_post.image_confidence,
+                    video_ai_probability=existing_post.video_ai_probability,
+                    video_confidence=existing_post.video_confidence,
+                    image_analysis=[],  # Could retrieve from post_media if needed
+                    video_analysis=[],  # Could retrieve from post_media if needed
+                    debug_info={"from_cache": True, "media_downloads_skipped": True},
+                    timestamp=datetime.now().isoformat(),
+                )
 
-        # Step 1: Save post and process media to Gemini via unified pipeline
-        logger.info("Step 1: Saving post and processing media via unified pipeline", post_id=request.post_id)
-        post = await post_media_service.save_post_before_detection(request, db)
+            # Step 1: Save post and process media to Gemini via unified pipeline
+            logger.info("Step 1: Saving post and processing media via unified pipeline", post_id=request.post_id)
+            post = await post_media_service.save_post_before_detection(request, db)
 
-        # Step 2: Wait a moment to ensure all files are written to disk
-        import asyncio
+            # Step 2: Wait a moment to ensure all files are written to disk
+            import asyncio
 
-        await asyncio.sleep(0.5)  # Small delay to ensure file system operations complete
+            await asyncio.sleep(0.5)  # Small delay to ensure file system operations complete
 
-        # Step 3: Run detection only after media is fully processed
-        logger.info("Step 3: Running detection with downloaded media", post_id=request.post_id)
-        result = await detection_service.detect(request, db)
+            # Step 3: Run detection only after media is fully processed
+            logger.info("Step 3: Running detection with downloaded media", post_id=request.post_id)
+            result = await detection_service.detect(request, db)
 
-        # Check if this was a cached result to avoid confusing logs
-        is_cached = hasattr(result, "debug_info") and result.debug_info and result.debug_info.get("from_cache", False)
+            # Check if this was a cached result to avoid confusing logs
+            is_cached = hasattr(result, "debug_info") and result.debug_info and result.debug_info.get("from_cache", False)
 
-        if is_cached:
-            # For cached results, just log that we returned cached data
-            logger.info(
-                "Returned cached detection result",
-                post_id=request.post_id,
-                verdict=result.verdict,
-                confidence=round(result.confidence, 3),
-                source="cache",
-            )
-        else:
-            # For new analysis, update post with detection results and log processing
-            post = await post_media_service.update_post_with_results(request.post_id, result, db)
+            if is_cached:
+                # For cached results, just log that we returned cached data
+                logger.info(
+                    "Returned cached detection result",
+                    post_id=request.post_id,
+                    verdict=result.verdict,
+                    confidence=round(result.confidence, 3),
+                    source="cache",
+                )
+            else:
+                # For new analysis, update post with detection results and log processing
+                post = await post_media_service.update_post_with_results(request.post_id, result, db)
 
-            logger.info(
-                "Post processing completed",
-                post_id=request.post_id,
-                verdict=result.verdict,
-                confidence=round(result.confidence, 3),
-                text_ai_probability=result.text_ai_probability,
-                image_ai_probability=result.image_ai_probability,
-                video_ai_probability=result.video_ai_probability,
-                has_images=bool(result.image_analysis),
-                has_videos=bool(result.video_analysis),
-                source="new_analysis",
-            )
+                logger.info(
+                    "Post processing completed",
+                    post_id=request.post_id,
+                    verdict=result.verdict,
+                    confidence=round(result.confidence, 3),
+                    text_ai_probability=result.text_ai_probability,
+                    image_ai_probability=result.image_ai_probability,
+                    video_ai_probability=result.video_ai_probability,
+                    has_images=bool(result.image_analysis),
+                    has_videos=bool(result.video_analysis),
+                    source="new_analysis",
+                )
 
-        return result
+            return result
 
     except Exception as e:
         logger.error("Error processing post", post_id=request.post_id, error=str(e), exc_info=True)
@@ -178,7 +177,6 @@ async def process_post(
 async def get_post(
     post_id: str,
     include_chats: bool = Query(False, description="Include chat history"),
-    db: AsyncSession = Depends(get_db),
 ) -> PostResponse:
     """
     Get a specific post by Facebook post ID.
@@ -187,18 +185,19 @@ async def get_post(
     Optionally includes chat history if requested.
     """
     try:
-        query = select(Post).where(Post.post_id == post_id)
+        async with get_async_session() as db:
+            query = select(Post).where(Post.post_id == post_id)
 
-        if include_chats:
-            query = query.options(selectinload(Post.chats))
+            if include_chats:
+                query = query.options(selectinload(Post.chats))
 
-        result = await db.execute(query)
-        post = result.scalar_one_or_none()
+            result = await db.execute(query)
+            post = result.scalar_one_or_none()
 
-        if not post:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Post with ID {post_id} not found")
+            if not post:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Post with ID {post_id} not found")
 
-        return PostResponse.model_validate(post)
+            return PostResponse.model_validate(post)
 
     except HTTPException:
         raise
@@ -215,7 +214,6 @@ async def list_posts(
     max_confidence: Optional[float] = Query(None, ge=0.0, le=1.0, description="Maximum confidence"),
     limit: int = Query(10, ge=1, le=100, description="Number of posts to return"),
     offset: int = Query(0, ge=0, description="Number of posts to skip"),
-    db: AsyncSession = Depends(get_db),
 ) -> PostsListResponse:
     """
     List posts with optional filters.
@@ -224,47 +222,48 @@ async def list_posts(
     Supports filtering by verdict, author, and confidence levels.
     """
     try:
-        query = select(Post)
+        async with get_async_session() as db:
+            query = select(Post)
 
-        # Apply filters
-        if verdict:
-            query = query.where(Post.verdict == verdict)
-        if author:
-            query = query.where(Post.author == author)
-        if min_confidence is not None:
-            query = query.where(Post.confidence >= min_confidence)
-        if max_confidence is not None:
-            query = query.where(Post.confidence <= max_confidence)
+            # Apply filters
+            if verdict:
+                query = query.where(Post.verdict == verdict)
+            if author:
+                query = query.where(Post.author == author)
+            if min_confidence is not None:
+                query = query.where(Post.confidence >= min_confidence)
+            if max_confidence is not None:
+                query = query.where(Post.confidence <= max_confidence)
 
-        # Order by creation date (newest first)
-        query = query.order_by(Post.created_at.desc())
+            # Order by creation date (newest first)
+            query = query.order_by(Post.created_at.desc())
 
-        # Apply pagination
-        query = query.limit(limit).offset(offset)
+            # Apply pagination
+            query = query.limit(limit).offset(offset)
 
-        result = await db.execute(query)
-        posts = result.scalars().all()
+            result = await db.execute(query)
+            posts = result.scalars().all()
 
-        # Get total count for pagination
-        count_query = select(Post)
-        if verdict:
-            count_query = count_query.where(Post.verdict == verdict)
-        if author:
-            count_query = count_query.where(Post.author == author)
-        if min_confidence is not None:
-            count_query = count_query.where(Post.confidence >= min_confidence)
-        if max_confidence is not None:
-            count_query = count_query.where(Post.confidence <= max_confidence)
+            # Get total count for pagination
+            count_query = select(Post)
+            if verdict:
+                count_query = count_query.where(Post.verdict == verdict)
+            if author:
+                count_query = count_query.where(Post.author == author)
+            if min_confidence is not None:
+                count_query = count_query.where(Post.confidence >= min_confidence)
+            if max_confidence is not None:
+                count_query = count_query.where(Post.confidence <= max_confidence)
 
-        count_result = await db.execute(count_query)
-        total = len(count_result.scalars().all())
+            count_result = await db.execute(count_query)
+            total = len(count_result.scalars().all())
 
-        return PostsListResponse(
-            posts=[PostResponse.model_validate(post) for post in posts],
-            total=total,
-            limit=limit,
-            offset=offset,
-        )
+            return PostsListResponse(
+                posts=[PostResponse.model_validate(post) for post in posts],
+                total=total,
+                limit=limit,
+                offset=offset,
+            )
 
     except Exception as e:
         logger.error("Error listing posts", verdict=verdict, limit=limit, offset=offset, error=str(e), exc_info=True)
@@ -275,7 +274,6 @@ async def list_posts(
 async def update_post(
     post_id: str,
     update: PostUpdate,
-    db: AsyncSession = Depends(get_db),
 ) -> PostResponse:
     """
     Update a post's analysis results.
@@ -284,30 +282,31 @@ async def update_post(
     This can be useful for manual corrections or re-analysis.
     """
     try:
-        result = await db.execute(select(Post).where(Post.post_id == post_id))
-        post = result.scalar_one_or_none()
+        async with get_async_session() as db:
+            result = await db.execute(select(Post).where(Post.post_id == post_id))
+            post = result.scalar_one_or_none()
 
-        if not post:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Post with ID {post_id} not found")
+            if not post:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Post with ID {post_id} not found")
 
-        # Update fields if provided
-        if update.verdict is not None:
-            post.verdict = update.verdict
-        if update.confidence is not None:
-            post.confidence = update.confidence
-        if update.explanation is not None:
-            post.explanation = update.explanation
-        if update.author is not None:
-            post.author = update.author
-        if update.metadata is not None:
-            post.post_metadata = update.metadata
+            # Update fields if provided
+            if update.verdict is not None:
+                post.verdict = update.verdict
+            if update.confidence is not None:
+                post.confidence = update.confidence
+            if update.explanation is not None:
+                post.explanation = update.explanation
+            if update.author is not None:
+                post.author = update.author
+            if update.metadata is not None:
+                post.post_metadata = update.metadata
 
-        await db.commit()
-        await db.refresh(post)
+            await db.commit()
+            await db.refresh(post)
 
-        logger.info("Post updated successfully", post_id=post_id, verdict=post.verdict, confidence=post.confidence)
+            logger.info("Post updated successfully", post_id=post_id, verdict=post.verdict, confidence=post.confidence)
 
-        return PostResponse.model_validate(post)
+            return PostResponse.model_validate(post)
 
     except HTTPException:
         raise
@@ -319,7 +318,6 @@ async def update_post(
 @router.delete("/{post_id}")
 async def delete_post(
     post_id: str,
-    db: AsyncSession = Depends(get_db),
 ) -> dict:
     """
     Delete a post and its associated data.
@@ -328,18 +326,19 @@ async def delete_post(
     This action cannot be undone.
     """
     try:
-        result = await db.execute(select(Post).where(Post.post_id == post_id))
-        post = result.scalar_one_or_none()
+        async with get_async_session() as db:
+            result = await db.execute(select(Post).where(Post.post_id == post_id))
+            post = result.scalar_one_or_none()
 
-        if not post:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Post with ID {post_id} not found")
+            if not post:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Post with ID {post_id} not found")
 
-        await db.delete(post)
-        await db.commit()
+            await db.delete(post)
+            await db.commit()
 
-        logger.info("Post deleted successfully", post_id=post_id)
+            logger.info("Post deleted successfully", post_id=post_id)
 
-        return {"message": f"Post {post_id} deleted successfully"}
+            return {"message": f"Post {post_id} deleted successfully"}
 
     except HTTPException:
         raise

@@ -111,8 +111,8 @@ class Settings(BaseSettings):
 
     # Database connection settings
     database_echo: bool = False
-    database_pool_size: int = 20
-    database_max_overflow: int = 30
+    database_pool_size: int = 40
+    database_max_overflow: int = 20
     database_pool_timeout: float = 30.0
     database_pool_recycle: int = 3600
 

@@ -191,13 +191,18 @@ class AnalyticsService:
 
     async def process_event_batch(self, session_id: str, events: List[EventSchema], user_id: str) -> None:
         """Process analytics events with deduplication and aggregation."""
-        
+
         # Server-side event filtering for noisy events (more aggressive filtering)
         low_value_events = {
-            'video_progress', 'icon_injected', 'icon_injected_fallback', 'scroll_behavior',
-            'post_viewport_enter', 'post_viewport_exit', 'post_view'
+            "video_progress",
+            "icon_injected",
+            "icon_injected_fallback",
+            "scroll_behavior",
+            "post_viewport_enter",
+            "post_viewport_exit",
+            "post_view",
         }
-        
+
         # Very aggressive filtering - keep only 2% of low-value events
         filtered_events = []
         for event in events:
@@ -208,7 +213,7 @@ class AnalyticsService:
                     filtered_events.append(event)
             else:
                 filtered_events.append(event)
-        
+
         logger.info(
             f"Processing event batch for session {session_id[:8]}...",
             extra={
@@ -221,7 +226,7 @@ class AnalyticsService:
                 "action": "process_event_batch",
             },
         )
-        
+
         events = filtered_events  # Use filtered events for processing
 
         try:
