@@ -46,7 +46,7 @@ class ContentDeduplicationService:
             return content_hash
 
         except Exception as e:
-            logger.error("Failed to calculate content hash", url=url, error=str(e))
+            logger.warning("Failed to calculate content hash for deduplication", url=url, error=str(e))
             return None
 
     def normalize_facebook_url(self, url: str) -> str:
