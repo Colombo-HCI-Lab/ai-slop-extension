@@ -8,13 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, func, and_, desc, asc
 from sqlalchemy.orm import selectinload
 
-from db.models import User, UserPostAnalytics, UserSessionAnalytics, ChatSession, AnalyticsEvent, Post
+from db.models import User, UserPostAnalytics, UserSessionAnalytics, UserPostChatAnalytics, AnalyticsEvent, Post
 from schemas.analytics import (
     AnalyticsEvent as EventSchema,
     UserCreate,
     UserPostAnalyticsCreate,
     UserSessionAnalyticsCreate,
-    ChatSessionCreate,
+    UserPostChatAnalyticsCreate,
     AnalyticsEventCreate,
 )
 from utils.logging import get_logger
@@ -590,15 +590,23 @@ class AnalyticsService:
             # Join through user_post_analytics to get to chat_session
             stmt = (
                 select(
-                    func.count(ChatSession.id).label("total_chat_sessions"),
-                    func.avg(ChatSession.duration_ms).label("avg_chat_duration"),
-                    func.sum(ChatSession.message_count).label("total_messages"),
-                    func.avg(ChatSession.satisfaction_rating).label("avg_satisfaction"),
+                    func.count(UserPostChatAnalytics.id).label("total_chat_sessions"),
+                    func.avg(UserPostChatAnalytics.duration_ms).label("avg_chat_duration"),
+                    func.sum(UserPostChatAnalytics.message_count).label("total_messages"),
+                    func.avg(UserPostChatAnalytics.satisfaction_rating).label("avg_satisfaction"),
                 )
                 .select_from(
-                    ChatSession.__table__.join(UserPostAnalytics.__table__, ChatSession.user_post_analytics_id == UserPostAnalytics.id)
+                    UserPostChatAnalytics.__table__.join(
+                        UserPostAnalytics.__table__, UserPostChatAnalytics.user_post_analytics_id == UserPostAnalytics.id
+                    )
                 )
-                .where(and_(UserPostAnalytics.user_id == user_id, ChatSession.started_at >= date_from, ChatSession.started_at <= date_to))
+                .where(
+                    and_(
+                        UserPostAnalytics.user_id == user_id,
+                        UserPostChatAnalytics.started_at >= date_from,
+                        UserPostChatAnalytics.started_at <= date_to,
+                    )
+                )
             )
 
             result = await self.db.execute(stmt)

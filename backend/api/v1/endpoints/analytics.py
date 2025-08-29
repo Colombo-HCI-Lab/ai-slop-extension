@@ -14,7 +14,7 @@ from schemas.analytics import (
     EventBatchRequest,
     AnalyticsEvent,
     PostInteractionRequest,
-    ChatSessionMetrics,
+    UserPostChatAnalyticsMetrics,
     UserDashboardResponse,
 )
 from services.analytics_service import AnalyticsService
@@ -302,7 +302,7 @@ async def get_user_dashboard(user_id: str, date_from: Optional[datetime] = None,
 
 
 @router.post("/chat/sessions")
-async def create_chat_session(request: ChatSessionMetrics):
+async def create_chat_session(request: UserPostChatAnalyticsMetrics):
     """Create or update chat session metrics."""
     try:
         # This would integrate with the existing chat system

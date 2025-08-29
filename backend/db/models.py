@@ -117,10 +117,10 @@ class Chat(Base):
         index=True,
     )
 
-    # Reference to user session (optional for backward compatibility)
-    user_session_id: Mapped[Optional[str]] = mapped_column(
-        ForeignKey("user_session.id", ondelete="SET NULL"),
-        nullable=True,
+    # Reference to user directly for persistent conversations
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("user.id", ondelete="CASCADE"),
+        nullable=False,
         index=True,
     )
 
@@ -140,9 +140,9 @@ class Chat(Base):
         lazy="selectin",
     )
 
-    # Relationship to user session
-    user_session: Mapped[Optional["UserSession"]] = relationship(
-        "UserSession",
+    # Relationship to user
+    user: Mapped["User"] = relationship(
+        "User",
         back_populates="chats",
         lazy="selectin",
     )
@@ -171,14 +171,6 @@ class UserSession(Base):
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False,
-    )
-
-    # Relationship to chat conversations
-    chats: Mapped[list["Chat"]] = relationship(
-        "Chat",
-        back_populates="user_session",
-        cascade="all, delete-orphan",
-        lazy="selectin",
     )
 
     def __repr__(self) -> str:
@@ -299,6 +291,13 @@ class User(Base):
         lazy="selectin",
     )
 
+    chats: Mapped[list["Chat"]] = relationship(
+        "Chat",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
     events: Mapped[list["AnalyticsEvent"]] = relationship(
         "AnalyticsEvent",
         back_populates="user",
@@ -381,8 +380,8 @@ class UserPostAnalytics(Base):
         lazy="selectin",
     )
 
-    chat_sessions: Mapped[list["ChatSession"]] = relationship(
-        "ChatSession",
+    chat_sessions: Mapped[list["UserPostChatAnalytics"]] = relationship(
+        "UserPostChatAnalytics",
         back_populates="user_post_analytics",
         cascade="all, delete-orphan",
         lazy="selectin",
@@ -461,10 +460,10 @@ class UserSessionAnalytics(Base):
         return f"<UserSessionAnalytics(id={self.id}, user_id={self.user_id})>"
 
 
-class ChatSession(Base):
-    """Chat session model for tracking individual chat conversations."""
+class UserPostChatAnalytics(Base):
+    """User post chat analytics model for tracking individual chat conversations."""
 
-    __tablename__ = "chat_session"
+    __tablename__ = "user_post_chat_analytics"
 
     id: Mapped[str] = mapped_column(
         String(36),
@@ -514,7 +513,7 @@ class ChatSession(Base):
 
     def __repr__(self) -> str:
         """String representation."""
-        return f"<ChatSession(id={self.id}, user_post_analytics_id={self.user_post_analytics_id})>"
+        return f"<UserPostChatAnalytics(id={self.id}, user_post_analytics_id={self.user_post_analytics_id})>"
 
 
 class AnalyticsEvent(Base):

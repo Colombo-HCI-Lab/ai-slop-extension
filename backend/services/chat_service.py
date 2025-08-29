@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
-from db.models import Chat, Post, PostMedia, UserSession
+from db.models import Chat, Post, PostMedia, User, UserSession
 from schemas.chat import ChatRequest, ChatResponse, Message
 from services.gemini_on_demand_service import gemini_on_demand_service
 from tenacity import AsyncRetrying, stop_after_attempt, wait_exponential
@@ -107,8 +107,8 @@ class ChatService:
         if not request.message or not request.message.strip():
             raise ValueError("Message must not be empty")
 
-        # Get or create user session
-        user_session = await self._get_or_create_user_session(request.user_id, db)
+        # Get or create user
+        user = await self._get_or_create_user(request.user_id, db)
 
         # Get post from database
         post = await self._get_post(request.post_id, db)
@@ -116,7 +116,7 @@ class ChatService:
             raise ValueError(f"Post with ID {request.post_id} not found")
 
         # Get user-specific chat history
-        chat_history = await self._get_user_chat_history(post.post_id, user_session.id, db)
+        chat_history = await self._get_user_chat_history(post.post_id, user.id, db)
 
         # Ensure media Gemini URIs, preferring stored URIs first
         file_uris: List[str] = await self._get_post_gemini_file_uris(post.post_id, db)
@@ -141,10 +141,10 @@ class ChatService:
                         break
 
         # Save user message with file references
-        await self._save_message(post.post_id, user_session.id, "user", request.message, file_uris, db)
+        await self._save_message(post.post_id, user.id, "user", request.message, file_uris, db)
 
         # Update chat history to include the new message
-        chat_history = await self._get_user_chat_history(post.post_id, user_session.id, db)
+        chat_history = await self._get_user_chat_history(post.post_id, user.id, db)
 
         # Generate AI response (multimodal if images available)
         if file_uris:
@@ -155,7 +155,7 @@ class ChatService:
             response_text = await self._generate_response(post, request.message, chat_history)
 
         # Save AI response
-        assistant_chat = await self._save_message(post.post_id, user_session.id, "assistant", response_text, [], db)
+        assistant_chat = await self._save_message(post.post_id, user.id, "assistant", response_text, [], db)
 
         # Generate suggested questions using Gemini
         suggested_questions = await self._generate_gemini_suggestions(post, chat_history)
@@ -241,14 +241,14 @@ class ChatService:
         if not post:
             raise ValueError(f"Post with ID {post_id} not found")
 
-        # Get or create user session (but don't update last_active for history retrieval)
-        user_session = await self._get_user_session_readonly(user_identifier, db)
-        if not user_session:
-            # No user session exists, so no chat history
+        # Get user (readonly - no creation for history retrieval)
+        user = await self._get_user_readonly(user_identifier, db)
+        if not user:
+            # No user exists, so no chat history
             return []
 
         # Get user-specific chat history
-        chats = await self._get_user_chat_history(post.post_id, user_session.id, db)
+        chats = await self._get_user_chat_history(post.post_id, user.id, db)
 
         return [
             Message(
@@ -260,39 +260,34 @@ class ChatService:
             for chat in chats
         ]
 
-    async def _get_or_create_user_session(self, user_identifier: str, db: AsyncSession) -> UserSession:
-        """Get or create user session by identifier."""
-        result = await db.execute(select(UserSession).where(UserSession.user_identifier == user_identifier))
-        user_session = result.scalar_one_or_none()
+    async def _get_or_create_user(self, user_id: str, db: AsyncSession) -> User:
+        """Get or create user by ID."""
+        result = await db.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
 
-        if not user_session:
-            user_session = UserSession(
-                id=str(uuid.uuid4()),
-                user_identifier=user_identifier,
-                last_active=datetime.now(timezone.utc),
+        if not user:
+            user = User(
+                id=user_id,
+                last_active_at=datetime.now(timezone.utc),
             )
-            db.add(user_session)
+            db.add(user)
         else:
             # Update last active timestamp
-            user_session.last_active = datetime.now(timezone.utc)
+            user.last_active_at = datetime.now(timezone.utc)
 
         await db.commit()
-        await db.refresh(user_session)
-        return user_session
+        await db.refresh(user)
+        return user
 
-    async def _get_user_session_readonly(self, user_identifier: str, db: AsyncSession) -> Optional[UserSession]:
-        """Get user session without creating or updating it (for history retrieval)."""
-        result = await db.execute(select(UserSession).where(UserSession.user_identifier == user_identifier))
+    async def _get_user_readonly(self, user_id: str, db: AsyncSession) -> Optional[User]:
+        """Get user without creating or updating it (for history retrieval)."""
+        result = await db.execute(select(User).where(User.id == user_id))
         return result.scalar_one_or_none()
 
-    async def _get_user_chat_history(self, post_id: str, user_session_id: str, db: AsyncSession, limit: int = 20) -> List[Chat]:
+    async def _get_user_chat_history(self, post_id: str, user_id: str, db: AsyncSession, limit: int = 20) -> List[Chat]:
         """Get chat history for a specific user and post."""
         result = await db.execute(
-            select(Chat)
-            .where(Chat.post_id == post_id)
-            .where(Chat.user_session_id == user_session_id)
-            .order_by(Chat.created_at.asc())
-            .limit(limit)
+            select(Chat).where(Chat.post_id == post_id).where(Chat.user_id == user_id).order_by(Chat.created_at.asc()).limit(limit)
         )
         return result.scalars().all()
 
@@ -344,17 +339,17 @@ class ChatService:
     async def _save_message(
         self,
         post_id: str,
-        user_session_id: str,
+        user_id: str,
         role: str,
         message: str,
         file_uris: List[str],
         db: AsyncSession,
     ) -> Chat:
-        """Save a chat message to database with user session and file references."""
+        """Save a chat message to database with user and file references."""
         chat = Chat(
             id=str(uuid.uuid4()),
             post_id=post_id,
-            user_session_id=user_session_id,
+            user_id=user_id,
             role=role,
             message=message,
             file_uris=file_uris if file_uris else None,

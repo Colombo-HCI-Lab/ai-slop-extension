@@ -84,8 +84,8 @@ class PostInteractionRequest(BaseModel):
     viewport_time_ms: Optional[int] = Field(None, description="Time in viewport")
 
 
-class ChatSessionMetrics(BaseModel):
-    """Chat session metrics."""
+class UserPostChatAnalyticsMetrics(BaseModel):
+    """User post chat analytics metrics."""
 
     session_id: str = Field(..., description="Chat session ID")
     user_post_analytics_id: str = Field(..., description="Related user post analytics ID")
@@ -169,8 +169,8 @@ class UserSessionAnalyticsCreate(BaseModel):
     end_reason: Optional[str] = None
 
 
-class ChatSessionCreate(BaseModel):
-    """Create chat session entry."""
+class UserPostChatAnalyticsCreate(BaseModel):
+    """Create user post chat analytics entry."""
 
     user_post_analytics_id: str
     session_token: str
