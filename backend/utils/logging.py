@@ -4,6 +4,8 @@ Structured logging configuration using structlog.
 
 import logging
 import sys
+from datetime import datetime
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
 
@@ -104,14 +106,25 @@ def setup_logging():
         cache_logger_on_first_use=True,
     )
 
-    # File logging setup
+    # File logging setup with timestamp and rotation
     log_dir = Path("logs")
     if log_dir.exists() or settings.debug:
         log_dir.mkdir(exist_ok=True)
-        file_handler = logging.FileHandler(log_dir / "app.log")
+        
+        # Create timestamped log filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        log_filename = f"app_{timestamp}.log"
+        
+        # Use RotatingFileHandler for log rotation (50MB max, keep 5 backups)
+        file_handler = RotatingFileHandler(
+            log_dir / log_filename,
+            maxBytes=50 * 1024 * 1024,  # 50MB
+            backupCount=5,
+            encoding='utf-8'
+        )
         file_handler.setLevel(getattr(logging, settings.log_level.upper()))
 
-        # JSON format for file logs
+        # JSON format for file logs without color codes
         file_formatter = structlog.stdlib.ProcessorFormatter(
             processor=structlog.processors.JSONRenderer(),
         )
@@ -119,6 +132,16 @@ def setup_logging():
 
         root_logger = logging.getLogger()
         root_logger.addHandler(file_handler)
+        
+        # Also create a symlink to latest log for convenience
+        latest_log_link = log_dir / "latest.log"
+        if latest_log_link.exists():
+            latest_log_link.unlink()
+        try:
+            latest_log_link.symlink_to(log_filename)
+        except OSError:
+            # Windows doesn't support symlinks by default, skip silently
+            pass
 
 
 def get_logger(name: str = None, **initial_values) -> structlog.BoundLogger:
