@@ -1,5 +1,6 @@
 // Styles are imported from entry index.ts, not here
 import { getUserId } from '@/shared/storage';
+import { STORAGE_KEYS } from '@/shared/constants';
 import { log, warn, error as logError } from '@/shared/logger';
 import { sendChat, fetchChatHistory, sendAiSlopRequest } from '@/content/messaging';
 import { metricsManager } from './metrics/MetricsManager';
@@ -104,6 +105,31 @@ export class FacebookPostObserver {
 
     log(`[AI-Slop] Could not determine group name from URL: ${url}`);
     return 'Unknown Group';
+  }
+
+  /**
+   * Ensures a valid persistent user id exists for chat/analytics.
+   * Falls back to generating and storing a UUID if missing.
+   */
+  private ensureUserId(): string {
+    try {
+      const existing = getUserId();
+      if (existing) return existing;
+      const newId = (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
+        ? crypto.randomUUID()
+        : `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+      localStorage.setItem(STORAGE_KEYS.userId, newId);
+      return newId;
+    } catch {
+      // Best-effort UUID v4 generator if localStorage is blocked
+      const fallback = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+        const r = (Math.random() * 16) | 0;
+        const v = c === 'x' ? r : (r & 0x3) | 0x8;
+        return v.toString(16);
+      });
+      try { localStorage.setItem(STORAGE_KEYS.userId, fallback); } catch {}
+      return fallback;
+    }
   }
 
   /**
@@ -1834,18 +1860,18 @@ export class FacebookPostObserver {
       const response = await sendChat({
         postId: postId,
         message: message,
-        userId: getUserId(),
+        userId: this.ensureUserId(),
         postContent: postContent,
         previousAnalysis: previousAnalysis,
       });
 
-      // Remove loading message
-      loadingDiv.remove();
-
       if ('error' in response) {
+        // Keep loader bubble to display error message in catch
         throw new Error(response.error);
       }
 
+      // Success: remove loader and add assistant response
+      loadingDiv.remove();
       // Add assistant response
       const assistantMessageDiv = document.createElement('div');
       assistantMessageDiv.className = 'assistant-message';
@@ -1897,6 +1923,7 @@ export class FacebookPostObserver {
       }
     } catch (error) {
       logError('Chat request failed:', error);
+      // Show error in the existing loader bubble instead of removing it
       loadingDiv.textContent = '❌ Sorry, I encountered an error. Please try again.';
       loadingDiv.classList.remove('loading');
       metricsManager.trackEvent({
@@ -1921,7 +1948,7 @@ export class FacebookPostObserver {
     if (!messagesContainer) return;
 
     try {
-      const userId = getUserId();
+      const userId = this.ensureUserId();
       log(`[AI-Slop] Loading chat history for post ${postId}, user ${userId}`);
 
       // Delegate network call to background for consistent CORS/timeout handling
