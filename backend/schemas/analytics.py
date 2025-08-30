@@ -22,10 +22,8 @@ class AnalyticsEvent(BaseModel):
 
 
 class UserInitRequest(BaseModel):
-    """Request to initialize a user."""
+    """Request to initialize a user (server generates ID)."""
 
-    user_id: str = Field(..., description="Unique user identifier from browser extension")
-    session_id: str = Field(..., description="Session identifier from browser extension")
     browser_info: Dict[str, Any] = Field(..., description="Browser and environment information")
     timezone: str = Field(..., description="User timezone")
     locale: str = Field(..., description="User locale")
@@ -36,7 +34,6 @@ class UserInitResponse(BaseModel):
     """Response from user initialization."""
 
     user_id: str = Field(..., description="Internal user ID")
-    session_id: str = Field(..., description="Current session ID")
     experiment_groups: List[str] = Field(default_factory=list, description="A/B test groups")
 
 

@@ -4,6 +4,7 @@ import {
   ChatHistoryRequest,
   AiSlopRequest,
   AnalyticsUserInit,
+  AnalyticsSessionStart,
   AnalyticsSessionEnd,
   AnalyticsPostInteraction,
   AnalyticsPerformanceMetric,
@@ -83,11 +84,22 @@ export async function sendMetricsBatch(request: MetricsBatchRequest): Promise<vo
 
 export async function initializeAnalyticsUser(payload: Omit<AnalyticsUserInit, 'type'>): Promise<{
   user_id: string;
-  session_id: string;
   experiment_groups: string[];
 }> {
   return new Promise((resolve, reject) => {
     chrome.runtime.sendMessage({ type: MessageType.AnalyticsUserInit, ...payload }, response => {
+      if (chrome.runtime.lastError) return reject(chrome.runtime.lastError);
+      if (response && response.error) return reject(new Error(response.error));
+      resolve(response);
+    });
+  });
+}
+
+export async function startAnalyticsSession(payload: Omit<AnalyticsSessionStart, 'type'>): Promise<{
+  session_id: string;
+}> {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({ type: MessageType.AnalyticsSessionStart, ...payload }, response => {
       if (chrome.runtime.lastError) return reject(chrome.runtime.lastError);
       if (response && response.error) return reject(new Error(response.error));
       resolve(response);

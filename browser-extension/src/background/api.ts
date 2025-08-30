@@ -155,14 +155,30 @@ export async function sendMetricsBatch(
 // --- Additional Analytics endpoints ---
 
 export async function initializeUser(body: {
-  user_id: string;
-  session_id: string;
   browser_info: Record<string, unknown>;
   timezone: string;
   locale: string;
   client_ip?: string | null;
-}): Promise<{ user_id: string; session_id: string; experiment_groups: string[] }> {
+}): Promise<{ user_id: string; experiment_groups: string[] }> {
   const url = `${API_BASE_URL}/analytics/users/initialize`;
+  logger.log('POST', url, { init: true });
+  return fetchJsonWithRetry(
+    url,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+    { retries: 3, backoffBaseMs: 500 }
+  );
+}
+
+export async function startSession(body: {
+  user_id: string;
+  browser_info: Record<string, unknown>;
+  ip_hash?: string | null;
+}): Promise<{ session_id: string; status?: string }> {
+  const url = `${API_BASE_URL}/analytics/sessions/start`;
   logger.log('POST', url, { userId: body.user_id });
   return fetchJsonWithRetry(
     url,

@@ -7,6 +7,7 @@ export enum MessageType {
   ToggleChatWindow = 'TOGGLE_CHAT_WINDOW',
   MetricsBatch = 'METRICS_BATCH',
   AnalyticsUserInit = 'ANALYTICS_USER_INIT',
+  AnalyticsSessionStart = 'ANALYTICS_SESSION_START',
   AnalyticsSessionEnd = 'ANALYTICS_SESSION_END',
   AnalyticsPostInteraction = 'ANALYTICS_POST_INTERACTION',
   AnalyticsPerformanceMetric = 'ANALYTICS_PERFORMANCE_METRIC',
@@ -60,11 +61,16 @@ export type MetricsBatch = {
 
 export type AnalyticsUserInit = {
   type: MessageType.AnalyticsUserInit;
-  userId: string;
-  sessionId: string;
   timezone: string;
   locale: string;
   browserInfo: Record<string, unknown>;
+};
+
+export type AnalyticsSessionStart = {
+  type: MessageType.AnalyticsSessionStart;
+  userId: string;
+  browserInfo: Record<string, unknown>;
+  ipHash?: string;
 };
 
 export type AnalyticsSessionEnd = {
@@ -117,6 +123,7 @@ export type AnyMessage =
   | ToggleChatWindow
   | MetricsBatch
   | AnalyticsUserInit
+  | AnalyticsSessionStart
   | AnalyticsSessionEnd
   | AnalyticsPostInteraction
   | AnalyticsPerformanceMetric

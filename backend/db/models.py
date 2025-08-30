@@ -248,6 +248,7 @@ class User(Base):
     id: Mapped[str] = mapped_column(
         String(36),
         primary_key=True,
+        default=lambda: str(uuid.uuid4()),
     )
 
     # Behavioral metrics

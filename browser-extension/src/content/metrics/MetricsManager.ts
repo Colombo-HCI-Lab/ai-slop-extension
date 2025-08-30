@@ -5,14 +5,17 @@
 import { log, error } from '../../shared/logger';
 import { MetricsCollector } from './MetricsCollector';
 import { MetricsConfig, UserSession } from '../../shared/types';
-import { getUserId, getSessionId } from '../../shared/storage';
-import { initializeAnalyticsUser, endAnalyticsSession } from '../messaging';
+import { initializeAnalyticsUser, startAnalyticsSession, endAnalyticsSession } from '../messaging';
 import { analytics } from '@/shared/analytics';
+import { getSessionHiddenTimeoutMs } from '@/shared/env';
+import { STORAGE_KEYS } from '@/shared/constants';
+import { isInAllowedGroupNow } from '@/content/utils/group';
 
 export class MetricsManager {
   private collector: MetricsCollector | null = null;
   private session: UserSession | null = null;
   private isInitialized: boolean = false;
+  private hiddenTimer: number | null = null;
 
   private readonly defaultConfig: MetricsConfig = {
     batchSize: 50, // Increased from 25 to 50 - batch more events together
@@ -25,36 +28,36 @@ export class MetricsManager {
     if (this.isInitialized) return;
 
     try {
-      // Get or create user ID and session ID from storage
-      const userId = getUserId();
-      const sessionId = getSessionId();
+      // Ensure user and session via backend-generated IDs
+      let backendUserId = localStorage.getItem(STORAGE_KEYS.userId) || '';
+      let backendSessionId = sessionStorage.getItem(STORAGE_KEYS.sessionId) || '';
 
-      // Initialize user + start session in backend (block until ready)
-      let backendUserId = userId;
-      let backendSessionId = sessionId;
-      try {
-        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-        const locale = navigator.language || 'en-US';
-        const browserInfo = {
-          name: 'Chrome',
-          userAgent: navigator.userAgent,
-          platform: navigator.platform,
-          language: navigator.language,
-        } as const;
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+      const locale = navigator.language || 'en-US';
+      const browserInfo = {
+        name: 'Chrome',
+        userAgent: navigator.userAgent,
+        platform: navigator.platform,
+        language: navigator.language,
+      } as const;
 
+      if (!backendUserId) {
         const res = await initializeAnalyticsUser({
-          userId: userId,
-          sessionId: sessionId,
           timezone: tz,
           locale: locale,
           browserInfo: browserInfo as unknown as Record<string, unknown>,
         });
         backendUserId = res.user_id;
-        // Keep frontend sessionId instead of overriding with backend response
-        backendSessionId = sessionId;
-      } catch (e) {
-        // Fallback to local-only session if backend init fails
-        console.debug('initializeAnalyticsUser failed; using local session', e);
+        localStorage.setItem(STORAGE_KEYS.userId, backendUserId);
+      }
+
+      if (!backendSessionId) {
+        const res = await startAnalyticsSession({
+          userId: backendUserId,
+          browserInfo: browserInfo as unknown as Record<string, unknown>,
+        });
+        backendSessionId = res.session_id;
+        sessionStorage.setItem(STORAGE_KEYS.sessionId, backendSessionId);
       }
 
       this.session = {
@@ -82,7 +85,9 @@ export class MetricsManager {
         environment: process.env.NODE_ENV || 'production',
       });
 
-      // Backend session already initialized above (or we fell back to local)
+      // Lifecycle hooks (teardown on navigation and hidden timeout)
+      this.setupNavigationGuards();
+      this.setupVisibilityTimeout();
 
       // Track page load and session start
       this.trackEvent({
@@ -251,6 +256,95 @@ export class MetricsManager {
 
     this.isInitialized = false;
     log('MetricsManager destroyed');
+  }
+
+  private setupNavigationGuards(): void {
+    const onLocationChange = async () => {
+      if (!isInAllowedGroupNow() && this.session) {
+        const duration = Date.now() - this.session.startTime;
+        endAnalyticsSession({
+          sessionId: this.session.sessionId,
+          durationSeconds: Math.round(duration / 1000),
+          endReason: 'nav_away',
+        }).catch(() => null);
+        sessionStorage.removeItem(STORAGE_KEYS.sessionId);
+        this.session = null;
+      } else if (isInAllowedGroupNow() && !this.session) {
+        // Start a new session lazily when navigating into allowed context
+        const userId = localStorage.getItem(STORAGE_KEYS.userId);
+        if (userId) {
+          try {
+            const browserInfo = {
+              name: 'Chrome',
+              userAgent: navigator.userAgent,
+              platform: navigator.platform,
+              language: navigator.language,
+            } as const;
+            const res = await startAnalyticsSession({
+              userId,
+              browserInfo: browserInfo as unknown as Record<string, unknown>,
+            });
+            const newSessionId = res.session_id;
+            sessionStorage.setItem(STORAGE_KEYS.sessionId, newSessionId);
+            this.session = {
+              userId,
+              sessionId: newSessionId,
+              startTime: Date.now(),
+              lastActivity: Date.now(),
+            };
+            if (this.collector) this.collector.setSession(userId, newSessionId);
+            analytics.registerSuper({ session_id: newSessionId });
+          } catch {}
+        }
+      }
+    };
+
+    const wrapHistory = (method: 'pushState' | 'replaceState') => {
+      type PushReplace = (data: unknown, unused: string, url?: string | URL | null) => unknown;
+      const orig = history[method].bind(history) as PushReplace;
+      (history as unknown as Record<string, unknown>)[method] = ((
+        data: unknown,
+        unused: string,
+        url?: string | URL | null
+      ) => {
+        const ret = orig(data, unused, url);
+        window.dispatchEvent(new Event('locationchange'));
+        return ret as unknown as void;
+      }) as History[typeof method];
+    };
+    wrapHistory('pushState');
+    wrapHistory('replaceState');
+    window.addEventListener('popstate', () => window.dispatchEvent(new Event('locationchange')));
+    window.addEventListener('locationchange', () => void onLocationChange());
+  }
+
+  private setupVisibilityTimeout(): void {
+    const timeoutMs = getSessionHiddenTimeoutMs();
+    const clearTimer = () => {
+      if (this.hiddenTimer) {
+        clearTimeout(this.hiddenTimer);
+        this.hiddenTimer = null;
+      }
+    };
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        clearTimer();
+        this.hiddenTimer = window.setTimeout(() => {
+          if (this.session) {
+            const duration = Date.now() - this.session.startTime;
+            endAnalyticsSession({
+              sessionId: this.session.sessionId,
+              durationSeconds: Math.round(duration / 1000),
+              endReason: 'tab_hidden_timeout',
+            }).catch(() => null);
+            sessionStorage.removeItem(STORAGE_KEYS.sessionId);
+            this.session = null;
+          }
+        }, timeoutMs);
+      } else {
+        clearTimer();
+      }
+    });
   }
 
   private setupScrollTracking(): void {

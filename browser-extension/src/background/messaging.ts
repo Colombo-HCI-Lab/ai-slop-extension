@@ -5,6 +5,7 @@ import {
   getChatHistory,
   sendMetricsBatch as sendMetricsBatchApi,
   initializeUser as initializeUserApi,
+  startSession as startSessionApi,
   endSession as endSessionApi,
   trackPostInteraction as trackPostInteractionApi,
   recordPerformanceMetric as recordPerformanceMetricApi,
@@ -79,14 +80,28 @@ export function setupBackgroundMessaging(): void {
     }
 
     if (message.type === MessageType.AnalyticsUserInit) {
-      logger.log('ANALYTICS_USER_INIT received', { userId: message.userId, sessionId: message.sessionId });
+      logger.log('ANALYTICS_USER_INIT received', {
+        init: true,
+      });
       initializeUserApi({
-        user_id: message.userId,
-        session_id: message.sessionId,
         timezone: message.timezone,
         locale: message.locale,
         browser_info: message.browserInfo,
         client_ip: null,
+      })
+        .then(sendResponse)
+        .catch(err => sendResponse({ error: String(err?.message || err) }));
+      return true;
+    }
+
+    if (message.type === MessageType.AnalyticsSessionStart) {
+      logger.log('ANALYTICS_SESSION_START received', {
+        userId: message.userId,
+      });
+      startSessionApi({
+        user_id: message.userId,
+        browser_info: message.browserInfo,
+        ip_hash: message.ipHash || null,
       })
         .then(sendResponse)
         .catch(err => sendResponse({ error: String(err?.message || err) }));
