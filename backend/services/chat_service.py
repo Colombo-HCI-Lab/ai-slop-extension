@@ -412,6 +412,10 @@ Your role:
 - Acknowledge limitations and potential for false positives/negatives
 - Provide insights based on the specific detection scores and confidence levels shown above
 
+Special guidance for specific questions:
+- When asked "Why should I avoid these posts?": Explain AI slop harms including misinformation spread, time-wasting clickbait, degraded information quality, manipulation tactics, and how AI-generated content reduces meaningful engagement and critical thinking
+- When asked "How can I avoid having these in my Facebook?": Provide actionable advice like clicking "Not Interested" on similar posts, unfollowing sources that post AI slop frequently, adjusting Facebook feed preferences, engaging less with low-quality content, and being selective about interactions
+
 Keep responses informative but concise (2-4 sentences typically)."""
 
             # Initialize model with the specific post context
@@ -478,6 +482,10 @@ Your role:
 - Be conversational and engaging, not robotic
 - Acknowledge limitations and potential for false positives/negatives
 - Provide insights based on the specific detection scores and confidence levels shown above
+
+Special guidance for specific questions:
+- When asked "Why should I avoid these posts?": Explain AI slop harms including misinformation spread, time-wasting clickbait, degraded information quality, manipulation tactics, and how AI-generated content reduces meaningful engagement and critical thinking
+- When asked "How can I avoid having these in my Facebook?": Provide actionable advice like clicking "Not Interested" on similar posts, unfollowing sources that post AI slop frequently, adjusting Facebook feed preferences, engaging less with low-quality content, and being selective about interactions
 
 Keep responses informative but concise (2-4 sentences typically)."""
 
@@ -614,6 +622,10 @@ Generate 3 short, concise follow-up questions that:
 6. Keep each question under 8 words when possible
 7. Use simple, direct language
 
+Consider including these important questions when relevant:
+- "Why should I avoid these posts?" - When answering this, focus on AI slop harms like: misinformation spread, time-wasting clickbait, degraded information quality, manipulation tactics, and how AI-generated content can kill productive engagement
+- "How can I avoid having these in my Facebook?" - When answering this, provide actionable advice like: clicking "Not Interested" on similar posts, unfollowing or blocking sources that frequently post AI slop, adjusting Facebook preferences, engaging less with low-quality content, and being more selective about what they interact with
+
 Return ONLY the 3 questions, each on a separate line, without numbers or bullet points."""
 
             # Initialize model
@@ -668,6 +680,8 @@ Return ONLY the 3 questions, each on a separate line, without numbers or bullet 
             "How confident is this analysis?",
             "Could this be wrong?",
             "What are the key indicators?",
+            "Why should I avoid these posts?",
+            "How can I avoid having these in my Facebook?",
         ]
 
         if post.verdict == "ai_slop":

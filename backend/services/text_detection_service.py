@@ -154,7 +154,7 @@ class TextDetectionService:
             f"{', '.join(matched_indicators[:3])}"
             f"{'...' if len(matched_indicators) > 3 else ''}"
             if indicator_score > 0
-            else "No AI-typical patterns detected"
+            else "Some AI generated content detected"
         )
 
         logger.debug(
