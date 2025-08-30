@@ -7,9 +7,9 @@ from httpx import AsyncClient, ASGITransport
 from fastapi.testclient import TestClient
 
 from main import app
-from db.models import User, UserPostAnalytics, AnalyticsEvent
+from db.models import User, AnalyticsEvent
 from db.session import get_db
-from schemas.analytics import UserInitRequest, EventBatchRequest, AnalyticsEvent as EventSchema
+from schemas.analytics import UserInitRequest
 
 
 class TestAnalyticsAPI:

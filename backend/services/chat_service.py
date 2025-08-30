@@ -59,12 +59,28 @@ class ChatService:
 
     # --- Internal helpers: retries, concurrency, history building ---
 
-    async def _with_limit_and_timeout(self, func, *args, **kwargs):
+    async def _with_limit_and_timeout(self, func, *args, timeout: Optional[float] = None, **kwargs):
+        """Run a blocking func in a thread with concurrency + timeout.
+
+        Args:
+            func: Callable to execute in a thread
+            *args: Positional args for the callable
+            timeout: Optional timeout override in seconds
+            **kwargs: Keyword args for the callable
+
+        Returns:
+            Result of the callable
+        """
+        effective_timeout = timeout if timeout is not None else settings.gemini_timeout_seconds
         async with self._sem:
-            return await asyncio.wait_for(
-                asyncio.to_thread(func, *args, **kwargs),
-                timeout=settings.gemini_timeout_seconds,
-            )
+            try:
+                return await asyncio.wait_for(
+                    asyncio.to_thread(func, *args, **kwargs),
+                    timeout=effective_timeout,
+                )
+            except asyncio.TimeoutError as e:
+                # Provide a clear, non-empty message for upstream handlers
+                raise asyncio.TimeoutError(f"Gemini call timed out after {effective_timeout:.0f}s") from e
 
     async def _retry(self, coro_fn, *args, **kwargs):
         async for attempt in AsyncRetrying(
@@ -75,8 +91,8 @@ class ChatService:
             with attempt:
                 return await coro_fn(*args, **kwargs)
 
-    async def _gemini_send_message(self, chat_session, content):
-        return await self._with_limit_and_timeout(chat_session.send_message, content)
+    async def _gemini_send_message(self, chat_session, content, *, timeout: Optional[float] = None):
+        return await self._with_limit_and_timeout(chat_session.send_message, content, timeout=timeout)
 
     async def _gemini_get_file(self, file_name: str):
         return await self._with_limit_and_timeout(genai.get_file, file_name)
@@ -419,12 +435,13 @@ Keep responses informative but concise (2-4 sentences typically)."""
         except Exception as e:
             logger.error(
                 "Error generating Gemini response",
-                error=str(e),
+                error=str(e) or e.__class__.__name__,
                 post_id=post.post_id,
                 user_message=user_message[:100] + "..." if len(user_message) > 100 else user_message,
                 exc_info=True,
             )
-            raise Exception(f"Failed to generate chat response: {str(e)}")
+            err_msg = str(e) or e.__class__.__name__
+            raise Exception(f"Failed to generate chat response: {err_msg}")
 
     async def _generate_multimodal_response(self, post: Post, user_message: str, chat_history: List[Chat], file_uris: List[str]) -> str:
         """Generate AI response using Gemini with text, images, and videos."""
@@ -501,19 +518,29 @@ Keep responses informative but concise (2-4 sentences typically)."""
             prompt_parts.append(f"User question: {user_message}")
 
             # Generate response with multimodal content
-            response = await self._retry(self._gemini_send_message, chat_session, prompt_parts)
+            # Multimodal generations often take longer; allow an explicit configurable timeout.
+            # Use GEMINI_MULTIMODAL_TIMEOUT_SECONDS if set; else fall back to GEMINI_TIMEOUT_SECONDS.
+            multi_timeout = getattr(settings, "gemini_multimodal_timeout_seconds", None) or settings.gemini_timeout_seconds
+
+            response = await self._retry(
+                self._gemini_send_message,
+                chat_session,
+                prompt_parts,
+                timeout=multi_timeout,
+            )
             return response.text
 
         except Exception as e:
             logger.error(
                 "Error generating multimodal Gemini response",
-                error=str(e),
+                error=str(e) or e.__class__.__name__,
                 post_id=post.post_id,
                 user_message=user_message[:100] + "..." if len(user_message) > 100 else user_message,
                 media_file_count=len(file_uris),
                 exc_info=True,
             )
-            raise Exception(f"Failed to generate multimodal chat response: {str(e)}")
+            err_msg = str(e) or e.__class__.__name__
+            raise Exception(f"Failed to generate multimodal chat response: {err_msg}")
 
     def _build_detection_summary(self, post: Post) -> str:
         """Build a comprehensive summary of all detection results."""

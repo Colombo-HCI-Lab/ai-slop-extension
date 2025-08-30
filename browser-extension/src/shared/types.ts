@@ -49,3 +49,18 @@ export interface ChatSession {
   messageCount: number;
   suggestedQuestionsUsed: number;
 }
+
+// Unified analytics event for backend consolidation
+export interface UnifiedAnalyticsEvent {
+  event_type: string;
+  event_category: 'session' | 'post' | 'chat' | 'interaction' | 'performance';
+  user_id?: string;
+  post_id?: string;
+  session_identifier?: string;
+  event_data: Record<string, unknown>;
+  client_timestamp: string; // ISO
+}
+
+export interface EventBatchRequest {
+  events: UnifiedAnalyticsEvent[];
+}

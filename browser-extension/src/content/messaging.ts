@@ -1,16 +1,5 @@
-import {
-  MessageType,
-  ChatRequest,
-  ChatHistoryRequest,
-  AiSlopRequest,
-  AnalyticsUserInit,
-  AnalyticsSessionStart,
-  AnalyticsSessionEnd,
-  AnalyticsPostInteraction,
-  AnalyticsPerformanceMetric,
-  AnalyticsChatSession,
-} from '@/shared/messages';
-import { AnalyticsEvent } from '@/shared/types';
+import { MessageType, ChatRequest, ChatHistoryRequest, AiSlopRequest, AnalyticsUserInit } from '@/shared/messages';
+import { AnalyticsEvent, EventBatchRequest } from '@/shared/types';
 
 export type AiSlopResponse = {
   isAiSlop: boolean;
@@ -66,15 +55,12 @@ export async function fetchChatHistory(payload: Omit<ChatHistoryRequest, 'type'>
   });
 }
 
-export interface MetricsBatchRequest {
-  sessionId: string;
-  userId?: string;
-  events: AnalyticsEvent[];
-}
+// Legacy MetricsBatch removed – unified analytics events used instead
 
-export async function sendMetricsBatch(request: MetricsBatchRequest): Promise<void> {
+// Unified analytics event batch
+export async function sendAnalyticsEvents(request: EventBatchRequest): Promise<void> {
   return new Promise((resolve, reject) => {
-    chrome.runtime.sendMessage({ type: MessageType.MetricsBatch, ...request }, response => {
+    chrome.runtime.sendMessage({ type: MessageType.AnalyticsEventsBatch, ...request }, response => {
       if (chrome.runtime.lastError) return reject(chrome.runtime.lastError);
       if (response && response.error) return reject(new Error(response.error));
       resolve();
@@ -95,68 +81,6 @@ export async function initializeAnalyticsUser(payload: Omit<AnalyticsUserInit, '
   });
 }
 
-export async function startAnalyticsSession(payload: Omit<AnalyticsSessionStart, 'type'>): Promise<{
-  session_id: string;
-}> {
-  return new Promise((resolve, reject) => {
-    chrome.runtime.sendMessage({ type: MessageType.AnalyticsSessionStart, ...payload }, response => {
-      if (chrome.runtime.lastError) return reject(chrome.runtime.lastError);
-      if (response && response.error) return reject(new Error(response.error));
-      resolve(response);
-    });
-  });
-}
+// Session start/end calls removed – tracked via analytics events only
 
-export async function endAnalyticsSession(
-  payload: Omit<AnalyticsSessionEnd, 'type'>
-): Promise<{ status: string }> {
-  return new Promise((resolve, reject) => {
-    chrome.runtime.sendMessage({ type: MessageType.AnalyticsSessionEnd, ...payload }, response => {
-      if (chrome.runtime.lastError) return reject(chrome.runtime.lastError);
-      if (response && response.error) return reject(new Error(response.error));
-      resolve(response);
-    });
-  });
-}
-
-export async function sendPostInteraction(
-  payload: Omit<AnalyticsPostInteraction, 'type'>
-): Promise<{ status: string; analytics_id: string }> {
-  return new Promise((resolve, reject) => {
-    chrome.runtime.sendMessage(
-      { type: MessageType.AnalyticsPostInteraction, ...payload },
-      response => {
-        if (chrome.runtime.lastError) return reject(chrome.runtime.lastError);
-        if (response && response.error) return reject(new Error(response.error));
-        resolve(response);
-      }
-    );
-  });
-}
-
-export async function recordPerformanceMetric(
-  payload: Omit<AnalyticsPerformanceMetric, 'type'>
-): Promise<{ status: string }> {
-  return new Promise((resolve, reject) => {
-    chrome.runtime.sendMessage(
-      { type: MessageType.AnalyticsPerformanceMetric, ...payload },
-      response => {
-        if (chrome.runtime.lastError) return reject(chrome.runtime.lastError);
-        if (response && response.error) return reject(new Error(response.error));
-        resolve(response);
-      }
-    );
-  });
-}
-
-export async function sendChatSessionMetrics(
-  payload: Omit<AnalyticsChatSession, 'type'>
-): Promise<{ status: string; session_id: string }> {
-  return new Promise((resolve, reject) => {
-    chrome.runtime.sendMessage({ type: MessageType.AnalyticsChatSession, ...payload }, response => {
-      if (chrome.runtime.lastError) return reject(chrome.runtime.lastError);
-      if (response && response.error) return reject(new Error(response.error));
-      resolve(response);
-    });
-  });
-}
+// Legacy analytics post/metric/chat messages removed – consolidated via analytics events

@@ -6,17 +6,7 @@ from fastapi import APIRouter, HTTPException, BackgroundTasks, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from schemas.analytics import (
-    UserInitRequest,
-    UserInitResponse,
-    SessionStartRequest,
-    SessionEndRequest,
-    EventBatchRequest,
-    AnalyticsEvent,
-    PostInteractionRequest,
-    UserPostChatAnalyticsMetrics,
-    UserDashboardResponse,
-)
+from schemas.analytics import UserInitRequest, UserInitResponse
 from services.analytics_service import AnalyticsService
 from services.monitoring_service import MonitoringService
 from db.async_session import get_async_session
@@ -98,213 +88,22 @@ async def initialize_user(request: UserInitRequest, background_tasks: Background
         raise HTTPException(status_code=500, detail="Failed to initialize user")
 
 
-@router.post("/sessions/start")
-async def start_session(request: SessionStartRequest):
-    """Start a new user session."""
-    start_time = datetime.now()
-    logger.info(
-        f"POST /analytics/sessions/start - Starting session",
-        extra={
-            "endpoint": "/analytics/sessions/start",
-            "method": "POST",
-            "user_id": request.user_id[:8] + "...",
-            "browser_name": request.browser_info.get("name"),
-            "ip_hash": request.ip_hash[:8] + "..." if request.ip_hash else None,
-        },
-    )
-
-    try:
-        async with get_async_session() as db:
-            service = AnalyticsService(db)
-            merged_info = {**request.browser_info, "ip_hash": request.ip_hash}
-            session = await service.start_session(user_id=request.user_id, browser_info=merged_info)
-
-        duration_ms = (datetime.now() - start_time).total_seconds() * 1000
-        logger.info(
-            f"POST /analytics/sessions/start - Success",
-            extra={
-                "endpoint": "/analytics/sessions/start",
-                "method": "POST",
-                "user_id": request.user_id[:8] + "...",
-                "session_id": str(session.id),
-                "duration_ms": round(duration_ms, 2),
-                "status": "success",
-            },
-        )
-
-        return {"session_id": session.id, "status": "started"}
-
-    except Exception as e:
-        duration_ms = (datetime.now() - start_time).total_seconds() * 1000
-        logger.error(
-            f"POST /analytics/sessions/start - Failed",
-            extra={
-                "endpoint": "/analytics/sessions/start",
-                "method": "POST",
-                "user_id": request.user_id[:8] + "...",
-                "error": str(e),
-                "error_type": type(e).__name__,
-                "duration_ms": round(duration_ms, 2),
-                "status": "error",
-            },
-            exc_info=True,
-        )
-        raise HTTPException(status_code=500, detail="Failed to start session")
+## Legacy: /sessions/start removed (consolidated analytics events track session lifecycle)
 
 
-@router.post("/sessions/end")
-async def end_session(request: SessionEndRequest):
-    """End a user session."""
-    try:
-        async with get_async_session() as db:
-            service = AnalyticsService(db)
-            await service.end_session(
-                session_id=request.session_id, end_reason=request.end_reason, duration_seconds=request.duration_seconds
-            )
-
-            return {"status": "ended"}
-
-    except Exception as e:
-        logger.error(f"Session end failed: {e}")
-        raise HTTPException(status_code=500, detail="Failed to end session")
+## Legacy: /sessions/end removed (consolidated analytics events track session lifecycle)
 
 
-@router.post("/events/batch")
-async def submit_event_batch(request: EventBatchRequest, background_tasks: BackgroundTasks):
-    """Submit batch of analytics events with optional user_id."""
-    start_time = datetime.now()
-    event_count = len(request.events)
-
-    logger.info(
-        f"POST /analytics/events/batch - Processing event batch",
-        extra={
-            "endpoint": "/analytics/events/batch",
-            "method": "POST",
-            "session_id": request.session_id[:8] + "..." if request.session_id else None,
-            "user_id": request.user_id[:8] + "..." if request.user_id else None,
-            "event_count": event_count,
-            "event_types": list(set(event.type for event in request.events[:10])) if request.events else [],  # Sample first 10 for logging
-        },
-    )
-
-    try:
-        # Only do minimal validation in the main handler
-        if event_count > 1000:
-            raise HTTPException(status_code=400, detail="Batch size exceeds limit (1000)")
-
-        if event_count == 0:
-            return {"status": "no_events", "count": 0}
-
-        # Queue ALL events for background processing - validation happens there
-        background_tasks.add_task(_process_events_background, request.session_id, request.events, request.user_id)
-
-        duration_ms = (datetime.now() - start_time).total_seconds() * 1000
-        logger.info(
-            f"POST /analytics/events/batch - Accepted for processing",
-            extra={
-                "endpoint": "/analytics/events/batch",
-                "method": "POST",
-                "session_id": request.session_id[:8] + "..." if request.session_id else None,
-                "user_id": request.user_id[:8] + "..." if request.user_id else None,
-                "event_count": event_count,
-                "duration_ms": round(duration_ms, 2),
-                "status": "accepted",
-            },
-        )
-
-        return {"status": "accepted", "count": event_count}
-
-    except Exception as e:
-        duration_ms = (datetime.now() - start_time).total_seconds() * 1000
-        logger.error(
-            f"POST /analytics/events/batch - Failed",
-            extra={
-                "endpoint": "/analytics/events/batch",
-                "method": "POST",
-                "session_id": request.session_id[:8] + "..." if request.session_id else None,
-                "user_id": request.user_id[:8] + "..." if request.user_id else None,
-                "event_count": len(request.events),
-                "error": str(e),
-                "error_type": type(e).__name__,
-                "duration_ms": round(duration_ms, 2),
-                "status": "error",
-            },
-            exc_info=True,
-        )
-        raise HTTPException(status_code=500, detail="Failed to process events")
+# Legacy events batch endpoint removed in favor of consolidated analytics events
 
 
-@router.post("/posts/{post_id}/interactions")
-async def track_post_interaction(post_id: str, request: PostInteractionRequest):
-    """Track user interaction with a post."""
-    try:
-        async with get_async_session() as db:
-            service = AnalyticsService(db)
-
-            # Validate interaction type
-            valid_types = ["viewed", "clicked", "ignored", "chatted", "feedback_positive", "feedback_negative", "feedback_unsure"]
-            if request.interaction_type not in valid_types:
-                raise HTTPException(status_code=400, detail=f"Invalid interaction type: {request.interaction_type}")
-
-            analytics = await service.track_post_interaction(
-                user_id=request.user_id,
-                post_id=post_id,
-                interaction_type=request.interaction_type,
-                metrics={
-                    "backend_response_time_ms": request.backend_response_time_ms,
-                    "time_to_interaction_ms": request.time_to_interaction_ms,
-                    "reading_time_ms": request.reading_time_ms,
-                    "scroll_depth_percentage": request.scroll_depth_percentage,
-                    "viewport_time_ms": request.viewport_time_ms,
-                },
-            )
-
-            return {"status": "tracked", "analytics_id": analytics.id}
-
-    except Exception as e:
-        logger.error(f"Post interaction tracking failed: {e}")
-        raise HTTPException(status_code=500, detail="Failed to track interaction")
+## Legacy: /posts/{post_id}/interactions removed (consolidated via analytics events)
 
 
-@router.get("/dashboard/{user_id}", response_model=Dict[str, Any])
-async def get_user_dashboard(user_id: str, date_from: Optional[datetime] = None, date_to: Optional[datetime] = None):
-    """Get user analytics dashboard data."""
-    try:
-        async with get_async_session() as db:
-            service = AnalyticsService(db)
-
-            # Default to last 30 days
-            if not date_from:
-                date_from = datetime.utcnow() - timedelta(days=30)
-            if not date_to:
-                date_to = datetime.utcnow()
-
-            # Validate date range
-            if date_from > date_to:
-                raise HTTPException(status_code=400, detail="Invalid date range")
-
-            dashboard_data = await service.get_user_dashboard(user_id=user_id, date_from=date_from, date_to=date_to)
-
-            return dashboard_data
-
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        logger.error(f"Dashboard retrieval failed: {e}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve dashboard")
+## Legacy: /dashboard/{user_id} removed (aggregation removed; events are stored for offline analysis)
 
 
-@router.post("/chat/sessions")
-async def create_chat_session(request: UserPostChatAnalyticsMetrics):
-    """Create or update chat session metrics."""
-    try:
-        # This would integrate with the existing chat system
-        # For now, return a placeholder response
-        return {"status": "created", "session_id": request.session_id}
-
-    except Exception as e:
-        logger.error(f"Chat session creation failed: {e}")
-        raise HTTPException(status_code=500, detail="Failed to create chat session")
+## Legacy: /chat/sessions removed (chat analytics captured via analytics events)
 
 
 @router.get("/health")
@@ -350,67 +149,7 @@ async def cleanup_old_data(days_to_keep: int = 30, background_tasks: BackgroundT
         raise HTTPException(status_code=500, detail="Cleanup endpoint error")
 
 
-# Background task functions
-
-
-async def _process_events_background(session_id: str, events: List[AnalyticsEvent], user_id: Optional[str] = None) -> None:
-    """Process events in background using a fresh DB session."""
-    from db.pool import database_pool
-    from datetime import timezone, timedelta
-
-    db_session = await database_pool.get_session()
-    try:
-        # Validate timestamps and filter events (moved from main handler)
-        current_time = datetime.now(timezone.utc)
-        valid_events = []
-
-        for event in events:
-            # Ensure event timestamp is timezone-aware for comparison
-            event_time = event.client_timestamp
-            if event_time.tzinfo is None:
-                event_time = event_time.replace(tzinfo=timezone.utc)
-
-            # Skip future events
-            if event_time > current_time:
-                logger.debug(f"Skipping future event: {event.type}")
-                continue
-
-            # Skip events older than 7 days
-            if current_time - event_time > timedelta(days=7):
-                logger.debug(f"Skipping old event: {event.type}")
-                continue
-
-            valid_events.append(event)
-
-        if not valid_events:
-            logger.info(f"No valid events to process for session {session_id}")
-            await db_session.close()
-            return
-
-        # Use provided user_id or generate anonymous one
-        if not user_id:
-            user_id = f"anon_{session_id[:8]}"
-
-        service = AnalyticsService(db_session)
-        await service.process_event_batch(session_id=session_id, events=valid_events, user_id=user_id)
-
-        logger.info(
-            f"Background processed {len(valid_events)} of {len(events)} events for session {session_id}",
-            extra={
-                "session_id": session_id,
-                "total_events": len(events),
-                "valid_events": len(valid_events),
-                "filtered_events": len(events) - len(valid_events),
-            },
-        )
-
-        await db_session.commit()
-    except Exception as e:
-        await db_session.rollback()
-        logger.error(f"Error processing events in background: {e}")
-        raise
-    finally:
-        await db_session.close()
+"""Background task functions and legacy handlers removed for consolidated analytics."""
 
 
 async def _enrich_user_data(service: AnalyticsService, user_id: str, client_ip: str) -> None:

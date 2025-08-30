@@ -121,27 +121,23 @@ export async function getChatHistory(postId: string, userId: string): Promise<Ch
   return fetchJsonWithRetry<ChatHistoryResponse>(url, { method: 'GET' });
 }
 
-export async function sendMetricsBatch(
-  sessionId: string,
-  events: Array<{
-    type: string;
-    category: string;
-    value?: number;
-    label?: string;
-    metadata?: Record<string, unknown>;
-    clientTimestamp: string;
-  }>,
-  userId?: string
-): Promise<void> {
-  const url = `${API_BASE_URL}/analytics/events/batch`;
-  const body = {
-    session_id: sessionId,
-    user_id: userId,
-    events: events,
-  };
+// Legacy metrics batch removed – use sendAnalyticsEventsBatch
 
-  logger.log('POST', url, { eventCount: events.length, sessionId });
-  await fetchJsonWithRetry<{ status: string }>(
+// Unified analytics events (consolidated schema)
+export async function sendAnalyticsEventsBatch(body: {
+  events: Array<{
+    event_type: string;
+    event_category: 'session' | 'post' | 'chat' | 'interaction' | 'performance';
+    user_id?: string;
+    post_id?: string;
+    session_identifier?: string;
+    event_data: Record<string, unknown>;
+    client_timestamp?: string;
+  }>;
+}): Promise<{ status: string; events_queued: number }> {
+  const url = `${API_BASE_URL}/analytics/events/batch`;
+  logger.log('POST', url, { eventCount: body.events.length, analytics: true });
+  return fetchJsonWithRetry(
     url,
     {
       method: 'POST',
@@ -173,110 +169,5 @@ export async function initializeUser(body: {
   );
 }
 
-export async function startSession(body: {
-  user_id: string;
-  browser_info: Record<string, unknown>;
-  ip_hash?: string | null;
-}): Promise<{ session_id: string; status?: string }> {
-  const url = `${API_BASE_URL}/analytics/sessions/start`;
-  logger.log('POST', url, { userId: body.user_id });
-  return fetchJsonWithRetry(
-    url,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    },
-    { retries: 3, backoffBaseMs: 500 }
-  );
-}
-
-export async function endSession(body: {
-  session_id: string;
-  end_reason: string;
-  duration_seconds: number;
-}): Promise<{ status: string }> {
-  const url = `${API_BASE_URL}/analytics/sessions/end`;
-  logger.log('POST', url, { sessionId: body.session_id, reason: body.end_reason });
-  return fetchJsonWithRetry(
-    url,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    },
-    { retries: 3, backoffBaseMs: 500 }
-  );
-}
-
-export async function trackPostInteraction(
-  postId: string,
-  body: {
-    user_id: string;
-    interaction_type: string;
-    backend_response_time_ms?: number;
-    time_to_interaction_ms?: number;
-    reading_time_ms?: number;
-    scroll_depth_percentage?: number;
-    viewport_time_ms?: number;
-  }
-): Promise<{ status: string; analytics_id: string }> {
-  const url = `${API_BASE_URL}/analytics/posts/${encodeURIComponent(postId)}/interactions`;
-  logger.log('POST', url, { postId, interaction: body.interaction_type });
-  return fetchJsonWithRetry(
-    url,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    },
-    { retries: 3, backoffBaseMs: 500 }
-  );
-}
-
-export async function recordPerformanceMetric(body: {
-  metric_name: string;
-  metric_value: number;
-  metric_unit?: string;
-  endpoint?: string;
-  metadata?: Record<string, unknown>;
-}): Promise<{ status: string }> {
-  const url = `${API_BASE_URL}/analytics/performance/metrics`;
-  logger.log('POST', url, { name: body.metric_name, value: body.metric_value });
-  return fetchJsonWithRetry(
-    url,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    },
-    { retries: 3, backoffBaseMs: 500 }
-  );
-}
-
-export async function createOrUpdateChatSession(body: {
-  session_id: string; // chat session token
-  user_post_analytics_id: string;
-  duration_ms: number;
-  message_count: number;
-  user_message_count: number;
-  assistant_message_count: number;
-  suggested_question_clicks: number;
-  satisfaction_rating?: number;
-  ended_by?: string;
-}): Promise<{ status: string; session_id: string }> {
-  const url = `${API_BASE_URL}/analytics/chat/sessions`;
-  logger.log('POST', url, {
-    chatSessionId: body.session_id,
-    analyticsId: body.user_post_analytics_id,
-  });
-  return fetchJsonWithRetry(
-    url,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    },
-    { retries: 3, backoffBaseMs: 500 }
-  );
-}
+// Session start/end endpoints removed – analytics events cover session lifecycle
+// Legacy interaction/performance/chat metrics endpoints removed – consolidated via analytics events

@@ -10,6 +10,7 @@ from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = "001_init_db"
@@ -101,99 +102,22 @@ def upgrade() -> None:
     op.create_index(op.f("ix_chat_post_id"), "chat", ["post_id"], unique=False)
     op.create_index("ix_chat_user_id", "chat", ["user_id"], unique=False)
 
-    # User post analytics table
-    op.create_table(
-        "user_post_analytics",
-        sa.Column("id", sa.String(36), primary_key=True),
-        sa.Column("user_id", sa.String(36), sa.ForeignKey("user.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("post_id", sa.String(255), sa.ForeignKey("post.post_id", ondelete="CASCADE"), nullable=False),
-        sa.Column("interaction_type", sa.String(20), default="viewed"),
-        sa.Column("backend_response_time_ms", sa.Integer()),
-        sa.Column("time_to_interaction_ms", sa.Integer()),
-        sa.Column("icon_visibility_duration_ms", sa.Integer()),
-        sa.Column("reading_time_ms", sa.Integer()),
-        sa.Column("scroll_depth_percentage", sa.Float()),
-        sa.Column("viewport_time_ms", sa.Integer()),
-        sa.Column("chat_session_count", sa.Integer(), default=0),
-        sa.Column("total_chat_duration_ms", sa.Integer(), default=0),
-        sa.Column("total_messages_sent", sa.Integer(), default=0),
-        sa.Column("suggested_questions_used", sa.Integer(), default=0),
-        sa.Column("accuracy_feedback", sa.String(20)),  # 'correct', 'incorrect', 'unsure'
-        sa.Column("times_viewed", sa.Integer(), default=1),
-        sa.Column("first_viewed_at", sa.DateTime(timezone=True), server_default=sa.text("now()")),
-        sa.Column("last_viewed_at", sa.DateTime(timezone=True), server_default=sa.text("now()")),
-        sa.Column("interaction_at", sa.DateTime(timezone=True)),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()")),
-        sa.UniqueConstraint("user_id", "post_id", name="uq_user_post"),
-    )
-    op.create_index("ix_user_post_analytics_user_id", "user_post_analytics", ["user_id"])
-    op.create_index("ix_user_post_analytics_post_id", "user_post_analytics", ["post_id"])
-    op.create_index("ix_user_post_analytics_interaction", "user_post_analytics", ["interaction_type"])
-    op.create_index("ix_user_post_analytics_viewed_at", "user_post_analytics", ["first_viewed_at"])
-
-    # Enhanced user session analytics table
-    op.create_table(
-        "user_session_analytics",
-        sa.Column("id", sa.String(36), primary_key=True),
-        sa.Column("user_id", sa.String(36), sa.ForeignKey("user.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("session_token", sa.String(255), unique=True),
-        sa.Column("ip_hash", sa.String(64)),  # Hashed IP for geographic analytics
-        sa.Column("user_agent", sa.Text()),
-        sa.Column("duration_seconds", sa.Integer()),
-        sa.Column("posts_viewed", sa.Integer(), default=0),
-        sa.Column("posts_analyzed", sa.Integer(), default=0),
-        sa.Column("posts_interacted", sa.Integer(), default=0),
-        sa.Column("avg_scroll_speed", sa.Float()),
-        sa.Column("avg_posts_per_minute", sa.Float()),
-        sa.Column("total_scroll_distance", sa.Integer()),
-        sa.Column("active_time_seconds", sa.Integer()),
-        sa.Column("idle_time_seconds", sa.Integer()),
-        sa.Column("started_at", sa.DateTime(timezone=True), server_default=sa.text("now()")),
-        sa.Column("ended_at", sa.DateTime(timezone=True)),
-        sa.Column("end_reason", sa.String(50)),  # 'user_logout', 'timeout', 'browser_close'
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()")),
-    )
-    op.create_index("ix_user_session_analytics_user_id", "user_session_analytics", ["user_id"])
-    op.create_index("ix_user_session_analytics_started_at", "user_session_analytics", ["started_at"])
-    op.create_index("ix_user_session_analytics_token", "user_session_analytics", ["session_token"])
-
-    # User post chat analytics table
-    op.create_table(
-        "user_post_chat_analytics",
-        sa.Column("id", sa.String(36), primary_key=True),
-        sa.Column("user_post_analytics_id", sa.String(36), sa.ForeignKey("user_post_analytics.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("session_token", sa.String(255), unique=True),
-        sa.Column("duration_ms", sa.Integer()),
-        sa.Column("message_count", sa.Integer(), default=0),
-        sa.Column("user_message_count", sa.Integer(), default=0),
-        sa.Column("assistant_message_count", sa.Integer(), default=0),
-        sa.Column("suggested_question_clicks", sa.Integer(), default=0),
-        sa.Column("average_response_time_ms", sa.Integer()),
-        sa.Column("max_response_time_ms", sa.Integer()),
-        sa.Column("ended_by", sa.String(20), default="close"),
-        sa.Column("satisfaction_rating", sa.Integer()),  # 1-5 scale
-        sa.Column("started_at", sa.DateTime(timezone=True), server_default=sa.text("now()")),
-        sa.Column("ended_at", sa.DateTime(timezone=True)),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()")),
-    )
-    op.create_index("ix_user_post_chat_analytics_id", "user_post_chat_analytics", ["user_post_analytics_id"])
-    op.create_index("ix_user_post_chat_analytics_started_at", "user_post_chat_analytics", ["started_at"])
+    # Legacy analytics tables removed (consolidated into analytics_event)
 
     # Analytics event table for granular tracking
     op.create_table(
         "analytics_event",
         sa.Column("id", sa.String(36), primary_key=True),
-        sa.Column("user_id", sa.String(36), sa.ForeignKey("user.id", ondelete="CASCADE")),
-        sa.Column("session_id", sa.String(36), sa.ForeignKey("user_session_analytics.id", ondelete="CASCADE")),
+        sa.Column("user_id", sa.String(36)),
+        sa.Column("session_id", sa.String(36)),
+        sa.Column("session_identifier", sa.String(255)),
         sa.Column("post_id", sa.String(255), sa.ForeignKey("post.post_id", ondelete="CASCADE")),
         sa.Column("event_type", sa.String(100), nullable=False),
-        sa.Column("event_category", sa.String(50)),  # 'interaction', 'performance', 'error'
+        sa.Column("event_category", sa.String(50)),  # 'session', 'post', 'chat', 'interaction', 'performance'
         sa.Column("event_value", sa.Float()),
         sa.Column("event_label", sa.String(255)),
-        sa.Column("event_metadata", sa.JSON()),
+        sa.Column("event_metadata", sa.JSON()),  # legacy
+        sa.Column("event_data", postgresql.JSONB()),
         sa.Column("client_timestamp", sa.DateTime(timezone=True)),
         sa.Column("server_timestamp", sa.DateTime(timezone=True), server_default=sa.text("now()")),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()")),
@@ -203,7 +127,10 @@ def upgrade() -> None:
     op.create_index("ix_analytics_event_created", "analytics_event", ["created_at"])
     op.create_index("ix_analytics_event_post", "analytics_event", ["post_id"])
     op.create_index("ix_analytics_event_session", "analytics_event", ["session_id"])
+    op.create_index("ix_analytics_event_session_identifier", "analytics_event", ["session_identifier"])
     op.create_index("ix_analytics_event_category", "analytics_event", ["event_category"])
+    op.create_index("ix_analytics_event_data", "analytics_event", ["event_data"], postgresql_using="gin")
+    op.create_index("ix_analytics_event_type_time", "analytics_event", ["event_type", "server_timestamp"])
 
     op.create_table(
         "post_media",
@@ -242,9 +169,6 @@ def downgrade() -> None:
     # Drop all tables in reverse dependency order
     op.drop_table("post_media")
     op.drop_table("analytics_event")
-    op.drop_table("user_post_chat_analytics")
-    op.drop_table("user_session_analytics")
-    op.drop_table("user_post_analytics")
     op.drop_table("chat")
     op.drop_table("user_session")
     op.drop_table("post")

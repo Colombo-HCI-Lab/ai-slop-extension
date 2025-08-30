@@ -3,16 +3,16 @@
  */
 
 import { log, error } from '../../shared/logger';
-import { MetricsCollector } from './MetricsCollector';
+import { AnalyticsEventCollector } from './AnalyticsEventCollector';
 import { MetricsConfig, UserSession } from '../../shared/types';
-import { initializeAnalyticsUser, startAnalyticsSession, endAnalyticsSession } from '../messaging';
+import { initializeAnalyticsUser } from '../messaging';
 import { analytics } from '@/shared/analytics';
 import { getSessionHiddenTimeoutMs } from '@/shared/env';
 import { STORAGE_KEYS } from '@/shared/constants';
 import { isInAllowedGroupNow } from '@/content/utils/group';
 
 export class MetricsManager {
-  private collector: MetricsCollector | null = null;
+  private rawCollector: AnalyticsEventCollector | null = null;
   private session: UserSession | null = null;
   private isInitialized: boolean = false;
   private hiddenTimer: number | null = null;
@@ -52,11 +52,8 @@ export class MetricsManager {
       }
 
       if (!backendSessionId) {
-        const res = await startAnalyticsSession({
-          userId: backendUserId,
-          browserInfo: browserInfo as unknown as Record<string, unknown>,
-        });
-        backendSessionId = res.session_id;
+        const newId = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+        backendSessionId = newId;
         sessionStorage.setItem(STORAGE_KEYS.sessionId, backendSessionId);
       }
 
@@ -74,8 +71,9 @@ export class MetricsManager {
         privacyMode: 'full' as const, // Research mode: Always full collection
       };
 
-      this.collector = new MetricsCollector(config);
-      this.collector.setSession(backendUserId, backendSessionId);
+      // Initialize analytics event collector (consolidated)
+      this.rawCollector = new AnalyticsEventCollector(config);
+      this.rawCollector.setSession(backendUserId, backendSessionId);
 
       // Hook Mixpanel identity and super props
       analytics.identify(backendUserId);
@@ -92,7 +90,7 @@ export class MetricsManager {
       // Track page load and session start
       this.trackEvent({
         type: 'page_load',
-        category: 'navigation',
+        category: 'interaction',
         metadata: {
           url: window.location.href,
           userAgent: navigator.userAgent,
@@ -104,14 +102,8 @@ export class MetricsManager {
         },
       });
 
-      this.trackEvent({
-        type: 'session_start',
-        category: 'session',
-        metadata: {
-          sessionId: backendSessionId,
-          userId: backendUserId,
-        },
-      });
+      // Send session_start analytics event
+      this.rawCollector.trackSessionStart(browserInfo as unknown as Record<string, unknown>);
 
       // Set up scroll tracking
       this.setupScrollTracking();
@@ -133,32 +125,37 @@ export class MetricsManager {
     label?: string;
     metadata?: Record<string, unknown>;
   }): void {
-    if (!this.collector || !this.session) {
+    if (!this.session || !this.rawCollector) {
       log('MetricsManager not initialized, skipping event:', event.type);
       return;
     }
 
     this.updateLastActivity();
-    this.collector.trackEvent(event);
+    // Route to unified analytics event collector
+    const data: Record<string, unknown> = {
+      ...(event.metadata || {}),
+    };
+    if (typeof event.value !== 'undefined') data.value = event.value;
+    if (typeof event.label !== 'undefined') data.label = event.label;
+    this.rawCollector.trackEvent(
+      event.type,
+      event.category as 'session' | 'post' | 'chat' | 'interaction' | 'performance',
+      data,
+    );
   }
 
   public trackPostView(postId: string, postElement: Element): void {
-    if (!this.collector) return;
+    // Observe post for viewport tracking via analytics collector
+    this.rawCollector?.observePost(postElement);
 
-    // Observe post for viewport tracking
-    this.collector.observePost(postElement);
-
-    this.trackEvent({
-      type: 'post_view',
-      category: 'interaction',
-      metadata: {
-        postId,
-        elementBounds: {
-          width: postElement.getBoundingClientRect().width,
-          height: postElement.getBoundingClientRect().height,
-        },
+    // Emit consolidated post_view event
+    this.rawCollector?.trackEvent('post_view', 'post', {
+      interaction_type: 'viewed',
+      element_bounds: {
+        width: postElement.getBoundingClientRect().width,
+        height: postElement.getBoundingClientRect().height,
       },
-    });
+    }, postId);
   }
 
   public trackPostInteraction(
@@ -166,15 +163,9 @@ export class MetricsManager {
     interactionType: string,
     metadata?: Record<string, unknown>
   ): void {
-    this.trackEvent({
-      type: 'post_interaction',
-      category: 'interaction',
-      label: interactionType,
-      metadata: {
-        postId,
-        interactionType,
-        ...metadata,
-      },
+    // Consolidated event
+    this.rawCollector?.trackPostInteraction(postId, interactionType, {
+      ...(metadata || {}),
     });
   }
 
@@ -182,25 +173,19 @@ export class MetricsManager {
     postId: string,
     interactionType: 'click' | 'hover' | 'visible'
   ): void {
-    this.trackEvent({
-      type: `icon_${interactionType}`,
-      category: 'interaction',
-      metadata: {
-        postId,
-        timestamp: Date.now(),
-      },
-    });
+    // Consolidated as post_interaction with specific interaction_type
+    this.rawCollector?.trackEvent('post_interaction', 'interaction', {
+      interaction_type: `icon_${interactionType}`,
+      timestamp: Date.now(),
+    }, postId);
   }
 
   public trackChatStart(postId: string): void {
-    this.trackEvent({
-      type: 'chat_start',
-      category: 'chat',
-      metadata: {
-        postId,
-        sessionId: this.session?.sessionId,
-      },
-    });
+    // Consolidated chat_start (no dedicated session token at this layer)
+    this.rawCollector?.trackEvent('chat_start', 'chat', {
+      trigger: 'icon_click',
+      session_id: this.session?.sessionId,
+    }, postId);
   }
 
   public trackDetectionPerformance(
@@ -208,15 +193,11 @@ export class MetricsManager {
     processingTimeMs: number,
     verdict: string
   ): void {
-    this.trackEvent({
-      type: 'detection_performance',
-      category: 'performance',
-      value: processingTimeMs,
-      metadata: {
-        postId,
-        verdict,
-        processingTimeMs,
-      },
+    // Consolidated performance event
+    this.rawCollector?.trackEvent('detection_performance', 'performance', {
+      post_id: postId,
+      processing_time_ms: processingTimeMs,
+      verdict,
     });
   }
 
@@ -241,17 +222,15 @@ export class MetricsManager {
         },
       });
 
-      // Also tell backend to end the session (fire-and-forget)
-      endAnalyticsSession({
-        sessionId: this.session.sessionId,
-        durationSeconds: Math.round(sessionDuration / 1000),
-        endReason: 'page_unload',
-      }).catch(e => console.debug('endAnalyticsSession failed', e));
+      // No backend session end call; analytics events cover lifecycle
     }
 
-    if (this.collector) {
-      void this.collector.flushEvents(); // Final flush (do not block)
-      this.collector.destroy();
+    if (this.rawCollector) {
+      // Attempt to record session_end raw event as well
+      const duration = this.session ? Date.now() - this.session.startTime : 0;
+      this.rawCollector.trackSessionEnd(duration, 'page_unload', {});
+      void this.rawCollector.flushEvents();
+      this.rawCollector.destroy();
     }
 
     this.isInitialized = false;
@@ -262,11 +241,7 @@ export class MetricsManager {
     const onLocationChange = async () => {
       if (!isInAllowedGroupNow() && this.session) {
         const duration = Date.now() - this.session.startTime;
-        endAnalyticsSession({
-          sessionId: this.session.sessionId,
-          durationSeconds: Math.round(duration / 1000),
-          endReason: 'nav_away',
-        }).catch(() => null);
+        // No backend session end; analytics event will cover lifecycle
         sessionStorage.removeItem(STORAGE_KEYS.sessionId);
         this.session = null;
       } else if (isInAllowedGroupNow() && !this.session) {
@@ -280,11 +255,7 @@ export class MetricsManager {
               platform: navigator.platform,
               language: navigator.language,
             } as const;
-            const res = await startAnalyticsSession({
-              userId,
-              browserInfo: browserInfo as unknown as Record<string, unknown>,
-            });
-            const newSessionId = res.session_id;
+            const newSessionId = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(36).slice(2)}`;
             sessionStorage.setItem(STORAGE_KEYS.sessionId, newSessionId);
             this.session = {
               userId,
@@ -292,7 +263,6 @@ export class MetricsManager {
               startTime: Date.now(),
               lastActivity: Date.now(),
             };
-            if (this.collector) this.collector.setSession(userId, newSessionId);
             analytics.registerSuper({ session_id: newSessionId });
           } catch {}
         }
@@ -331,12 +301,7 @@ export class MetricsManager {
         clearTimer();
         this.hiddenTimer = window.setTimeout(() => {
           if (this.session) {
-            const duration = Date.now() - this.session.startTime;
-            endAnalyticsSession({
-              sessionId: this.session.sessionId,
-              durationSeconds: Math.round(duration / 1000),
-              endReason: 'tab_hidden_timeout',
-            }).catch(() => null);
+            // No backend session end; analytics event will cover lifecycle
             sessionStorage.removeItem(STORAGE_KEYS.sessionId);
             this.session = null;
           }
@@ -351,13 +316,13 @@ export class MetricsManager {
     let ticking = false;
 
     const handleScroll = () => {
-      if (!this.collector) return;
+      if (!this.rawCollector) return;
 
       this.updateLastActivity();
 
       if (!ticking) {
         requestAnimationFrame(() => {
-          this.collector?.trackScrollBehavior({
+          this.rawCollector?.trackScrollBehavior({
             scrollY: window.scrollY,
             timestamp: Date.now(),
           });

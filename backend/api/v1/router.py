@@ -4,7 +4,15 @@ API v1 router configuration.
 
 from fastapi import APIRouter
 
-from api.v1.endpoints import analytics, chat, health, image_detection, posts, video_detection
+from api.v1.endpoints import (
+    analytics,
+    chat,
+    health,
+    image_detection,
+    posts,
+    video_detection,
+    analytics_events,
+)
 
 api_router = APIRouter()
 
@@ -17,3 +25,4 @@ api_router.include_router(video_detection.router, tags=["video-detection"])
 api_router.include_router(chat.router, prefix="/chat", tags=["chat"])
 api_router.include_router(posts.router, prefix="/posts", tags=["posts"])
 api_router.include_router(analytics.router, tags=["analytics"])
+api_router.include_router(analytics_events.router, tags=["analytics"])

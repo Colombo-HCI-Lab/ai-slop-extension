@@ -1,14 +1,7 @@
 // Styles are imported from entry index.ts, not here
 import { getUserId } from '@/shared/storage';
 import { log, warn, error as logError } from '@/shared/logger';
-import {
-  sendChat,
-  fetchChatHistory,
-  sendAiSlopRequest,
-  recordPerformanceMetric,
-  sendPostInteraction,
-  sendChatSessionMetrics,
-} from '@/content/messaging';
+import { sendChat, fetchChatHistory, sendAiSlopRequest } from '@/content/messaging';
 import { metricsManager } from './metrics/MetricsManager';
 import { POST_CONTENT_SELECTOR as POST_SELECTOR } from '@/content/dom/selectors';
 import { isInAllowedGroupNow } from '@/content/utils/group';
@@ -596,14 +589,17 @@ export class FacebookPostObserver {
         },
       });
 
-      // Record performance metric to analytics backend (fire-and-forget)
-      recordPerformanceMetric({
-        metricName: 'ai_detection_latency',
-        metricValue: Math.round(t1 - t0),
-        metricUnit: 'ms',
-        endpoint: '/posts/process',
-        metadata: { postId, hasVideos: mediaUrls.hasVideos },
-      }).catch(e => console.debug('recordPerformanceMetric failed', e));
+      // Emit consolidated analytics event for API timing
+      metricsManager.trackEvent({
+        type: 'api_response_time',
+        category: 'performance',
+        value: Math.round(t1 - t0),
+        metadata: {
+          endpoint: '/posts/process',
+          post_id: postId,
+          hasVideos: mediaUrls.hasVideos,
+        },
+      });
 
       log(`[AI-Slop] ✅ Hardcoded analysis complete for post ${postId}:`, {
         isAiSlop: response.isAiSlop,
@@ -1308,21 +1304,8 @@ export class FacebookPostObserver {
       event.stopPropagation();
       event.preventDefault();
 
-      // Fire-and-forget analytics post interaction (do not block UI)
-      const session = metricsManager.getSession();
-      if (session?.userId) {
-        sendPostInteraction({
-          postId,
-          userId: session.userId,
-          interactionType: 'chatted',
-        })
-          .then(res => {
-            if (res.analytics_id) {
-              this.postAnalyticsId.set(postId, res.analytics_id);
-            }
-          })
-          .catch(e => console.debug('sendPostInteraction failed', e));
-      }
+      // Track post interaction via analytics events
+      metricsManager.trackPostInteraction(postId, 'chatted');
 
       // Also track explicit click
       metricsManager.trackIconInteraction(postId, 'click');
@@ -1731,18 +1714,21 @@ export class FacebookPostObserver {
         (chatWindow as unknown as HTMLElement & { _chatMetrics?: ChatMetrics })._chatMetrics ||
         null;
       chatWindow.remove();
-      if (metrics && metrics.analyticsId) {
+      if (metrics) {
         const durationMs = Date.now() - metrics.startTime;
-        sendChatSessionMetrics({
-          sessionId: metrics.sessionId,
-          userPostAnalyticsId: metrics.analyticsId,
-          durationMs,
-          messageCount: metrics.messageCount,
-          userMessageCount: metrics.userMessageCount,
-          assistantMessageCount: metrics.assistantMessageCount,
-          suggestedQuestionClicks: metrics.suggestedQuestionClicks,
-          endedBy: 'close',
-        }).catch(e => console.debug('sendChatSessionMetrics failed', e));
+        metricsManager.trackEvent({
+          type: 'chat_end',
+          category: 'chat',
+          metadata: {
+            session_token: metrics.sessionId,
+            duration_ms: durationMs,
+            total_messages: metrics.messageCount,
+            user_message_count: metrics.userMessageCount,
+            assistant_message_count: metrics.assistantMessageCount,
+            suggested_question_clicks: metrics.suggestedQuestionClicks,
+            ended_by: 'close',
+          },
+        });
       }
     });
 

@@ -124,7 +124,9 @@ class Settings(BaseSettings):
     # Google Gemini settings
     gemini_api_key: str = ""
     gemini_max_concurrency: int = 1  # Per-worker limit; ~4 total with 4 workers
-    gemini_timeout_seconds: float = 30.0  # Timeout per Gemini call
+    gemini_timeout_seconds: float = 600.0  # Timeout per Gemini call (default 10 min)
+    # Optional override specifically for multimodal (image/video) generations
+    gemini_multimodal_timeout_seconds: Optional[float] = None
     gemini_retry_max_attempts: int = 3  # Retry attempts for Gemini operations
     gemini_retry_backoff_base: float = 0.5  # Exponential backoff base
     gemini_max_media_files: int = 10  # Cap media parts per prompt

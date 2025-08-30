@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, text
 
-from db.models import AnalyticsEvent, User, UserSessionAnalytics
+from db.models import AnalyticsEvent, User
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -122,9 +122,9 @@ class MonitoringService:
             # Active users in last hour
             active_users_stmt = select(func.count(func.distinct(User.id))).where(User.last_active_at >= one_hour_ago)
 
-            # Active sessions in last hour
-            active_sessions_stmt = select(func.count(UserSessionAnalytics.id)).where(
-                UserSessionAnalytics.started_at >= one_hour_ago, UserSessionAnalytics.ended_at.is_(None)
+            # Active sessions in last hour (by distinct session_identifier from analytics events)
+            active_sessions_stmt = select(func.count(func.distinct(AnalyticsEvent.session_identifier))).where(
+                AnalyticsEvent.created_at >= one_hour_ago, AnalyticsEvent.session_identifier.is_not(None)
             )
 
             # Events in last hour
