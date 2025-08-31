@@ -186,7 +186,7 @@ export class ComprehensiveAnalyticsManager {
       const enrichedEvent: UnifiedAnalyticsEvent = {
         ...event,
         user_id: event.user_id || this.userId,
-        session_identifier: event.session_identifier || this.sessionId,
+        session_id: event.session_id || this.sessionId,
         event_priority: event.event_priority || this.determinePriority(event),
         event_data: {
           ...event.event_data,

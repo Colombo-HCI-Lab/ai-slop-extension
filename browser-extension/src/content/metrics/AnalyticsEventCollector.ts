@@ -6,7 +6,7 @@ import { ComprehensiveAnalyticsManager } from './ComprehensiveAnalyticsManager';
 export class AnalyticsEventCollector {
   private eventBuffer: UnifiedAnalyticsEvent[] = [];
   private userId = '';
-  private sessionIdentifier = '';
+  private sessionId = '';
   private flushInterval: number | null = null;
   private readonly config: MetricsConfig;
 
@@ -32,9 +32,9 @@ export class AnalyticsEventCollector {
     this.startAutoFlush();
   }
 
-  public setSession(userId: string, sessionIdentifier: string): void {
+  public setSession(userId: string, sessionId: string): void {
     this.userId = userId;
-    this.sessionIdentifier = sessionIdentifier;
+    this.sessionId = sessionId;
   }
 
   public trackEvent(
@@ -48,7 +48,7 @@ export class AnalyticsEventCollector {
       event_category: category,
       user_id: this.userId || undefined,
       post_id: postId,
-      session_identifier: this.sessionIdentifier || undefined,
+      session_id: this.sessionId || undefined,
       event_data: data,
       client_timestamp: new Date().toISOString(),
     };

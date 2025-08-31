@@ -47,7 +47,7 @@ export type AnalyticsEventsBatch = {
     event_category: 'session' | 'post' | 'chat' | 'interaction' | 'performance';
     user_id?: string;
     post_id?: string;
-    session_identifier?: string;
+    session_id?: string;
     event_data: Record<string, unknown>;
     client_timestamp: string;
   }>;

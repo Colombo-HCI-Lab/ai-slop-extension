@@ -72,7 +72,7 @@ export interface UnifiedAnalyticsEvent {
   event_priority?: EventPriority;
   user_id?: string;
   post_id?: string;
-  session_identifier?: string;
+  session_id?: string;
   event_data: Record<string, unknown>;
   client_timestamp: string; // ISO
 }
