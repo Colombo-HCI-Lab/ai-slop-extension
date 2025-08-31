@@ -1,6 +1,7 @@
 import { analytics } from '@/shared/analytics';
 import type { EventBatchRequest, UnifiedAnalyticsEvent, MetricsConfig, ScrollMetrics } from '@/shared/types';
 import { sendAnalyticsEvents } from '../messaging';
+import { ComprehensiveAnalyticsManager } from './ComprehensiveAnalyticsManager';
 
 export class AnalyticsEventCollector {
   private eventBuffer: UnifiedAnalyticsEvent[] = [];

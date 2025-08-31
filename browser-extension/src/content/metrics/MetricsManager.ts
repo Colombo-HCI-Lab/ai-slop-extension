@@ -4,6 +4,7 @@
 
 import { log, error } from '../../shared/logger';
 import { AnalyticsEventCollector } from './AnalyticsEventCollector';
+import { ComprehensiveAnalyticsManager } from './ComprehensiveAnalyticsManager';
 import { MetricsConfig, UserSession } from '../../shared/types';
 import { initializeAnalyticsUser } from '../messaging';
 import { analytics } from '@/shared/analytics';
@@ -13,6 +14,7 @@ import { isInAllowedGroupNow } from '@/content/utils/group';
 
 export class MetricsManager {
   private rawCollector: AnalyticsEventCollector | null = null;
+  private comprehensiveAnalytics: ComprehensiveAnalyticsManager | null = null;
   private session: UserSession | null = null;
   private isInitialized: boolean = false;
   private hiddenTimer: number | null = null;
@@ -71,9 +73,12 @@ export class MetricsManager {
         privacyMode: 'full' as const, // Research mode: Always full collection
       };
 
-      // Initialize analytics event collector (consolidated)
+      // Initialize analytics event collector (legacy support)
       this.rawCollector = new AnalyticsEventCollector(config);
       this.rawCollector.setSession(backendUserId, backendSessionId);
+
+      // Initialize comprehensive analytics system
+      this.comprehensiveAnalytics = new ComprehensiveAnalyticsManager(backendUserId, backendSessionId);
 
       // Hook Mixpanel identity and super props
       analytics.identify(backendUserId);
@@ -145,10 +150,8 @@ export class MetricsManager {
   }
 
   public trackPostView(postId: string, postElement: Element): void {
-    // Observe post for viewport tracking via analytics collector
+    // Legacy analytics (maintain backwards compatibility)
     this.rawCollector?.observePost(postElement);
-
-    // Emit consolidated post_view event
     this.rawCollector?.trackEvent('post_view', 'post', {
       interaction_type: 'viewed',
       element_bounds: {
@@ -156,6 +159,9 @@ export class MetricsManager {
         height: postElement.getBoundingClientRect().height,
       },
     }, postId);
+
+    // Enhanced comprehensive analytics
+    this.comprehensiveAnalytics?.trackPostView(postId, postElement);
   }
 
   public trackPostInteraction(
@@ -163,10 +169,15 @@ export class MetricsManager {
     interactionType: string,
     metadata?: Record<string, unknown>
   ): void {
-    // Consolidated event
+    // Legacy analytics
     this.rawCollector?.trackPostInteraction(postId, interactionType, {
       ...(metadata || {}),
     });
+
+    // Enhanced analytics - route to appropriate tracker
+    if (interactionType === 'chatted') {
+      this.comprehensiveAnalytics?.trackChatStart(postId);
+    }
   }
 
   public trackIconInteraction(
@@ -205,6 +216,44 @@ export class MetricsManager {
     return this.session;
   }
 
+  // Enhanced analytics methods
+  public trackDetectionResult(
+    postId: string, 
+    result: 'ai' | 'human' | 'uncertain', 
+    confidence: number,
+    metadata: Record<string, unknown> = {}
+  ): void {
+    this.comprehensiveAnalytics?.trackDetectionResult(postId, result, confidence, metadata);
+  }
+
+  public trackUserFeedback(
+    postId: string, 
+    feedback: 'correct' | 'incorrect' | 'uncertain'
+  ): void {
+    this.comprehensiveAnalytics?.trackUserFeedback(postId, feedback);
+  }
+
+  public trackChatMessage(
+    sessionId: string, 
+    message: string, 
+    isUser: boolean, 
+    responseTime?: number
+  ): void {
+    this.comprehensiveAnalytics?.trackChatMessage(sessionId, message, isUser, responseTime);
+  }
+
+  public trackUIError(errorType: string, errorMessage: string, context?: any): void {
+    this.comprehensiveAnalytics?.trackUIError(errorType, errorMessage, context);
+  }
+
+  public trackPerformanceMetric(endpoint: string, responseTime: number, statusCode: number): void {
+    this.comprehensiveAnalytics?.trackPerformanceMetric(endpoint, responseTime, statusCode);
+  }
+
+  public getAnalyticsSystemHealth(): Record<string, any> {
+    return this.comprehensiveAnalytics?.getSystemHealth() || {};
+  }
+
   public async destroy(): Promise<void> {
     if (!this.isInitialized) return;
 
@@ -231,6 +280,11 @@ export class MetricsManager {
       this.rawCollector.trackSessionEnd(duration, 'page_unload', {});
       void this.rawCollector.flushEvents();
       this.rawCollector.destroy();
+    }
+
+    // Destroy comprehensive analytics system
+    if (this.comprehensiveAnalytics) {
+      this.comprehensiveAnalytics.destroy();
     }
 
     this.isInitialized = false;

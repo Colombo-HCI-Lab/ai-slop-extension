@@ -127,7 +127,9 @@ export class FacebookPostObserver {
         const v = c === 'x' ? r : (r & 0x3) | 0x8;
         return v.toString(16);
       });
-      try { localStorage.setItem(STORAGE_KEYS.userId, fallback); } catch {}
+      try { localStorage.setItem(STORAGE_KEYS.userId, fallback); } catch {
+        // Ignore localStorage errors in private browsing mode
+      }
       return fallback;
     }
   }

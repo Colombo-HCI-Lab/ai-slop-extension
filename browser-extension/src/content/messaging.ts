@@ -1,5 +1,5 @@
 import { MessageType, ChatRequest, ChatHistoryRequest, AiSlopRequest, AnalyticsUserInit } from '@/shared/messages';
-import { AnalyticsEvent, EventBatchRequest } from '@/shared/types';
+import { EventBatchRequest } from '@/shared/types';
 
 export type AiSlopResponse = {
   isAiSlop: boolean;

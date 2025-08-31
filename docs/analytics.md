@@ -77,7 +77,6 @@ Low-level event tracking for all user activities.
 | `event_category` | VARCHAR(50) | Category: interaction/performance/error |
 | `event_value` | FLOAT | Numeric value associated with event |
 | `event_label` | VARCHAR(255) | Human-readable event label |
-| `event_metadata` | JSON | Additional event-specific data |
 | `client_timestamp` | TIMESTAMP | Client-side event timestamp |
 | `server_timestamp` | TIMESTAMP | Server-side received timestamp |
 | `created_at` | TIMESTAMP | Record creation timestamp |

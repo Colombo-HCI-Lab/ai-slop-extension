@@ -21,14 +21,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    # Create user table with behavioral metrics
+    # Create user table without behavioral metrics (now tracked via events)
     op.create_table(
         "user",
         sa.Column("id", sa.String(36), primary_key=True),  # This will be the user_id from browser extension
-        sa.Column("avg_scroll_speed", sa.Float()),
-        sa.Column("avg_posts_per_minute", sa.Float()),
-        sa.Column("total_posts_viewed", sa.Integer(), server_default="0", nullable=False),
-        sa.Column("total_interactions", sa.Integer(), server_default="0", nullable=False),
         sa.Column("browser_info", sa.JSON()),
         sa.Column("timezone", sa.String(50)),
         sa.Column("locale", sa.String(10)),
@@ -68,7 +64,6 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.PrimaryKeyConstraint("post_id"),
     )
-    op.create_index(op.f("ix_post_post_id"), "post", ["post_id"], unique=False)
     op.create_index("ix_post_content_hash", "post", ["content_hash"])
     op.create_index("ix_post_detected_at", "post", ["detected_at"])
     op.create_index("ix_post_group_id", "post", ["group_id"])
@@ -99,24 +94,22 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["user_id"], ["user.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f("ix_chat_post_id"), "chat", ["post_id"], unique=False)
     op.create_index("ix_chat_user_id", "chat", ["user_id"], unique=False)
-
-    # Legacy analytics tables removed (consolidated into analytics_event)
 
     # Analytics event table for granular tracking
     op.create_table(
         "analytics_event",
         sa.Column("id", sa.String(36), primary_key=True),
         sa.Column("user_id", sa.String(36)),
-        sa.Column("session_id", sa.String(36)),
-        sa.Column("session_identifier", sa.String(255)),
+        sa.Column("session_id", sa.String(36)),  # Single session identifier (user_id from /analytics/users/initialize)
         sa.Column("post_id", sa.String(255), sa.ForeignKey("post.post_id", ondelete="CASCADE")),
         sa.Column("event_type", sa.String(100), nullable=False),
-        sa.Column("event_category", sa.String(50)),  # 'session', 'post', 'chat', 'interaction', 'performance'
+        sa.Column(
+            "event_category", sa.String(50)
+        ),  # 'session', 'post', 'chat', 'interaction', 'performance', 'behavior', 'trust', 'ui', 'content', 'learning', 'error'
+        sa.Column("event_priority", sa.String(20)),  # 'critical', 'high', 'medium', 'low'
         sa.Column("event_value", sa.Float()),
         sa.Column("event_label", sa.String(255)),
-        sa.Column("event_metadata", sa.JSON()),  # legacy
         sa.Column("event_data", postgresql.JSONB()),
         sa.Column("client_timestamp", sa.DateTime(timezone=True)),
         sa.Column("server_timestamp", sa.DateTime(timezone=True), server_default=sa.text("now()")),
@@ -127,10 +120,12 @@ def upgrade() -> None:
     op.create_index("ix_analytics_event_created", "analytics_event", ["created_at"])
     op.create_index("ix_analytics_event_post", "analytics_event", ["post_id"])
     op.create_index("ix_analytics_event_session", "analytics_event", ["session_id"])
-    op.create_index("ix_analytics_event_session_identifier", "analytics_event", ["session_identifier"])
     op.create_index("ix_analytics_event_category", "analytics_event", ["event_category"])
+    op.create_index("ix_analytics_event_priority", "analytics_event", ["event_priority"])  # Priority-based querying
     op.create_index("ix_analytics_event_data", "analytics_event", ["event_data"], postgresql_using="gin")
     op.create_index("ix_analytics_event_type_time", "analytics_event", ["event_type", "server_timestamp"])
+    # Composite index for priority-based filtering
+    op.create_index("ix_analytics_event_priority_time", "analytics_event", ["event_priority", "server_timestamp"])
 
     op.create_table(
         "post_media",
@@ -155,7 +150,6 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(op.f("ix_post_media_media_type"), "post_media", ["media_type"], unique=False)
-    op.create_index(op.f("ix_post_media_post_id"), "post_media", ["post_id"], unique=False)
     # Composite indexes to speed common queries
     op.create_index("ix_post_media_post_type", "post_media", ["post_id", "media_type"], unique=False)
     op.create_index("ix_post_media_post_gemini_uri", "post_media", ["post_id", "gemini_file_uri"], unique=False)

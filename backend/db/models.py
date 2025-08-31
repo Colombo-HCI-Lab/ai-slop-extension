@@ -252,12 +252,6 @@ class User(Base):
         default=lambda: str(uuid.uuid4()),
     )
 
-    # Behavioral metrics
-    avg_scroll_speed: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    avg_posts_per_minute: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    total_posts_viewed: Mapped[int] = mapped_column(Integer, default=0)
-    total_interactions: Mapped[int] = mapped_column(Integer, default=0)
-
     # Browser and environment information
     browser_info: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     timezone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
@@ -319,9 +313,8 @@ class AnalyticsEvent(Base):
         index=True,
     )
 
+    # Single session identifier (user_id from /analytics/users/initialize)
     session_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
-    # New: external/persistent session identifier from browser
-    session_identifier: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
 
     post_id: Mapped[Optional[str]] = mapped_column(
         ForeignKey("post.post_id", ondelete="CASCADE"),
@@ -332,10 +325,9 @@ class AnalyticsEvent(Base):
     # Event data
     event_type: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     event_category: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)  # 'interaction', 'performance', 'error'
+    event_priority: Mapped[Optional[str]] = mapped_column(String(20), nullable=True, index=True)  # 'critical', 'high', 'medium', 'low'
     event_value: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     event_label: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    # Deprecated: legacy metadata field
-    event_metadata: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     # New: unified event data payload (JSONB for GIN indexing)
     event_data: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
