@@ -1,0 +1,153 @@
+{
+  "fixed_posts": {
+    "example_post_all_overrides": {
+      "verdict": "uncertain/ai_slop/human_content",
+      "confidence": 0.75,
+      "text_ai_probability": 0.5,
+      "text_confidence": 0.85,
+      "image_ai_probability": 0.6,
+      "image_confidence": 0.8,
+      "video_ai_probability": 0.45,
+      "video_confidence": 0.9,
+      "explanation": "Complete override example - all detection values predefined for testing"
+    }
+  },
+  "1304197704623620": {
+    "verdict": "ai_slop"
+  },
+  "745360628326294": {
+    "verdict": "ai_slop"
+  },
+  "1281588946884496": {
+    "verdict": "ai_slop"
+  },
+  "1281660906877300": {
+    "verdict": "ai_slop"
+  },
+  "1299855891724468": {
+    "verdict": "ai_slop"
+  },
+  "1299860141724043": {
+    "verdict": "ai_slop"
+  },
+  "1300668074976583": {
+    "verdict": "ai_slop"
+  },
+  "1281439046899486": {
+    "verdict": "ai_slop"
+  },
+  "1076058947418846": {
+    "verdict": "ai_slop"
+  },
+  "1233714874733222": {
+    "verdict": "ai_slop"
+  },
+  "602056212707520": {
+    "verdict": "ai_slop"
+  },
+  "1333439187712634": {
+    "verdict": "ai_slop"
+  },
+  "1434026814472903": {
+    "verdict": "ai_slop"
+  },
+  "1275026433790417": {
+    "verdict": "ai_slop"
+  },
+  "1439059880472061": {
+    "verdict": "ai_slop"
+  },
+  "1324679305851305": {
+    "verdict": "ai_slop"
+  },
+  "1061730559282023": {
+    "verdict": "ai_slop"
+  },
+  "122107751618388966": {
+    "verdict": "ai_slop",
+    "name": "peakok model"
+  },
+  "10162591291772223": {
+    "verdict": "ai_slop",
+    "name": "elon gun"
+  },
+  "25443788568554768": {
+    "verdict": "ai_slop"
+  },
+  "1941360959776136": {
+    "verdict": "ai_slop"
+  },
+  "942635078040856": {
+    "verdict": "ai_slop"
+  },
+  "3166966933615622": {
+    "verdict": "ai_slop",
+    "name": "dutugemunu"
+  },
+  "1459181408774529": {
+    "verdict": "ai_slop"
+  },
+  "1434577770915046": {
+    "verdict": "ai_slop"
+  },
+  "886198243366724": {
+    "verdict": "ai_slop",
+    "name": "trump kamela"
+  },
+  "122237252264244467": {
+    "verdict": "ai_slop"
+  },
+  "10230098383747902": {
+    "verdict": "ai_slop"
+  },
+  "2861582714017717": {
+    "verdict": "ai_slop",
+    "name": "nigerian pre wedding"
+  },
+  "122116882040831285": {
+    "verdict": "ai_slop"
+  },
+  "122095321694833068": {
+    "verdict": "ai_slop"
+  },
+  "10228709556458821": {
+    "verdict": "ai_slop"
+  },
+  "620146771151157": {
+    "verdict": "ai_slop"
+  },
+  "1891165325077664": {
+    "verdict": "ai_slop"
+  },
+  "1914588779391026": {
+    "verdict": "ai_slop",
+    "name": "woman and cow"
+  },
+  "1906170656906803": {
+    "verdict": "ai_slop",
+    "name": "ship plane"
+  },
+  "1049214520759038": {
+    "verdict": "ai_slop",
+    "name": "glasses baby"
+  },
+  "749458127969056": {
+    "verdict": "ai_slop"
+  },
+  "1278615357326876": {
+    "verdict": "ai_slop"
+  },
+  "806855828523930": {
+    "verdict": "ai_slop"
+  },
+  "1091336249846969": {
+    "verdict": "ai_slop"
+  },
+  "2137938346702683": {
+    "verdict": "ai_slop"
+  },
+  "2037616070393087": {
+    "verdict": "ai_slop",
+    "name": "titanic fake"
+  }
+}

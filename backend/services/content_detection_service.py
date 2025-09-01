@@ -1,7 +1,9 @@
 """Improved content AI detection service using unified media processing."""
 
 import asyncio
+import json
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,6 +26,7 @@ class ContentDetectionService:
         """Initialize the content detection service."""
         self.text_service = TextDetectionService.get_instance()
         self.media_service = UnifiedMediaService(max_workers=4)
+        self.overridden_posts_config = self._load_overridden_posts_config()
 
     async def detect(
         self,
@@ -87,12 +90,33 @@ class ContentDetectionService:
         image_results, image_ai_prob, image_conf = results[1]
         video_results, video_ai_prob, video_conf = results[2]
 
-        # Update database with analysis results
+        # Calculate overall verdict from normal detection results
+        overall_verdict, overall_confidence = self._calculate_overall_verdict(
+            text_result, image_ai_prob, image_conf, video_ai_prob, video_conf
+        )
+
+        # Apply overridden post values if configured
+        (text_result, image_ai_prob, image_conf, video_ai_prob, video_conf, overall_verdict, overall_confidence) = (
+            self._apply_overridden_post_values(
+                request.post_id, text_result, image_ai_prob, image_conf, video_ai_prob, video_conf, overall_verdict, overall_confidence
+            )
+        )
+
+        # Update database with potentially overridden results
         await self._update_post_with_results(request.post_id, text_result, image_ai_prob, image_conf, video_ai_prob, video_conf, db)
 
-        # Create and return aggregated response
-        return self._create_aggregated_response(
-            request.post_id, text_result, image_results, video_results, image_ai_prob, image_conf, video_ai_prob, video_conf
+        # Create and return aggregated response with potentially overridden values
+        return self._create_aggregated_response_with_overrides(
+            request.post_id,
+            text_result,
+            image_results,
+            video_results,
+            image_ai_prob,
+            image_conf,
+            video_ai_prob,
+            video_conf,
+            overall_verdict,
+            overall_confidence,
         )
 
     async def _check_cached_results(self, post_id: str, db: AsyncSession) -> Optional[ContentDetectionResponse]:
@@ -417,3 +441,198 @@ class ContentDetectionService:
         )
 
         return verdict, overall_conf
+
+    def _load_overridden_posts_config(self) -> Dict[str, Any]:
+        """
+        Load overridden posts configuration from JSON file.
+
+        Returns:
+            Dictionary containing overridden posts configuration or empty dict if file doesn't exist
+        """
+        config_path = Path(__file__).parent.parent / "overridden_posts.json"
+
+        try:
+            if config_path.exists():
+                with open(config_path, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+                    overridden_posts = config.get("fixed_posts", {})
+                    logger.info(f"Loaded {len(overridden_posts)} overridden posts from configuration", config_path=str(config_path))
+                    return overridden_posts
+            else:
+                logger.info("No overridden posts configuration file found", config_path=str(config_path))
+                return {}
+        except Exception as e:
+            logger.error("Error loading overridden posts configuration", config_path=str(config_path), error=str(e))
+            return {}
+
+    def _apply_overridden_post_values(
+        self,
+        post_id: str,
+        text_result: Any,
+        image_ai_probability: Optional[float],
+        image_confidence: Optional[float],
+        video_ai_probability: Optional[float],
+        video_confidence: Optional[float],
+        overall_verdict: str,
+        overall_confidence: float,
+    ) -> Tuple[Any, Optional[float], Optional[float], Optional[float], Optional[float], str, float]:
+        """
+        Apply overridden post values if post_id is in configuration.
+
+        Args:
+            post_id: Facebook post ID
+            text_result: Original text analysis result
+            image_ai_probability: Original image AI probability
+            image_confidence: Original image confidence
+            video_ai_probability: Original video AI probability
+            video_confidence: Original video confidence
+            overall_verdict: Original overall verdict
+            overall_confidence: Original overall confidence
+
+        Returns:
+            Tuple of potentially overridden values
+        """
+        if not self.overridden_posts_config or post_id not in self.overridden_posts_config:
+            return (
+                text_result,
+                image_ai_probability,
+                image_confidence,
+                video_ai_probability,
+                video_confidence,
+                overall_verdict,
+                overall_confidence,
+            )
+
+        override_config = self.overridden_posts_config[post_id]
+
+        logger.info("Applying overridden post values", post_id=post_id, overrides=list(override_config.keys()))
+
+        # Override text analysis results if specified
+        if "text_ai_probability" in override_config and override_config["text_ai_probability"] is not None:
+            if hasattr(text_result, "text_ai_probability"):
+                text_result.text_ai_probability = override_config["text_ai_probability"]
+
+        if "text_confidence" in override_config and override_config["text_confidence"] is not None:
+            if hasattr(text_result, "text_confidence"):
+                text_result.text_confidence = override_config["text_confidence"]
+            else:
+                text_result.confidence = override_config["text_confidence"]
+
+        # Override media probabilities if specified
+        if "image_ai_probability" in override_config and override_config["image_ai_probability"] is not None:
+            image_ai_probability = override_config["image_ai_probability"]
+
+        if "image_confidence" in override_config and override_config["image_confidence"] is not None:
+            image_confidence = override_config["image_confidence"]
+
+        if "video_ai_probability" in override_config and override_config["video_ai_probability"] is not None:
+            video_ai_probability = override_config["video_ai_probability"]
+
+        if "video_confidence" in override_config and override_config["video_confidence"] is not None:
+            video_confidence = override_config["video_confidence"]
+
+        # Override overall verdict and confidence if specified
+        if "verdict" in override_config and override_config["verdict"] is not None:
+            overall_verdict = override_config["verdict"]
+
+        if "confidence" in override_config and override_config["confidence"] is not None:
+            overall_confidence = override_config["confidence"]
+
+        # Override explanation if specified
+        if "explanation" in override_config and override_config["explanation"] is not None:
+            text_result.explanation = override_config["explanation"]
+
+        return (
+            text_result,
+            image_ai_probability,
+            image_confidence,
+            video_ai_probability,
+            video_confidence,
+            overall_verdict,
+            overall_confidence,
+        )
+
+    def _create_aggregated_response_with_overrides(
+        self,
+        post_id: str,
+        text_result: Any,
+        image_results: List[Dict[str, Any]],
+        video_results: List[Dict[str, Any]],
+        image_ai_probability: Optional[float] = None,
+        image_confidence: Optional[float] = None,
+        video_ai_probability: Optional[float] = None,
+        video_confidence: Optional[float] = None,
+        overall_verdict: str = None,
+        overall_confidence: float = None,
+    ) -> ContentDetectionResponse:
+        """
+        Create aggregated response with potentially overridden values.
+
+        Args:
+            post_id: Facebook post ID
+            text_result: Text analysis result
+            image_results: List of image analysis results
+            video_results: List of video analysis results
+            image_ai_probability: AI probability for images (potentially overridden)
+            image_confidence: Confidence for images (potentially overridden)
+            video_ai_probability: AI probability for videos (potentially overridden)
+            video_confidence: Confidence for videos (potentially overridden)
+            overall_verdict: Overall verdict (potentially overridden)
+            overall_confidence: Overall confidence (potentially overridden)
+
+        Returns:
+            Aggregated detection response with overridden values
+        """
+        # Count successful analyses
+        successful_images = len([r for r in image_results if r.get("status") == "success"])
+        successful_videos = len([r for r in video_results if r.get("status") == "success"])
+
+        # Build explanation (use potentially overridden explanation from text_result)
+        explanations = []
+        if text_result.explanation:
+            explanations.append(text_result.explanation)
+
+        if image_results:
+            if successful_images > 0:
+                explanations.append(f"Analyzed {successful_images} images")
+            failed_images = len(image_results) - successful_images
+            if failed_images > 0:
+                explanations.append(f"{failed_images} images failed analysis")
+
+        if video_results:
+            if successful_videos > 0:
+                explanations.append(f"Analyzed {successful_videos} videos")
+            failed_videos = len(video_results) - successful_videos
+            if failed_videos > 0:
+                explanations.append(f"{failed_videos} videos failed analysis")
+
+        # Check if this post had overridden values applied
+        has_overridden_values = self.overridden_posts_config and post_id in self.overridden_posts_config
+
+        # Create comprehensive response
+        return ContentDetectionResponse(
+            post_id=post_id,
+            verdict=overall_verdict,
+            confidence=overall_confidence,
+            explanation=" | ".join(explanations) if explanations else "Analysis complete",
+            timestamp=datetime.utcnow().isoformat(),
+            text_ai_probability=getattr(text_result, "text_ai_probability", None),
+            text_confidence=getattr(text_result, "text_confidence", None),
+            image_ai_probability=image_ai_probability,
+            image_confidence=image_confidence,
+            video_ai_probability=video_ai_probability,
+            video_confidence=video_confidence,
+            text_analysis={"verdict": text_result.verdict, "confidence": text_result.confidence, "explanation": text_result.explanation},
+            image_analysis=image_results,
+            video_analysis=video_results,
+            debug_info={
+                "total_images": len(image_results),
+                "total_videos": len(video_results),
+                "successful_images": successful_images,
+                "successful_videos": successful_videos,
+                "multimodal_analysis": True,
+                "unified_processing": True,
+                "from_cache": False,
+                "overridden_post_values": has_overridden_values,
+            },
+        )
