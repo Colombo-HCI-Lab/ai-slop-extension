@@ -145,7 +145,13 @@ export async function sendAnalyticsEventsBatch(body: {
     event_data: Record<string, unknown>;
     client_timestamp?: string;
   }>;
-}): Promise<{ status: 'accepted' | 'partial' | 'rejected'; events_accepted: number; events_rejected: number; batch_id?: string; errors?: string[] }> {
+}): Promise<{
+  status: 'accepted' | 'partial' | 'rejected';
+  events_accepted: number;
+  events_rejected: number;
+  batch_id?: string;
+  errors?: string[];
+}> {
   const url = `${API_BASE_URL}/analytics/events/batch`;
   logger.log('POST', url, { eventCount: body.events.length, analytics: true });
 

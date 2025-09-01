@@ -71,7 +71,6 @@ export type SessionInit = {
 
 // Session start/end messages removed (handled client-side via analytics events)
 
-
 export type AnyMessage =
   | AiSlopRequest
   | ChatRequest
@@ -79,8 +78,7 @@ export type AnyMessage =
   | ToggleChatWindow
   | AnalyticsEventsBatch
   | UserInit
-  | SessionInit
-  ;
+  | SessionInit;
 
 export const isMessage = (msg: unknown): msg is AnyMessage =>
   !!msg && typeof msg === 'object' && msg !== null && 'type' in (msg as Record<string, unknown>);

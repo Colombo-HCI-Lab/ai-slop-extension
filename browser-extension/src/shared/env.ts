@@ -3,7 +3,13 @@
 // Note: Webpack DefinePlugin replaces the exact expression `process.env.BACKEND_URL`
 // with a string literal at build time. Do not use optional chaining here or
 // the replacement won't occur and `process` will be referenced at runtime.
-declare const process: { env: { BACKEND_URL: string; MIXPANEL_PROJECT_TOKEN?: string; SESSION_HIDDEN_TIMEOUT_MINUTES?: string } };
+declare const process: {
+  env: {
+    BACKEND_URL: string;
+    MIXPANEL_PROJECT_TOKEN?: string;
+    SESSION_HIDDEN_TIMEOUT_MINUTES?: string;
+  };
+};
 
 export const getBackendUrl = (): string => {
   // This expression is replaced by DefinePlugin; no runtime `process` access remains.
@@ -23,6 +29,7 @@ export const getSessionHiddenTimeoutMs = (): number => {
   const raw = (process.env.SESSION_HIDDEN_TIMEOUT_MINUTES as unknown as string) || '';
   const minutes = Number(raw);
   const fallbackMin = 5;
-  const clamped = Number.isFinite(minutes) && minutes > 0 ? Math.min(Math.max(minutes, 1), 60) : fallbackMin;
+  const clamped =
+    Number.isFinite(minutes) && minutes > 0 ? Math.min(Math.max(minutes, 1), 60) : fallbackMin;
   return clamped * 60 * 1000;
 };

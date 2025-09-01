@@ -72,16 +72,24 @@ def upgrade() -> None:
     op.create_index("ix_post_detected_at", "post", ["detected_at"])
     op.create_index("ix_post_group_id", "post", ["group_id"])
 
+    # Removed legacy user_session (per-user presence) table
+
+    # True per-session table linked to user
     op.create_table(
-        "user_session",
-        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False, server_default=sa.text("gen_random_uuid()")),
-        sa.Column("user_identifier", sa.String(length=255), nullable=False),
+        "session",
+        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
+        sa.Column("user_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("user.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("started_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("last_active", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("user_agent", sa.Text(), nullable=True),
+        sa.Column("page_url", sa.Text(), nullable=True),
+        sa.Column("referrer", sa.Text(), nullable=True),
+        sa.Column("client_timezone", sa.String(length=50), nullable=True),
+        sa.Column("client_locale", sa.String(length=10), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f("ix_user_session_user_identifier"), "user_session", ["user_identifier"], unique=True)
+    op.create_index("ix_session_user_id", "session", ["user_id"], unique=False)
 
     # Create chat table with user_id reference (not user_session_id)
     op.create_table(
@@ -105,7 +113,7 @@ def upgrade() -> None:
         "analytics_event",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
         sa.Column("user_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("user.id", ondelete="CASCADE"), nullable=True),
-        sa.Column("session_id", sa.String(36)),  # Session identifier from browser (kept as string for compatibility)
+        sa.Column("session_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("session.id", ondelete="CASCADE")),
         sa.Column("post_id", sa.String(255), sa.ForeignKey("post.post_id", ondelete="CASCADE")),
         sa.Column("event_type", sa.String(100), nullable=False),
         sa.Column(
@@ -168,6 +176,6 @@ def downgrade() -> None:
     op.drop_table("post_media")
     op.drop_table("analytics_event")
     op.drop_table("chat")
-    op.drop_table("user_session")
+    op.drop_table("session")
     op.drop_table("post")
     op.drop_table("user")

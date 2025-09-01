@@ -1,4 +1,12 @@
-import { normalizeApiResponse, requestAiSlop, sendChat, getChatHistory, sendAnalyticsEventsBatch, initializeUser as initializeUserApi, initializeSession as initializeSessionApi } from './api';
+import {
+  normalizeApiResponse,
+  requestAiSlop,
+  sendChat,
+  getChatHistory,
+  sendAnalyticsEventsBatch,
+  initializeUser as initializeUserApi,
+  initializeSession as initializeSessionApi,
+} from './api';
 import { clearInFlight, getInFlight, makePostKey, setInFlight } from './state';
 import { MessageType, AnyMessage } from '@/shared/messages';
 import { createLogger } from '@/shared/logger';

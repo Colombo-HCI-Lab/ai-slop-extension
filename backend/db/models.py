@@ -153,10 +153,13 @@ class Chat(Base):
         return f"<Chat(id={self.id}, post_id={self.post_id}, role={self.role})>"
 
 
-class UserSession(Base):
-    """User session model for tracking individual extension users."""
+# Removed legacy per-user presence table (user_session)
 
-    __tablename__ = "user_session"
+
+class Session(Base):
+    """Per-session record with FK to user, used for analytics correlation and duration tracking."""
+
+    __tablename__ = "session"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -164,19 +167,33 @@ class UserSession(Base):
         default=uuid.uuid4,
     )
 
-    # Unique identifier from browser (UUID)
-    user_identifier: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    # Reference to the user table's id
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("user.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
 
-    # Last activity timestamp
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
     last_active: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False,
     )
 
+    user_agent: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    page_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    referrer: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    client_timezone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    client_locale: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+
     def __repr__(self) -> str:
-        """String representation."""
-        return f"<UserSession(id={self.id}, user_identifier={self.user_identifier})>"
+        return f"<Session(id={self.id}, user_id={self.user_id})>"
 
 
 class PostMedia(Base):
@@ -314,8 +331,12 @@ class AnalyticsEvent(Base):
         index=True,
     )
 
-    # Single session identifier (generated via /users/session/initialize)
-    session_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
+    # Reference to persisted session
+    session_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("session.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
 
     post_id: Mapped[Optional[str]] = mapped_column(
         ForeignKey("post.post_id", ondelete="CASCADE"),

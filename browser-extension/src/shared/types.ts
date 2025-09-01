@@ -51,11 +51,11 @@ export interface ChatSession {
 }
 
 // Enhanced analytics event categories
-export type EventCategory = 
-  | 'session' 
-  | 'post' 
-  | 'chat' 
-  | 'interaction' 
+export type EventCategory =
+  | 'session'
+  | 'post'
+  | 'chat'
+  | 'interaction'
   | 'performance'
   | 'behavior'
   | 'trust'

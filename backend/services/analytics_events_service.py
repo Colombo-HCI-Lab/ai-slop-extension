@@ -46,6 +46,14 @@ class AnalyticsEventsService:
                 # Invalid UUID, ignore user_id
                 user_uuid = None
 
+        # Convert session_id string to UUID if provided
+        session_uuid = None
+        if session_id:
+            try:
+                session_uuid = uuid.UUID(session_id)
+            except (ValueError, TypeError):
+                session_uuid = None
+
         # Merge additional metadata into event_data
         enhanced_data = event_data or {}
         if user_agent:
@@ -62,7 +70,7 @@ class AnalyticsEventsService:
             event_category=event_category,
             event_priority=priority,
             user_id=user_uuid,
-            session_id=session_id,
+            session_id=session_uuid,
             post_id=post_id,
             event_data=enhanced_data,
             event_value=event_value,
@@ -90,6 +98,14 @@ class AnalyticsEventsService:
                 except (ValueError, TypeError):
                     pass
 
+            # Convert session_id to UUID
+            session_uuid = None
+            if session_id_str := e.get("session_id"):
+                try:
+                    session_uuid = uuid.UUID(session_id_str)
+                except (ValueError, TypeError):
+                    pass
+
             # Merge batch metadata if provided
             enhanced_data = e.get("event_data", {})
             if batch_id:
@@ -103,7 +119,7 @@ class AnalyticsEventsService:
                     event_category=e.get("event_category"),
                     event_priority=e.get("priority", "medium"),
                     user_id=user_uuid,
-                    session_id=e.get("session_id"),
+                    session_id=session_uuid,
                     post_id=e.get("post_id"),
                     event_data=enhanced_data,
                     event_value=e.get("event_value"),

@@ -6,7 +6,9 @@ from typing import Any, Dict, List
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.models import User
+from sqlalchemy import select
+
+from db.models import Session, User
 
 
 class UsersService:
@@ -32,14 +34,29 @@ class UsersService:
         """Return a new server-generated session id (UUID string)."""
         # Best-effort validation that the user exists; do not block session issuance
         try:
-            from sqlalchemy import select
-
             result = await self.db.execute(select(User).where(User.id == uuid.UUID(str(user_id))))
             _ = result.scalar_one_or_none()
         except Exception:
             pass
 
-        return str(uuid.uuid4())
+        # Create a new session row tied to the user
+        try:
+            session_row = Session(
+                user_id=uuid.UUID(str(user_id)),
+                user_agent=None,
+                page_url=None,
+                referrer=None,
+                client_timezone=None,
+                client_locale=None,
+            )
+            self.db.add(session_row)
+            await self.db.commit()
+            await self.db.refresh(session_row)
+            return str(session_row.id)
+        except Exception:
+            await self.db.rollback()
+            # Fall back to ephemeral session id if DB write fails
+            return str(uuid.uuid4())
 
     def _assign_experiment_groups(self, user_id: Any) -> List[str]:
         """Assign A/B test groups using a stable hash of the user id."""
