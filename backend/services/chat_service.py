@@ -422,7 +422,7 @@ Keep responses informative but concise (2-4 sentences typically)."""
 
             # Initialize model with the specific post context
             model = genai.GenerativeModel(
-                "gemini-2.5-flash-lite",
+                settings.gemini_response_model,
                 system_instruction=system_instruction,
                 generation_config={
                     "temperature": 0.6,
@@ -494,7 +494,7 @@ Keep responses informative but concise (2-4 sentences typically)."""
 
             # Initialize model with multimodal capability
             model = genai.GenerativeModel(
-                "gemini-2.5-flash-lite",
+                settings.gemini_response_model,
                 system_instruction=system_instruction,
                 generation_config={
                     "temperature": 0.6,
@@ -643,7 +643,7 @@ Return ONLY the 3 questions, each on a separate line, without numbers or bullet 
 
             # Initialize model
             model = genai.GenerativeModel(
-                "gemini-2.5-flash-lite",
+                settings.gemini_suggestion_model,
                 system_instruction=system_instruction,
                 generation_config={
                     "temperature": 0.6,

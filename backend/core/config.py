@@ -131,6 +131,10 @@ class Settings(BaseSettings):
     gemini_retry_backoff_base: float = 0.5  # Exponential backoff base
     gemini_max_media_files: int = 10  # Cap media parts per prompt
 
+    # Gemini model configuration
+    gemini_response_model: str = "gemini-2.0-flash"  # Model for generating chat responses
+    gemini_suggestion_model: str = "gemini-2.0-flash"  # Model for generating suggestions
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
