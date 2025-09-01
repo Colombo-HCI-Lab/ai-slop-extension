@@ -17,15 +17,20 @@ if (!__DEV__) {
 // Entry bootstrap: initialize metrics, observer and chat UI
 (async () => {
   try {
-    // Enable Mixpanel analytics only for allowed groups
+    // Check if we're in an allowed group
     const allowed = isInAllowedGroupNow();
-    analytics.setEnabled(allowed);
-    if (allowed) analytics.init();
-
-    // Initialize metrics collection only for allowed contexts
+    
+    // CRITICAL: Only enable analytics and metrics AFTER user/session verification
     if (allowed) {
+      // First initialize metrics manager which will verify/init user and session
       await metricsManager.initialize();
+      
+      // Only after successful verification, enable Mixpanel analytics
+      analytics.setEnabled(true);
+      analytics.init();
     } else {
+      // Not in allowed group - disable analytics
+      analytics.setEnabled(false);
       // Observe future SPA navigations to enter allowed context
       const wrapHistory = (method: 'pushState' | 'replaceState') => {
         type PushReplace = (data: unknown, unused: string, url?: string | URL | null) => unknown;
@@ -44,9 +49,15 @@ if (!__DEV__) {
       wrapHistory('replaceState');
       window.addEventListener('popstate', () => window.dispatchEvent(new Event('locationchange')));
       let chatInitialized = false;
-      window.addEventListener('locationchange', () => {
+      window.addEventListener('locationchange', async () => {
         if (isInAllowedGroupNow()) {
-          metricsManager.initialize().catch(() => {});
+          // Initialize metrics manager first (verifies user/session)
+          await metricsManager.initialize().catch(() => {});
+          
+          // Only after verification, enable analytics
+          analytics.setEnabled(true);
+          analytics.init();
+          
           if (!chatInitialized) {
             new FloatingChatWindow();
             chatInitialized = true;

@@ -6,6 +6,8 @@ import {
   sendAnalyticsEventsBatch,
   initializeUser as initializeUserApi,
   initializeSession as initializeSessionApi,
+  verifyUser as verifyUserApi,
+  verifySession as verifySessionApi,
 } from './api';
 import { clearInFlight, getInFlight, makePostKey, setInFlight } from './state';
 import { MessageType, AnyMessage } from '@/shared/messages';
@@ -96,6 +98,22 @@ export function setupBackgroundMessaging(): void {
         timezone: message.timezone,
         locale: message.locale,
       })
+        .then(sendResponse)
+        .catch(err => sendResponse({ error: String(err?.message || err) }));
+      return true;
+    }
+
+    if (message.type === MessageType.VerifyUser) {
+      logger.log('VERIFY_USER received', { userId: message.userId });
+      verifyUserApi(message.userId)
+        .then(sendResponse)
+        .catch(err => sendResponse({ error: String(err?.message || err) }));
+      return true;
+    }
+
+    if (message.type === MessageType.VerifySession) {
+      logger.log('VERIFY_SESSION received', { sessionId: message.sessionId });
+      verifySessionApi(message.sessionId, message.userId)
         .then(sendResponse)
         .catch(err => sendResponse({ error: String(err?.message || err) }));
       return true;

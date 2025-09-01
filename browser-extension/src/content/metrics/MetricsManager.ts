@@ -6,10 +6,9 @@ import { log, error } from '../../shared/logger';
 import { AnalyticsEventCollector } from './AnalyticsEventCollector';
 import { ComprehensiveAnalyticsManager } from './ComprehensiveAnalyticsManager';
 import { MetricsConfig, UserSession } from '../../shared/types';
-import { initializeUser, initializeSession } from '../messaging';
+import { verifyAndInitializeUserSession } from '../utils/initialization';
 import { analytics } from '@/shared/analytics';
 import { getSessionHiddenTimeoutMs } from '@/shared/env';
-import { STORAGE_KEYS } from '@/shared/constants';
 import { isInAllowedGroupNow } from '@/content/utils/group';
 
 export class MetricsManager {
@@ -30,38 +29,16 @@ export class MetricsManager {
     if (this.isInitialized) return;
 
     try {
-      // Ensure user and session via backend-generated IDs
-      let backendUserId = localStorage.getItem(STORAGE_KEYS.userId) || '';
-      let backendSessionId = '';
-
-      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-      const locale = navigator.language || 'en-US';
-      const browserInfo = {
-        name: 'Chrome',
-        userAgent: navigator.userAgent,
-        platform: navigator.platform,
-        language: navigator.language,
-      } as const;
-
-      if (!backendUserId) {
-        const res = await initializeUser({
-          timezone: tz,
-          locale: locale,
-          browserInfo: browserInfo as unknown as Record<string, unknown>,
-        });
-        backendUserId = res.user_id;
-        localStorage.setItem(STORAGE_KEYS.userId, backendUserId);
-      }
-
-      // Always initialize a fresh backend session for this page context
-      const sess = await initializeSession({
-        userId: backendUserId,
-        browserInfo: browserInfo as unknown as Record<string, unknown>,
-        timezone: tz,
-        locale: locale,
+      // CRITICAL: Verify and initialize user/session BEFORE any analytics or post processing
+      const { userId: backendUserId, sessionId: backendSessionId, isNewUser, isNewSession } = 
+        await verifyAndInitializeUserSession();
+      
+      log('User/Session verified and initialized', { 
+        userId: backendUserId, 
+        sessionId: backendSessionId,
+        isNewUser,
+        isNewSession 
       });
-      backendSessionId = sess.session_id;
-      sessionStorage.setItem(STORAGE_KEYS.sessionId, backendSessionId);
 
       this.session = {
         userId: backendUserId,
@@ -112,6 +89,12 @@ export class MetricsManager {
       });
 
       // Send session_start analytics event
+      const browserInfo = {
+        name: 'Chrome',
+        userAgent: navigator.userAgent,
+        platform: navigator.platform,
+        language: navigator.language,
+      };
       this.rawCollector.trackSessionStart(browserInfo as unknown as Record<string, unknown>);
 
       // Set up scroll tracking
@@ -297,34 +280,11 @@ export class MetricsManager {
 
   private setupNavigationGuards(): void {
     const onLocationChange = async () => {
-      // Clear any existing session on navigation
-      sessionStorage.removeItem(STORAGE_KEYS.sessionId);
-      this.session = null;
-      // Re-initialize session if we're in an allowed context
-      if (isInAllowedGroupNow()) {
-        const userId = localStorage.getItem(STORAGE_KEYS.userId);
-        if (userId) {
-          try {
-            const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-            const locale = navigator.language || 'en-US';
-            const browserInfo = {
-              name: 'Chrome',
-              userAgent: navigator.userAgent,
-              platform: navigator.platform,
-              language: navigator.language,
-            } as const;
-            const sess = await initializeSession({ userId, browserInfo: browserInfo as unknown as Record<string, unknown>, timezone: tz, locale });
-            const newSessionId = sess.session_id;
-            sessionStorage.setItem(STORAGE_KEYS.sessionId, newSessionId);
-            this.session = {
-              userId,
-              sessionId: newSessionId,
-              startTime: Date.now(),
-              lastActivity: Date.now(),
-            };
-            analytics.registerSuper({ session_id: newSessionId });
-          } catch {}
-        }
+      // Navigation guard is now simplified - verification happens on next initialize()
+      // We don't clear sessions here as the verification flow handles this
+      if (!isInAllowedGroupNow()) {
+        // If we navigate out of allowed group, clear session
+        this.session = null;
       }
     };
 
@@ -361,7 +321,7 @@ export class MetricsManager {
         this.hiddenTimer = window.setTimeout(() => {
           if (this.session) {
             // Clear session when hidden for too long
-            sessionStorage.removeItem(STORAGE_KEYS.sessionId);
+            // Session will be re-verified on next initialize()
             this.session = null;
           }
         }, timeoutMs);

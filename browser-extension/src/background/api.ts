@@ -235,4 +235,34 @@ export async function initializeSession(body: {
   );
 }
 
+export async function verifyUser(userId: string): Promise<{ valid: boolean; user_id: string }> {
+  const url = `${API_BASE_URL}/users/verify/${userId}`;
+  logger.log('GET', url, { verify: true });
+  return fetchJsonWithRetry(
+    url,
+    {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    },
+    { retries: 2, backoffBaseMs: 300, enableUserReset: false }
+  );
+}
+
+export async function verifySession(
+  sessionId: string,
+  userId?: string
+): Promise<{ valid: boolean; session_id: string }> {
+  const params = userId ? `?user_id=${encodeURIComponent(userId)}` : '';
+  const url = `${API_BASE_URL}/users/session/verify/${sessionId}${params}`;
+  logger.log('GET', url, { verify: true });
+  return fetchJsonWithRetry(
+    url,
+    {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    },
+    { retries: 2, backoffBaseMs: 300, enableUserReset: false }
+  );
+}
+
 // Session start/end endpoints removed – analytics events cover session lifecycle

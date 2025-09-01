@@ -99,6 +99,29 @@ export async function initializeSession(
   });
 }
 
+export async function verifyUser(userId: string): Promise<{ valid: boolean; user_id: string }> {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({ type: MessageType.VerifyUser, userId }, response => {
+      if (chrome.runtime.lastError) return reject(chrome.runtime.lastError);
+      if (response && response.error) return reject(new Error(response.error));
+      resolve(response);
+    });
+  });
+}
+
+export async function verifySession(
+  sessionId: string,
+  userId?: string
+): Promise<{ valid: boolean; session_id: string }> {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({ type: MessageType.VerifySession, sessionId, userId }, response => {
+      if (chrome.runtime.lastError) return reject(chrome.runtime.lastError);
+      if (response && response.error) return reject(new Error(response.error));
+      resolve(response);
+    });
+  });
+}
+
 // Session start/end calls removed – tracked via analytics events only
 
 // Legacy analytics post/metric/chat messages removed – consolidated via analytics events

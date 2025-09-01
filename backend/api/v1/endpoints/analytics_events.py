@@ -93,6 +93,3 @@ async def _process_event_batch(events: List[Dict[str, Any]], batch_id: str, batc
     except Exception as exc:
         # Log error but don't raise - background task
         print(f"Batch processing failed for batch {batch_id}: {exc}")
-
-
-# No legacy batch processing

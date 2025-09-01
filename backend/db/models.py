@@ -153,9 +153,6 @@ class Chat(Base):
         return f"<Chat(id={self.id}, post_id={self.post_id}, role={self.role})>"
 
 
-# Removed legacy per-user presence table (user_session)
-
-
 class Session(Base):
     """Per-session record with FK to user, used for analytics correlation and duration tracking."""
 
@@ -310,8 +307,6 @@ class User(Base):
         """String representation."""
         return f"<User(id={self.id})>"
 
-    # Legacy analytics models removed (consolidated into analytics_event)
-
 
 class AnalyticsEvent(Base):
     """Analytics event model for granular event tracking."""
@@ -371,8 +366,6 @@ class AnalyticsEvent(Base):
         back_populates="events",
         lazy="selectin",
     )
-
-    # Legacy session relationship removed in consolidated analytics
 
     post: Mapped[Optional["Post"]] = relationship(
         "Post",

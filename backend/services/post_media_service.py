@@ -154,5 +154,3 @@ class PostMediaService:
         )
 
         return post
-
-    # Legacy media helpers removed in unified pipeline

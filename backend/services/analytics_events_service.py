@@ -16,8 +16,6 @@ class AnalyticsEventsService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    # Legacy basic tracking removed
-
     async def track_event(
         self,
         *,

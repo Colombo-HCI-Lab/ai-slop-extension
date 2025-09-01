@@ -8,6 +8,8 @@ export enum MessageType {
   AnalyticsEventsBatch = 'ANALYTICS_EVENTS_BATCH',
   UserInit = 'USER_INIT',
   SessionInit = 'SESSION_INIT',
+  VerifyUser = 'VERIFY_USER',
+  VerifySession = 'VERIFY_SESSION',
 }
 
 export type AiSlopRequest = {
@@ -69,6 +71,17 @@ export type SessionInit = {
   locale?: string;
 };
 
+export type VerifyUser = {
+  type: MessageType.VerifyUser;
+  userId: string;
+};
+
+export type VerifySession = {
+  type: MessageType.VerifySession;
+  sessionId: string;
+  userId?: string;
+};
+
 // Session start/end messages removed (handled client-side via analytics events)
 
 export type AnyMessage =
@@ -78,7 +91,9 @@ export type AnyMessage =
   | ToggleChatWindow
   | AnalyticsEventsBatch
   | UserInit
-  | SessionInit;
+  | SessionInit
+  | VerifyUser
+  | VerifySession;
 
 export const isMessage = (msg: unknown): msg is AnyMessage =>
   !!msg && typeof msg === 'object' && msg !== null && 'type' in (msg as Record<string, unknown>);

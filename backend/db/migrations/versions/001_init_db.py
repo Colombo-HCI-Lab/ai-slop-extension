@@ -72,8 +72,6 @@ def upgrade() -> None:
     op.create_index("ix_post_detected_at", "post", ["detected_at"])
     op.create_index("ix_post_group_id", "post", ["group_id"])
 
-    # Removed legacy user_session (per-user presence) table
-
     # True per-session table linked to user
     op.create_table(
         "session",
