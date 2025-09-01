@@ -43,6 +43,11 @@ def upgrade() -> None:
     op.create_table(
         "post",
         sa.Column("post_id", sa.String(length=255), nullable=False),
+        # AI-generated summaries (mandatory fields with defaults)
+        sa.Column("gen_short_title", sa.String(100), nullable=False, server_default="default short title"),
+        sa.Column("gen_title", sa.String(500), nullable=False, server_default="default title"),
+        sa.Column("gen_description", sa.Text(), nullable=False, server_default="default description"),
+        # Core post fields
         sa.Column("content", sa.Text(), nullable=False),
         sa.Column("author", sa.String(length=255), nullable=True),
         sa.Column("verdict", sa.String(length=50), nullable=False),

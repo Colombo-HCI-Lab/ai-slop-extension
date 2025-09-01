@@ -79,6 +79,11 @@ class Post(Base):
     group_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
     group_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
+    # AI-generated summaries (mandatory fields)
+    gen_short_title: Mapped[str] = mapped_column(String(100), nullable=False)
+    gen_title: Mapped[str] = mapped_column(String(500), nullable=False)
+    gen_description: Mapped[str] = mapped_column(Text, nullable=False)
+
     # Relationship to chat conversations
     chats: Mapped[list["Chat"]] = relationship(
         "Chat",

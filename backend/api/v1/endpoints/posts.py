@@ -13,6 +13,7 @@ from db.models import Post
 from schemas.content_detection import ContentDetectionRequest, ContentDetectionResponse
 from services.content_detection_service import ContentDetectionService
 from services.post_media_service import PostMediaService
+from services.post_summary_service import post_summary_service
 from utils.logging import get_logger
 
 
@@ -27,6 +28,10 @@ class PostResponse(BaseModel):
     confidence: float = Field(..., description="Confidence score")
     explanation: Optional[str] = Field(None, description="Verdict explanation")
     post_metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata")
+    # AI-generated summaries (mandatory fields)
+    gen_short_title: str = Field(..., description="AI-generated short title (3-5 words)")
+    gen_title: str = Field(..., description="AI-generated title (one sentence)")
+    gen_description: str = Field(..., description="AI-generated description (paragraph)")
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
 
@@ -152,8 +157,82 @@ async def process_post(
                 # For new analysis, update post with detection results and log processing
                 post = await post_media_service.update_post_with_results(request.post_id, result, db)
 
+                # Generate AI-powered summaries after detection is complete
+                summary_generation_start = datetime.now()
+                try:
+                    # Check if summary service is available and initialized
+                    if post_summary_service is None:
+                        raise ValueError("PostSummaryService is None - module import may have failed")
+
+                    logger.info(
+                        "Starting mandatory AI summary generation",
+                        post_id=request.post_id,
+                        has_images=bool(result.image_analysis),
+                        has_videos=bool(result.video_analysis),
+                        service_available=post_summary_service is not None,
+                        service_initialized=getattr(post_summary_service, "_initialized", False),
+                    )
+
+                    gen_short_title, gen_title, gen_description = await post_summary_service.generate_summaries(post, db)
+
+                    # Validate that summaries are not empty (should never happen due to service guarantees)
+                    if not gen_short_title or not gen_title or not gen_description:
+                        logger.error(
+                            "CRITICAL: PostSummaryService returned empty summaries",
+                            post_id=request.post_id,
+                            short_title_empty=not gen_short_title,
+                            title_empty=not gen_title,
+                            description_empty=not gen_description,
+                        )
+                        raise ValueError("Summary service returned empty summaries")
+
+                    # Update post with generated summaries
+                    post.gen_short_title = gen_short_title
+                    post.gen_title = gen_title
+                    post.gen_description = gen_description
+
+                    await db.commit()
+                    await db.refresh(post)
+
+                    summary_generation_time = (datetime.now() - summary_generation_start).total_seconds()
+                    logger.info(
+                        "AI summaries generated and saved successfully",
+                        post_id=request.post_id,
+                        short_title=gen_short_title,
+                        title_length=len(gen_title),
+                        description_length=len(gen_description),
+                        generation_time_seconds=round(summary_generation_time, 2),
+                    )
+
+                except Exception as e:
+                    # This is now a critical error since summaries are mandatory
+                    summary_generation_time = (datetime.now() - summary_generation_start).total_seconds()
+                    logger.error(
+                        "CRITICAL: Failed to generate mandatory AI summaries",
+                        post_id=request.post_id,
+                        error=str(e),
+                        generation_time_seconds=round(summary_generation_time, 2),
+                        exc_info=True,
+                    )
+
+                    # Since summaries are mandatory, we need to set fallback values to prevent database constraint violations
+                    post.gen_short_title = "gen short title"
+                    post.gen_title = "gen title"
+                    post.gen_description = f"gen description"
+
+                    await db.commit()
+                    await db.refresh(post)
+
+                    logger.warning(
+                        "Used emergency fallback summaries due to generation failure",
+                        post_id=request.post_id,
+                        fallback_short_title=post.gen_short_title,
+                        fallback_title_length=len(post.gen_title),
+                        fallback_description_length=len(post.gen_description),
+                    )
+
                 logger.info(
-                    "Post processing completed",
+                    "Post processing completed with mandatory summaries",
                     post_id=request.post_id,
                     verdict=result.verdict,
                     confidence=round(result.confidence, 3),
@@ -162,6 +241,9 @@ async def process_post(
                     video_ai_probability=result.video_ai_probability,
                     has_images=bool(result.image_analysis),
                     has_videos=bool(result.video_analysis),
+                    summary_short_title=post.gen_short_title,
+                    summary_title_length=len(post.gen_title),
+                    summary_description_length=len(post.gen_description),
                     source="new_analysis",
                 )
 
