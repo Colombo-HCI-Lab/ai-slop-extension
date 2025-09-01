@@ -30,7 +30,7 @@ async function initializeExtensionFeatures(): Promise<void> {
     await protectedExecute(async () => {
       log('Initializing extension features');
       
-      // Initialize post observer with protection
+      // Create post observer (but don't start processing yet)
       postObserver = new FacebookPostObserver();
       
       // Initialize chat window with protection
@@ -42,6 +42,12 @@ async function initializeExtensionFeatures(): Promise<void> {
       
       log('Extension features initialized successfully');
     }, 'initializeExtensionFeatures');
+    
+    // CRITICAL: Only start post processing AFTER session validation is complete
+    if (postObserver) {
+      postObserver.startObserving();
+      log('Post observer started after session validation');
+    }
   } catch (err) {
     error('Failed to initialize extension features', err);
     throw err;

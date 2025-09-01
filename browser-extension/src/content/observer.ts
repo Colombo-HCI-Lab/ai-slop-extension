@@ -224,8 +224,17 @@ export class FacebookPostObserver {
     log('⚙️ Observer setup complete');
     console.groupEnd();
 
-    // Initialize with session validation - this should only be called after session is ready
-    this.initialize();
+    // NOTE: Do NOT call this.initialize() here! 
+    // It must be called explicitly after session validation is complete
+  }
+
+  /**
+   * Start the observer - call this only after session is validated
+   */
+  public startObserving(): void {
+    if (this.observer) {
+      this.initialize();
+    }
   }
 
   /**

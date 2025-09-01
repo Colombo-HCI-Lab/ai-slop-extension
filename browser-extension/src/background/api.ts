@@ -111,14 +111,14 @@ export async function sendChat(body: {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     },
-    { timeoutMs: 35000, retries: 2, backoffBaseMs: 400, enableUserReset: true }
+    { timeoutMs: 35000, retries: 2, backoffBaseMs: 400 }
   );
 }
 
 export async function getChatHistory(postId: string, userId: string): Promise<ChatHistoryResponse> {
   const url = `${API_BASE_URL}/chat/history/${encodeURIComponent(postId)}?user_id=${encodeURIComponent(userId)}`;
   logger.log('GET', url);
-  return fetchJsonWithRetry<ChatHistoryResponse>(url, { method: 'GET' }, { enableUserReset: true });
+  return fetchJsonWithRetry<ChatHistoryResponse>(url, { method: 'GET' });
 }
 
 // Legacy metrics batch removed – use sendAnalyticsEventsBatch
@@ -191,7 +191,7 @@ export async function sendAnalyticsEventsBatch(body: {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(enhancedBody),
     },
-    { retries: 3, backoffBaseMs: 500, enableUserReset: true }
+    { retries: 3, backoffBaseMs: 500 }
   );
 }
 
@@ -212,7 +212,7 @@ export async function initializeUser(body: {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     },
-    { retries: 3, backoffBaseMs: 500, enableUserReset: false }
+    { retries: 3, backoffBaseMs: 500 }
   );
 }
 
@@ -231,7 +231,7 @@ export async function initializeSession(body: {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     },
-    { retries: 2, backoffBaseMs: 400, enableUserReset: false }
+    { retries: 2, backoffBaseMs: 400 }
   );
 }
 
@@ -244,7 +244,7 @@ export async function verifyUser(userId: string): Promise<{ valid: boolean; user
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
     },
-    { retries: 2, backoffBaseMs: 300, enableUserReset: false }
+    { retries: 2, backoffBaseMs: 300 }
   );
 }
 
@@ -261,7 +261,7 @@ export async function verifySession(
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
     },
-    { retries: 2, backoffBaseMs: 300, enableUserReset: false }
+    { retries: 2, backoffBaseMs: 300 }
   );
 }
 
