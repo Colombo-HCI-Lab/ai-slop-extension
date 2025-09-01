@@ -6,6 +6,7 @@ import { metricsManager } from './metrics/MetricsManager';
 import { POST_CONTENT_SELECTOR as POST_SELECTOR } from '@/content/dom/selectors';
 import { isInAllowedGroupNow } from '@/content/utils/group';
 import { ChatMessage } from '@/content/types';
+import { requireGlobalInitialization, protectedExecute } from '@/shared/InitializationGate';
 // Chat session metrics state attached to chat window elements
 interface ChatMetrics {
   sessionId: string;
@@ -108,11 +109,18 @@ export class FacebookPostObserver {
 
   /**
    * Ensures a valid persistent user id exists for chat/analytics.
-   * Falls back to generating and storing a UUID if missing.
+   * Now uses session-validated user ID from InitializationGate.
    */
   private ensureUserId(): string {
-    // User IDs are backend-generated and persisted in localStorage by MetricsManager
-    return getUserId();
+    try {
+      // Get validated user ID from session
+      const sessionData = requireGlobalInitialization();
+      return sessionData.userId;
+    } catch (err) {
+      // Fallback to storage method if session not ready (shouldn't happen in normal flow)
+      logError('Session not ready when getting user ID', err);
+      return getUserId();
+    }
   }
 
   /**
@@ -216,6 +224,7 @@ export class FacebookPostObserver {
     log('⚙️ Observer setup complete');
     console.groupEnd();
 
+    // Initialize with session validation - this should only be called after session is ready
     this.initialize();
   }
 
@@ -573,17 +582,20 @@ export class FacebookPostObserver {
         },
       });
 
-      // Send analysis request to backend via background service
+      // Send analysis request to backend via background service with session protection
       const t0 = performance.now();
-      const response = await sendAiSlopRequest({
-        content,
-        postId,
-        imageUrls: mediaUrls.images,
-        videoUrls: mediaUrls.videos,
-        postUrl: mediaUrls.postUrl,
-        hasVideos: mediaUrls.hasVideos,
-        videoResults: videoResults,
-      });
+      const response = await protectedExecute(async () => {
+        requireGlobalInitialization(); // Ensure session is valid
+        return await sendAiSlopRequest({
+          content,
+          postId,
+          imageUrls: mediaUrls.images,
+          videoUrls: mediaUrls.videos,
+          postUrl: mediaUrls.postUrl,
+          hasVideos: mediaUrls.hasVideos,
+          videoResults: videoResults,
+        });
+      }, 'sendAiSlopRequest');
       const t1 = performance.now();
 
       // Track response
@@ -1839,14 +1851,17 @@ export class FacebookPostObserver {
         category: 'chat',
         metadata: { postId },
       });
-      // Send message to background script to handle chat API
-      const response = await sendChat({
-        postId: postId,
-        message: message,
-        userId: this.ensureUserId(),
-        postContent: postContent,
-        previousAnalysis: previousAnalysis,
-      });
+      // Send message to background script to handle chat API with session protection
+      const response = await protectedExecute(async () => {
+        const sessionData = requireGlobalInitialization(); // Ensure session is valid
+        return await sendChat({
+          postId: postId,
+          message: message,
+          userId: sessionData.userId,
+          postContent: postContent,
+          previousAnalysis: previousAnalysis,
+        });
+      }, 'sendChat');
 
       if ('error' in response) {
         // Keep loader bubble to display error message in catch
@@ -1931,11 +1946,15 @@ export class FacebookPostObserver {
     if (!messagesContainer) return;
 
     try {
-      const userId = this.ensureUserId();
-      log(`[AI-Slop] Loading chat history for post ${postId}, user ${userId}`);
+      // Load chat history with session protection
+      const historyData = await protectedExecute(async () => {
+        const sessionData = requireGlobalInitialization(); // Ensure session is valid
+        log(`[AI-Slop] Loading chat history for post ${postId}, user ${sessionData.userId}`);
 
-      // Delegate network call to background for consistent CORS/timeout handling
-      const historyData = await fetchChatHistory({ postId, userId });
+        // Delegate network call to background for consistent CORS/timeout handling
+        return await fetchChatHistory({ postId, userId: sessionData.userId });
+      }, 'fetchChatHistory');
+      
       log(`[AI-Slop] Loaded ${historyData.total_messages} previous messages`);
 
       metricsManager.trackEvent({

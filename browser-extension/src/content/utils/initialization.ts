@@ -2,7 +2,7 @@
  * User and Session initialization with verification
  */
 
-import { STORAGE_KEYS } from '@/shared/constants';
+import { STORAGE_KEYS, getTabSpecificSessionKey } from '@/shared/constants';
 import { log, error } from '@/shared/logger';
 import { 
   initializeUser, 
@@ -33,7 +33,12 @@ export async function verifyAndInitializeUserSession(): Promise<UserSessionInfo>
   try {
     // Get existing IDs from storage
     let userId = localStorage.getItem(STORAGE_KEYS.userId) || '';
-    let sessionId = sessionStorage.getItem(STORAGE_KEYS.sessionId) || '';
+    
+    // Get session ID using tab-specific key - import SessionManager to get consistent tab ID
+    const { SessionManager } = await import('@/shared/SessionManager');
+    const tabId = SessionManager.getTabId();
+    const tabSessionKey = getTabSpecificSessionKey(tabId);
+    let sessionId = sessionStorage.getItem(tabSessionKey) || '';
     
     let isNewUser = false;
     let isNewSession = false;
@@ -77,7 +82,7 @@ export async function verifyAndInitializeUserSession(): Promise<UserSessionInfo>
         
         // Clear any existing session since we have a new user
         sessionId = '';
-        sessionStorage.removeItem(STORAGE_KEYS.sessionId);
+        sessionStorage.removeItem(tabSessionKey);
       } catch (err) {
         error('Failed to initialize user', err);
         throw new Error('User initialization failed');
@@ -106,9 +111,9 @@ export async function verifyAndInitializeUserSession(): Promise<UserSessionInfo>
           locale: locale,
         });
         sessionId = sess.session_id;
-        sessionStorage.setItem(STORAGE_KEYS.sessionId, sessionId);
+        sessionStorage.setItem(tabSessionKey, sessionId);
         isNewSession = true;
-        log('New session initialized', { sessionId });
+        log('New session initialized', { sessionId, tabSessionKey });
       } catch (err) {
         error('Failed to initialize session', err);
         throw new Error('Session initialization failed');
@@ -134,16 +139,38 @@ export async function verifyAndInitializeUserSession(): Promise<UserSessionInfo>
  */
 export function hasStoredUserSession(): boolean {
   const userId = localStorage.getItem(STORAGE_KEYS.userId);
-  const sessionId = sessionStorage.getItem(STORAGE_KEYS.sessionId);
-  return !!(userId && sessionId);
+  // For quick check, we can't use async import, so we'll check for any session key with the prefix
+  const sessionKeys = Object.keys(sessionStorage).filter(key => key.startsWith(STORAGE_KEYS.sessionId + '-'));
+  return !!(userId && sessionKeys.length > 0);
+}
+
+/**
+ * Clears stored session ID (but preserves user ID).
+ * Use this when navigating away from allowed groups or on session timeout.
+ */
+export async function clearSession(): Promise<void> {
+  try {
+    // Import SessionManager to get consistent tab ID
+    const { SessionManager } = await import('@/shared/SessionManager');
+    const tabId = SessionManager.getTabId();
+    const tabSessionKey = getTabSpecificSessionKey(tabId);
+    sessionStorage.removeItem(tabSessionKey);
+    log('Session cleared', { tabSessionKey, tabId });
+  } catch (err) {
+    // Fallback: clear any session keys we can find
+    const sessionKeys = Object.keys(sessionStorage).filter(key => key.startsWith(STORAGE_KEYS.sessionId + '-'));
+    sessionKeys.forEach(key => sessionStorage.removeItem(key));
+    log('Session cleared (fallback)', { clearedKeys: sessionKeys.length });
+  }
 }
 
 /**
  * Clears stored user and session IDs.
- * Use this for logout or reset scenarios.
+ * Use this for complete logout or reset scenarios.
+ * WARNING: User ID should normally never be cleared!
  */
-export function clearUserSession(): void {
+export async function clearUserSession(): Promise<void> {
   localStorage.removeItem(STORAGE_KEYS.userId);
-  sessionStorage.removeItem(STORAGE_KEYS.sessionId);
-  log('User session cleared');
+  await clearSession();
+  log('User session completely cleared - this should be rare!');
 }

@@ -1,5 +1,6 @@
 // Messenger-style floating chat window component
 import { metricsManager } from '@/content/metrics/MetricsManager';
+import { requireGlobalInitialization, protectedExecute } from '@/shared/InitializationGate';
 
 export class FloatingChatWindow {
   /** Chat window container */
@@ -19,6 +20,7 @@ export class FloatingChatWindow {
   private profileStatus: HTMLParagraphElement | null = null;
 
   constructor() {
+    // Setup message listener - this component is only created after session validation
     this.setupMessageListener();
   }
 

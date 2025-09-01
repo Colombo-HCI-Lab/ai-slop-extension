@@ -1,9 +1,12 @@
 import '../styles/index.scss';
 import { FacebookPostObserver } from './observer';
 import { FloatingChatWindow } from './ui/components/ChatWindow';
-import { metricsManager } from './metrics/MetricsManager';
 import { analytics } from '@/shared/analytics';
+import { SessionManager } from '@/shared/SessionManager';
+import { initializeGlobalGate, protectedExecute } from '@/shared/InitializationGate';
+import { createNavigationWatcher } from './utils/NavigationWatcher';
 import { isInAllowedGroupNow } from '@/content/utils/group';
+import { log, error } from '@/shared/logger';
 
 declare const __DEV__: boolean;
 if (!__DEV__) {
@@ -14,64 +17,134 @@ if (!__DEV__) {
   console.error = noop;
 }
 
-// Entry bootstrap: initialize metrics, observer and chat UI
-(async () => {
+// Global instances
+let navigationWatcher: ReturnType<typeof createNavigationWatcher> | null = null;
+let postObserver: FacebookPostObserver | null = null;
+let chatWindow: FloatingChatWindow | null = null;
+
+/**
+ * Initialize extension functionality - only called after session validation
+ */
+async function initializeExtensionFeatures(): Promise<void> {
   try {
-    // Check if we're in an allowed group
-    const allowed = isInAllowedGroupNow();
-    
-    // CRITICAL: Only enable analytics and metrics AFTER user/session verification
-    if (allowed) {
-      // First initialize metrics manager which will verify/init user and session
-      await metricsManager.initialize();
+    await protectedExecute(async () => {
+      log('Initializing extension features');
       
-      // Only after successful verification, enable Mixpanel analytics
+      // Initialize post observer with protection
+      postObserver = new FacebookPostObserver();
+      
+      // Initialize chat window with protection
+      chatWindow = new FloatingChatWindow();
+      
+      // Enable and initialize analytics
       analytics.setEnabled(true);
       analytics.init();
-    } else {
-      // Not in allowed group - disable analytics
-      analytics.setEnabled(false);
-      // Observe future SPA navigations to enter allowed context
-      const wrapHistory = (method: 'pushState' | 'replaceState') => {
-        type PushReplace = (data: unknown, unused: string, url?: string | URL | null) => unknown;
-        const orig = history[method].bind(history) as PushReplace;
-        (history as unknown as Record<string, unknown>)[method] = ((
-          data: unknown,
-          unused: string,
-          url?: string | URL | null
-        ) => {
-          const ret = orig(data, unused, url);
-          window.dispatchEvent(new Event('locationchange'));
-          return ret as unknown as void;
-        }) as History[typeof method];
-      };
-      wrapHistory('pushState');
-      wrapHistory('replaceState');
-      window.addEventListener('popstate', () => window.dispatchEvent(new Event('locationchange')));
-      let chatInitialized = false;
-      window.addEventListener('locationchange', async () => {
-        if (isInAllowedGroupNow()) {
-          // Initialize metrics manager first (verifies user/session)
-          await metricsManager.initialize().catch(() => {});
-          
-          // Only after verification, enable analytics
-          analytics.setEnabled(true);
-          analytics.init();
-          
-          if (!chatInitialized) {
-            new FloatingChatWindow();
-            chatInitialized = true;
-          }
-        }
-      });
-    }
+      
+      log('Extension features initialized successfully');
+    }, 'initializeExtensionFeatures');
+  } catch (err) {
+    error('Failed to initialize extension features', err);
+    throw err;
+  }
+}
 
-    // Then initialize the main functionality
-    new FacebookPostObserver();
-    if (allowed) {
-      new FloatingChatWindow();
+/**
+ * Set up navigation watcher for URL monitoring
+ */
+function setupNavigationWatcher(sessionManager: SessionManager): void {
+  if (navigationWatcher) {
+    navigationWatcher.destroy();
+  }
+  
+  navigationWatcher = createNavigationWatcher(sessionManager, {
+    enableLogging: __DEV__,
+    debounceMs: 100
+  });
+  
+  log('Navigation watcher initialized');
+}
+
+/**
+ * Clean up extension resources
+ */
+function cleanupExtension(): void {
+  if (navigationWatcher) {
+    navigationWatcher.destroy();
+    navigationWatcher = null;
+  }
+  
+  if (postObserver) {
+    // FacebookPostObserver doesn't have destroy method yet - will add in next update
+    postObserver = null;
+  }
+  
+  if (chatWindow) {
+    // FloatingChatWindow doesn't have destroy method yet - will add in next update  
+    chatWindow = null;
+  }
+  
+  analytics.setEnabled(false);
+  log('Extension resources cleaned up');
+}
+
+// Main entry point with new architecture
+(async () => {
+  try {
+    log('Content script starting with new architecture');
+    
+    // STEP 1: Check if we're in an allowed group
+    const isInAllowedGroup = isInAllowedGroupNow();
+    
+    if (!isInAllowedGroup) {
+      log('Not in allowed group, setting up navigation watcher only');
+      
+      // Create session manager and navigation watcher for monitoring
+      const sessionManager = SessionManager.getInstance({ 
+        requireValidSession: true, 
+        enableLogging: __DEV__ 
+      });
+      
+      setupNavigationWatcher(sessionManager);
+      
+      // Exit early - no extension functionality until we enter allowed group
+      return;
     }
-  } catch (error) {
-    console.error('Failed to initialize content script:', error);
+    
+    log('In allowed group, initializing session and extension');
+    
+    // STEP 2: Initialize SessionManager
+    const sessionManager = SessionManager.getInstance({ 
+      requireValidSession: true, 
+      enableLogging: __DEV__ 
+    });
+    
+    // STEP 3: Initialize InitializationGate with SessionManager
+    // This will block until user/session are validated
+    await initializeGlobalGate(sessionManager);
+    
+    // STEP 4: Set up navigation watcher now that we have valid session
+    setupNavigationWatcher(sessionManager);
+    
+    // STEP 5: Only after valid session, initialize extension functionality
+    await initializeExtensionFeatures();
+    
+    log('Content script initialization complete');
+    
+  } catch (err) {
+    error('Failed to initialize content script with new architecture', err);
+    
+    // Fallback: clean up any partial initialization
+    cleanupExtension();
+    
+    // Still set up navigation watcher in case user navigates to allowed group later
+    try {
+      const fallbackSessionManager = SessionManager.getInstance({ 
+        requireValidSession: false, 
+        enableLogging: __DEV__ 
+      });
+      setupNavigationWatcher(fallbackSessionManager);
+    } catch (fallbackErr) {
+      error('Failed to set up fallback navigation watcher', fallbackErr);
+    }
   }
 })();
