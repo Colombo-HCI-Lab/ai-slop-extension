@@ -1,6 +1,5 @@
 // Styles are imported from entry index.ts, not here
 import { getUserId } from '@/shared/storage';
-import { STORAGE_KEYS } from '@/shared/constants';
 import { log, warn, error as logError } from '@/shared/logger';
 import { sendChat, fetchChatHistory, sendAiSlopRequest } from '@/content/messaging';
 import { metricsManager } from './metrics/MetricsManager';
@@ -112,26 +111,8 @@ export class FacebookPostObserver {
    * Falls back to generating and storing a UUID if missing.
    */
   private ensureUserId(): string {
-    try {
-      const existing = getUserId();
-      if (existing) return existing;
-      const newId = (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
-        ? crypto.randomUUID()
-        : `${Date.now()}_${Math.random().toString(36).slice(2)}`;
-      localStorage.setItem(STORAGE_KEYS.userId, newId);
-      return newId;
-    } catch {
-      // Best-effort UUID v4 generator if localStorage is blocked
-      const fallback = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-        const r = (Math.random() * 16) | 0;
-        const v = c === 'x' ? r : (r & 0x3) | 0x8;
-        return v.toString(16);
-      });
-      try { localStorage.setItem(STORAGE_KEYS.userId, fallback); } catch {
-        // Ignore localStorage errors in private browsing mode
-      }
-      return fallback;
-    }
+    // User IDs are backend-generated and persisted in localStorage by MetricsManager
+    return getUserId();
   }
 
   /**

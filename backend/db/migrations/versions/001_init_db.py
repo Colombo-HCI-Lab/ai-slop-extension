@@ -1,9 +1,13 @@
-"""Initialize database
+"""Initialize database with UUID primary keys
 
 Revision ID: 001_init_db
 Revises:
 Create Date: 2025-08-23 00:00:00.000000
 
+This migration creates all tables with native PostgreSQL UUID types for better performance:
+- Storage: 16 bytes (UUID) vs 36 bytes (string)
+- Performance: Binary comparisons faster than string comparisons
+- Indexing: More efficient B-tree indexes
 """
 
 from typing import Sequence, Union
@@ -24,7 +28,7 @@ def upgrade() -> None:
     # Create user table without behavioral metrics (now tracked via events)
     op.create_table(
         "user",
-        sa.Column("id", sa.String(36), primary_key=True),  # This will be the user_id from browser extension
+        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
         sa.Column("browser_info", sa.JSON()),
         sa.Column("timezone", sa.String(50)),
         sa.Column("locale", sa.String(10)),
@@ -70,7 +74,7 @@ def upgrade() -> None:
 
     op.create_table(
         "user_session",
-        sa.Column("id", sa.String(length=36), nullable=False),
+        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False, server_default=sa.text("gen_random_uuid()")),
         sa.Column("user_identifier", sa.String(length=255), nullable=False),
         sa.Column("last_active", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
@@ -82,9 +86,9 @@ def upgrade() -> None:
     # Create chat table with user_id reference (not user_session_id)
     op.create_table(
         "chat",
-        sa.Column("id", sa.String(length=36), nullable=False),
+        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False, server_default=sa.text("gen_random_uuid()")),
         sa.Column("post_id", sa.String(length=255), nullable=False),
-        sa.Column("user_id", sa.String(length=36), nullable=False),  # Direct user reference
+        sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=False),  # Direct user reference (UUID)
         sa.Column("role", sa.String(length=20), nullable=False),
         sa.Column("message", sa.Text(), nullable=False),
         sa.Column("file_uris", sa.JSON(), nullable=True),
@@ -99,9 +103,9 @@ def upgrade() -> None:
     # Analytics event table for granular tracking
     op.create_table(
         "analytics_event",
-        sa.Column("id", sa.String(36), primary_key=True),
-        sa.Column("user_id", sa.String(36)),
-        sa.Column("session_id", sa.String(36)),  # Single session identifier (user_id from /analytics/users/initialize)
+        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
+        sa.Column("user_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("user.id", ondelete="CASCADE"), nullable=True),
+        sa.Column("session_id", sa.String(36)),  # Session identifier from browser (kept as string for compatibility)
         sa.Column("post_id", sa.String(255), sa.ForeignKey("post.post_id", ondelete="CASCADE")),
         sa.Column("event_type", sa.String(100), nullable=False),
         sa.Column(
@@ -129,7 +133,7 @@ def upgrade() -> None:
 
     op.create_table(
         "post_media",
-        sa.Column("id", sa.String(length=64), nullable=False),  # Combined: length=64 from second migration
+        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False, server_default=sa.text("gen_random_uuid()")),
         sa.Column("post_id", sa.String(length=255), nullable=False),
         sa.Column("media_type", sa.String(length=20), nullable=False),
         sa.Column("media_url", sa.Text(), nullable=False),

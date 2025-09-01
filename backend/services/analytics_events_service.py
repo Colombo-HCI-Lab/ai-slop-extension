@@ -1,49 +1,24 @@
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Union
-import uuid
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.models import AnalyticsEvent
+from db.models import AnalyticsEvent, User
 
 
 class AnalyticsEventsService:
-    """Analytics events service - stores events without aggregation."""
+    """Analytics events service - tracking with priority and rich metadata."""
 
     def __init__(self, db: AsyncSession):
         self.db = db
 
+    # Legacy basic tracking removed
+
     async def track_event(
-        self,
-        *,
-        event_type: str,
-        event_category: str,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
-        post_id: Optional[str] = None,
-        event_data: Optional[Dict[str, Any]] = None,
-        client_timestamp: Optional[datetime] = None,
-    ) -> AnalyticsEvent:
-        """Universal event tracking method - no aggregation."""
-
-        event = AnalyticsEvent(
-            event_type=event_type,
-            event_category=event_category,
-            user_id=user_id,
-            session_id=session_id,
-            post_id=post_id,
-            event_data=event_data or {},
-            client_timestamp=client_timestamp,
-        )
-
-        self.db.add(event)
-        await self.db.commit()
-        await self.db.refresh(event)
-        return event
-
-    async def track_enhanced_event(
         self,
         *,
         event_type: Union[str],
@@ -60,7 +35,16 @@ class AnalyticsEventsService:
         page_url: Optional[str] = None,
         referrer: Optional[str] = None,
     ) -> AnalyticsEvent:
-        """Enhanced event tracking with priority and extended metadata."""
+        """Event tracking with priority and extended metadata."""
+
+        # Convert user_id string to UUID if provided
+        user_uuid = None
+        if user_id:
+            try:
+                user_uuid = uuid.UUID(user_id)
+            except (ValueError, TypeError):
+                # Invalid UUID, ignore user_id
+                user_uuid = None
 
         # Merge additional metadata into event_data
         enhanced_data = event_data or {}
@@ -77,7 +61,7 @@ class AnalyticsEventsService:
             event_type=event_type,
             event_category=event_category,
             event_priority=priority,
-            user_id=user_id,
+            user_id=user_uuid,
             session_id=session_id,
             post_id=post_id,
             event_data=enhanced_data,
@@ -91,13 +75,21 @@ class AnalyticsEventsService:
         await self.db.refresh(event)
         return event
 
-    async def track_enhanced_event_batch(
+    async def track_event_batch(
         self, events: List[Dict[str, Any]], batch_id: Optional[str] = None, batch_metadata: Optional[Dict[str, Any]] = None
     ) -> List[AnalyticsEvent]:
-        """Enhanced batch event tracking with batch metadata."""
+        """Batch event tracking with batch metadata."""
 
         models: List[AnalyticsEvent] = []
         for e in events:
+            # Convert user_id to UUID
+            user_uuid = None
+            if user_id_str := e.get("user_id"):
+                try:
+                    user_uuid = uuid.UUID(user_id_str)
+                except (ValueError, TypeError):
+                    pass
+
             # Merge batch metadata if provided
             enhanced_data = e.get("event_data", {})
             if batch_id:
@@ -110,7 +102,7 @@ class AnalyticsEventsService:
                     event_type=e["event_type"],
                     event_category=e.get("event_category"),
                     event_priority=e.get("priority", "medium"),
-                    user_id=e.get("user_id"),
+                    user_id=user_uuid,
                     session_id=e.get("session_id"),
                     post_id=e.get("post_id"),
                     event_data=enhanced_data,
@@ -124,23 +116,4 @@ class AnalyticsEventsService:
         await self.db.commit()
         return models
 
-    async def track_event_batch(self, events: List[Dict[str, Any]]) -> List[AnalyticsEvent]:
-        """Batch event tracking - no aggregation."""
-
-        models: List[AnalyticsEvent] = []
-        for e in events:
-            models.append(
-                AnalyticsEvent(
-                    event_type=e["event_type"],
-                    event_category=e.get("event_category"),
-                    user_id=e.get("user_id"),
-                    session_id=e.get("session_id"),
-                    post_id=e.get("post_id"),
-                    event_data=e.get("event_data", {}),
-                    client_timestamp=e.get("client_timestamp"),
-                )
-            )
-
-        self.db.add_all(models)
-        await self.db.commit()
-        return models
+    # Legacy batch tracking removed: use enhanced batch

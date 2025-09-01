@@ -7,13 +7,13 @@ import asyncio
 import concurrent.futures
 import time
 from pathlib import Path
-from typing import Dict, List, Union, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 from uuid import UUID, uuid4
 
-from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 from core.config import settings
-from schemas.image_detection import ImageDetectionResult, ImageInfo, ImageDetectionResponse
+from schemas.image_detection import ImageDetectionResponse, ImageDetectionResult, ImageInfo
 from utils.logging import get_logger
 
 logger = get_logger(__name__)

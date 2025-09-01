@@ -8,18 +8,19 @@ from datetime import datetime
 
 import numpy as np
 import psutil
-import slowfast.utils.logging as logging
-import slowfast.utils.multiprocessing as mpu
 import torch
 import torchvision.io as io
 from fvcore.nn.activation_count import activation_count
 from fvcore.nn.flop_count import flop_count
 from matplotlib import pyplot as plt
+from torch import nn
+from torchvision.utils import make_grid
+
+import slowfast.utils.logging as logging
+import slowfast.utils.multiprocessing as mpu
 from slowfast.datasets.utils import pack_pathway_output
 from slowfast.models.batchnorm_helper import SubBatchNorm3d
 from slowfast.utils.env import pathmgr
-from torch import nn
-from torchvision.utils import make_grid
 
 logger = logging.get_logger(__name__)
 
@@ -265,7 +266,7 @@ def plot_input_normed(
     tensor = tensor.float()
     try:
         os.mkdir(folder_path)
-    except Exception as e:
+    except Exception:
         pass
     tensor = convert_normalized_images(tensor)
     if output_video:

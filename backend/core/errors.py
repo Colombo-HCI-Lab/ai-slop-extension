@@ -6,7 +6,6 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError, OperationalError
-from pydantic import ValidationError
 
 from core.config import settings
 from schemas.responses import ErrorResponse, ValidationErrorResponse

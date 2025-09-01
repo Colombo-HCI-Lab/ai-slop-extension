@@ -10,9 +10,10 @@ import pickle
 from collections import OrderedDict
 
 import numpy as np
+import torch
+
 import slowfast.utils.distributed as du
 import slowfast.utils.logging as logging
-import torch
 from slowfast.utils.c2_model_loading import get_name_convert_func
 from slowfast.utils.env import checkpoint_pathmgr as pathmgr
 

@@ -1,4 +1,4 @@
-import { MessageType, ChatRequest, ChatHistoryRequest, AiSlopRequest, AnalyticsUserInit } from '@/shared/messages';
+import { MessageType, ChatRequest, ChatHistoryRequest, AiSlopRequest, UserInit, SessionInit } from '@/shared/messages';
 import { EventBatchRequest } from '@/shared/types';
 
 export type AiSlopResponse = {
@@ -68,12 +68,19 @@ export async function sendAnalyticsEvents(request: EventBatchRequest): Promise<v
   });
 }
 
-export async function initializeAnalyticsUser(payload: Omit<AnalyticsUserInit, 'type'>): Promise<{
-  user_id: string;
-  experiment_groups: string[];
-}> {
+export async function initializeUser(payload: Omit<UserInit, 'type'>): Promise<{ user_id: string; experiment_groups: string[] }> {
   return new Promise((resolve, reject) => {
-    chrome.runtime.sendMessage({ type: MessageType.AnalyticsUserInit, ...payload }, response => {
+    chrome.runtime.sendMessage({ type: MessageType.UserInit, ...payload }, response => {
+      if (chrome.runtime.lastError) return reject(chrome.runtime.lastError);
+      if (response && response.error) return reject(new Error(response.error));
+      resolve(response);
+    });
+  });
+}
+
+export async function initializeSession(payload: Omit<SessionInit, 'type'>): Promise<{ session_id: string }> {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({ type: MessageType.SessionInit, ...payload }, response => {
       if (chrome.runtime.lastError) return reject(chrome.runtime.lastError);
       if (response && response.error) return reject(new Error(response.error));
       resolve(response);

@@ -1,8 +1,12 @@
 """Analytics schemas (consolidated)."""
 
-from typing import Dict, List, Optional, Any, Literal, Union
+import uuid
 from datetime import datetime
+from typing import Any, Dict, List, Literal, Optional, Union
+
 from pydantic import BaseModel, Field
+
+from .base import UUIDBaseModel
 
 
 class UserInitRequest(BaseModel):
@@ -14,14 +18,14 @@ class UserInitRequest(BaseModel):
     client_ip: Optional[str] = Field(None, description="Client IP address for geolocation")
 
 
-class UserInitResponse(BaseModel):
+class UserInitResponse(UUIDBaseModel):
     """Response from user initialization."""
 
-    user_id: str = Field(..., description="Internal user ID")
+    user_id: Union[str, uuid.UUID] = Field(..., description="Internal user ID")
     experiment_groups: List[str] = Field(default_factory=list, description="A/B test groups")
 
 
-# Enhanced Analytics Event Types
+# Analytics Event Types
 EventCategory = Literal["session", "post", "chat", "interaction", "performance", "behavior", "trust", "ui", "content", "learning", "error"]
 
 EventPriority = Literal["critical", "high", "medium", "low"]
@@ -132,16 +136,16 @@ ChatEventType = Literal[
 ComprehensiveEventType = Union[BehaviorEventType, TrustEventType, UIEventType, ContentEventType, LearningEventType, ChatEventType]
 
 
-class EnhancedEventTrackingRequest(BaseModel):
-    """Enhanced event tracking request with priority and comprehensive types."""
+class EventTrackingRequest(UUIDBaseModel):
+    """Event tracking request with priority and comprehensive types."""
 
     event_type: Union[str, ComprehensiveEventType] = Field(..., description="Event type identifier")
     event_category: EventCategory = Field(..., description="Event category for grouping")
     priority: EventPriority = Field(default="medium", description="Event processing priority")
 
     # Identifiers
-    user_id: Optional[str] = Field(None, description="User identifier")
-    session_id: Optional[str] = Field(None, description="Session identifier (from /analytics/users/initialize)")
+    user_id: Optional[Union[str, uuid.UUID]] = Field(None, description="User identifier")
+    session_id: Optional[str] = Field(None, description="Session identifier (from /users/session/initialize)")
     post_id: Optional[str] = Field(None, description="Post identifier")
 
     # Event data
@@ -161,17 +165,17 @@ class EnhancedEventTrackingRequest(BaseModel):
         json_encoders = {datetime: lambda v: v.isoformat()}
 
 
-class EnhancedEventBatchRequest(BaseModel):
-    """Enhanced batch event tracking request."""
+class EventBatchRequest(BaseModel):
+    """Batch event tracking request."""
 
-    events: List[EnhancedEventTrackingRequest] = Field(..., description="List of events to track")
+    events: List[EventTrackingRequest] = Field(..., description="List of events to track")
     batch_metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Batch-level metadata")
 
 
-class EventTrackingResponse(BaseModel):
+class EventTrackingResponse(UUIDBaseModel):
     """Response for event tracking."""
 
-    event_id: str = Field(..., description="Generated event ID")
+    event_id: Union[str, uuid.UUID] = Field(..., description="Generated event ID")
     status: Literal["tracked", "queued", "failed"] = Field(..., description="Processing status")
     priority: EventPriority = Field(..., description="Assigned priority")
     processed_at: datetime = Field(..., description="Server processing timestamp")
@@ -222,8 +226,8 @@ class PostCharacteristics(BaseModel):
 
 
 # Learning analytics data structures
-class LearningProgress(BaseModel):
-    user_id: str
+class LearningProgress(UUIDBaseModel):
+    user_id: Union[str, uuid.UUID]
     session_id: str
     accuracy_score: float
     interaction_speed: float

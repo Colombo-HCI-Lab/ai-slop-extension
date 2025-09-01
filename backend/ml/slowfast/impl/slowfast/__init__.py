@@ -12,10 +12,7 @@ utils = None
 datasets = None
 
 try:
-    from . import models
-    from . import config
-    from . import utils
-    from . import datasets
+    from . import config, datasets, models, utils
 except ImportError as e:
     import warnings
 

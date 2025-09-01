@@ -2,11 +2,12 @@ import sys
 from functools import partial
 
 import torch
-from slowfast.models.attention import attention_pool, MultiScaleAttention
-from slowfast.models.common import drop_path, Mlp, TwoStreamFusion
-from slowfast.models.utils import round_width
 from torch import nn
 from torch.autograd import Function as Function
+
+from slowfast.models.attention import MultiScaleAttention, attention_pool
+from slowfast.models.common import Mlp, TwoStreamFusion, drop_path
+from slowfast.models.utils import round_width
 
 
 class ReversibleMViT(nn.Module):

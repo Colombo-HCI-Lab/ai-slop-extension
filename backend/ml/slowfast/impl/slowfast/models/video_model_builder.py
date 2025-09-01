@@ -6,11 +6,13 @@
 import math
 from functools import partial
 
-import slowfast.utils.logging as logging
-import slowfast.utils.weight_init_helper as init_helper
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.init import trunc_normal_
+
+import slowfast.utils.logging as logging
+import slowfast.utils.weight_init_helper as init_helper
 from slowfast.models.attention import MultiScaleBlock
 from slowfast.models.batchnorm_helper import get_norm
 from slowfast.models.common import TwoStreamFusion
@@ -21,7 +23,6 @@ from slowfast.models.utils import (
     round_width,
     validate_checkpoint_wrapper_import,
 )
-from torch.nn.init import trunc_normal_
 
 from . import head_helper, operators, resnet_helper, stem_helper  # noqa
 from .build import MODEL_REGISTRY

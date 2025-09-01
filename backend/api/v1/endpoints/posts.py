@@ -13,7 +13,6 @@ from db.models import Post
 from schemas.content_detection import ContentDetectionRequest, ContentDetectionResponse
 from services.content_detection_service import ContentDetectionService
 from services.post_media_service import PostMediaService
-
 from utils.logging import get_logger
 
 

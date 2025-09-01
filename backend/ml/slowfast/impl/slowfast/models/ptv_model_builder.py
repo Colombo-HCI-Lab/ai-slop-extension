@@ -19,7 +19,8 @@ from pytorchvideo.models.slowfast import create_slowfast
 from pytorchvideo.models.vision_transformers import (
     create_multiscale_vision_transformers,
 )
-from pytorchvideo.models.x3d import create_x3d, create_x3d_bottleneck_block, Swish
+from pytorchvideo.models.x3d import Swish, create_x3d, create_x3d_bottleneck_block
+
 from slowfast.models.batchnorm_helper import get_norm
 from slowfast.models.video_model_builder import _POOL1, _TEMPORAL_KERNEL_BASIS
 

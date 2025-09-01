@@ -6,14 +6,13 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.media_registry import media_registry
+from core.config import settings
 from schemas.content_detection import ContentDetectionRequest, ContentDetectionResponse
 from schemas.text_detection import DetectRequest
+from services.media_analyzer import MediaType
 from services.text_detection_service import TextDetectionService
 from services.unified_media_service import UnifiedMediaService
-from services.media_analyzer import MediaType
 from utils.logging import get_logger
-from core.config import settings
 
 logger = get_logger(__name__)
 
@@ -108,6 +107,7 @@ class ContentDetectionService:
             Cached response if available, None otherwise
         """
         from sqlalchemy import select
+
         from db.models import Post
 
         result = await db.execute(select(Post).where(Post.post_id == post_id))
@@ -153,6 +153,7 @@ class ContentDetectionService:
             Dictionary mapping URLs to media information
         """
         from sqlalchemy import select
+
         from db.models import PostMedia
 
         result = await db.execute(select(PostMedia).where(PostMedia.post_id == post_id))
@@ -176,6 +177,7 @@ class ContentDetectionService:
     async def _get_video_urls_from_db(self, post_id: str, db: AsyncSession) -> List[str]:
         """Get video URLs from database for analysis (includes yt-dlp synthetic URLs)."""
         from sqlalchemy import select
+
         from db.models import PostMedia
 
         result = await db.execute(select(PostMedia).where(PostMedia.post_id == post_id, PostMedia.media_type == "video"))
@@ -235,6 +237,7 @@ class ContentDetectionService:
             db: Database session
         """
         from sqlalchemy import select
+
         from db.models import Post
 
         result = await db.execute(select(Post).where(Post.post_id == post_id))

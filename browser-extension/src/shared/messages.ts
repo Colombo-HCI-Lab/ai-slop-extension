@@ -6,7 +6,8 @@ export enum MessageType {
   ChatHistoryRequest = 'CHAT_HISTORY_REQUEST',
   ToggleChatWindow = 'TOGGLE_CHAT_WINDOW',
   AnalyticsEventsBatch = 'ANALYTICS_EVENTS_BATCH',
-  AnalyticsUserInit = 'ANALYTICS_USER_INIT',
+  UserInit = 'USER_INIT',
+  SessionInit = 'SESSION_INIT',
 }
 
 export type AiSlopRequest = {
@@ -53,11 +54,19 @@ export type AnalyticsEventsBatch = {
   }>;
 };
 
-export type AnalyticsUserInit = {
-  type: MessageType.AnalyticsUserInit;
+export type UserInit = {
+  type: MessageType.UserInit;
   timezone: string;
   locale: string;
   browserInfo: Record<string, unknown>;
+};
+
+export type SessionInit = {
+  type: MessageType.SessionInit;
+  userId: string;
+  browserInfo?: Record<string, unknown>;
+  timezone?: string;
+  locale?: string;
 };
 
 // Session start/end messages removed (handled client-side via analytics events)
@@ -69,7 +78,8 @@ export type AnyMessage =
   | ChatHistoryRequest
   | ToggleChatWindow
   | AnalyticsEventsBatch
-  | AnalyticsUserInit
+  | UserInit
+  | SessionInit
   ;
 
 export const isMessage = (msg: unknown): msg is AnyMessage =>

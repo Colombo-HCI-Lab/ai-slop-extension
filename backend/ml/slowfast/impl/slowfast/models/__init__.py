@@ -10,10 +10,10 @@ from .video_model_builder import MViT, ResNet, SlowFast  # noqa
 try:
     from .ptv_model_builder import (
         PTVCSN,
+        PTVX3D,
         PTVR2plus1D,
         PTVResNet,
         PTVSlowFast,
-        PTVX3D,
     )  # noqa
 except Exception:
     print("Please update your PyTorchVideo to latest master")

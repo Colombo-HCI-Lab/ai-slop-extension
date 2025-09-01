@@ -5,7 +5,7 @@ Utility functions for ClipBased detection.
 import hashlib
 import io
 import logging
-from typing import Union, Tuple, Optional
+from typing import Optional, Tuple, Union
 
 import numpy as np
 import requests

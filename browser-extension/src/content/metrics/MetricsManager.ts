@@ -6,7 +6,7 @@ import { log, error } from '../../shared/logger';
 import { AnalyticsEventCollector } from './AnalyticsEventCollector';
 import { ComprehensiveAnalyticsManager } from './ComprehensiveAnalyticsManager';
 import { MetricsConfig, UserSession } from '../../shared/types';
-import { initializeAnalyticsUser } from '../messaging';
+import { initializeUser, initializeSession } from '../messaging';
 import { analytics } from '@/shared/analytics';
 import { getSessionHiddenTimeoutMs } from '@/shared/env';
 import { STORAGE_KEYS } from '@/shared/constants';
@@ -32,7 +32,7 @@ export class MetricsManager {
     try {
       // Ensure user and session via backend-generated IDs
       let backendUserId = localStorage.getItem(STORAGE_KEYS.userId) || '';
-      let backendSessionId = sessionStorage.getItem(STORAGE_KEYS.sessionId) || '';
+      let backendSessionId = '';
 
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
       const locale = navigator.language || 'en-US';
@@ -44,7 +44,7 @@ export class MetricsManager {
       } as const;
 
       if (!backendUserId) {
-        const res = await initializeAnalyticsUser({
+        const res = await initializeUser({
           timezone: tz,
           locale: locale,
           browserInfo: browserInfo as unknown as Record<string, unknown>,
@@ -53,11 +53,15 @@ export class MetricsManager {
         localStorage.setItem(STORAGE_KEYS.userId, backendUserId);
       }
 
-      if (!backendSessionId) {
-        const newId = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(36).slice(2)}`;
-        backendSessionId = newId;
-        sessionStorage.setItem(STORAGE_KEYS.sessionId, backendSessionId);
-      }
+      // Always initialize a fresh backend session for this page context
+      const sess = await initializeSession({
+        userId: backendUserId,
+        browserInfo: browserInfo as unknown as Record<string, unknown>,
+        timezone: tz,
+        locale: locale,
+      });
+      backendSessionId = sess.session_id;
+      sessionStorage.setItem(STORAGE_KEYS.sessionId, backendSessionId);
 
       this.session = {
         userId: backendUserId,
@@ -293,23 +297,24 @@ export class MetricsManager {
 
   private setupNavigationGuards(): void {
     const onLocationChange = async () => {
-      if (!isInAllowedGroupNow() && this.session) {
-        const duration = Date.now() - this.session.startTime;
-        // No backend session end; analytics event will cover lifecycle
-        sessionStorage.removeItem(STORAGE_KEYS.sessionId);
-        this.session = null;
-      } else if (isInAllowedGroupNow() && !this.session) {
-        // Start a new session lazily when navigating into allowed context
+      // Clear any existing session on navigation
+      sessionStorage.removeItem(STORAGE_KEYS.sessionId);
+      this.session = null;
+      // Re-initialize session if we're in an allowed context
+      if (isInAllowedGroupNow()) {
         const userId = localStorage.getItem(STORAGE_KEYS.userId);
         if (userId) {
           try {
+            const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+            const locale = navigator.language || 'en-US';
             const browserInfo = {
               name: 'Chrome',
               userAgent: navigator.userAgent,
               platform: navigator.platform,
               language: navigator.language,
             } as const;
-            const newSessionId = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+            const sess = await initializeSession({ userId, browserInfo: browserInfo as unknown as Record<string, unknown>, timezone: tz, locale });
+            const newSessionId = sess.session_id;
             sessionStorage.setItem(STORAGE_KEYS.sessionId, newSessionId);
             this.session = {
               userId,
@@ -355,7 +360,7 @@ export class MetricsManager {
         clearTimer();
         this.hiddenTimer = window.setTimeout(() => {
           if (this.session) {
-            // No backend session end; analytics event will cover lifecycle
+            // Clear session when hidden for too long
             sessionStorage.removeItem(STORAGE_KEYS.sessionId);
             this.session = null;
           }

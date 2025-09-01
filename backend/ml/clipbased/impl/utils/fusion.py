@@ -16,7 +16,7 @@ limitations under the License.
 """
 
 import numpy as np
-from scipy.special import logsumexp, log_expit
+from scipy.special import log_expit, logsumexp
 
 softplusinv = lambda x: np.log(np.expm1(x))  # log(exp(x)-1)
 softminusinv = lambda x: x - np.log(-np.expm1(x))  # info: https://jiafulow.github.io/blog/2019/07/11/softplus-and-softminus/

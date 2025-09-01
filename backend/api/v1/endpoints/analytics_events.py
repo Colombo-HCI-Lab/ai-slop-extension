@@ -2,50 +2,31 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Any, Dict, List, Optional
 import uuid
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
-from pydantic import BaseModel, Field
 
 from db.async_session import get_async_session
+from schemas.analytics import EventBatchRequest, EventBatchTrackingResponse, EventTrackingRequest, EventTrackingResponse
 from services.analytics_events_service import AnalyticsEventsService
-from schemas.analytics import (
-    EnhancedEventTrackingRequest,
-    EnhancedEventBatchRequest,
-    EventTrackingResponse,
-    EventBatchTrackingResponse,
-    EventPriority,
-)
-
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
 
-# Legacy request models for backward compatibility
-class EventTrackingRequest(BaseModel):
-    event_type: str
-    event_category: str
-    user_id: Optional[str] = None
-    session_id: Optional[str] = None
-    post_id: Optional[str] = None
-    event_data: Dict[str, Any] = Field(default_factory=dict)
-    client_timestamp: Optional[datetime] = None
+"""
+Analytics endpoints (single and batch) support priority and rich metadata. Legacy simple endpoints have been removed.
+"""
 
 
-class EventBatchTrackingRequest(BaseModel):
-    events: List[EventTrackingRequest]
-
-
-# Enhanced endpoints for comprehensive analytics
-@router.post("/events/enhanced", response_model=EventTrackingResponse)
-async def track_enhanced_event(request: EnhancedEventTrackingRequest):
-    """Enhanced event tracking endpoint with priority support."""
+# Event analytics endpoints (priority + metadata)
+@router.post("/events", response_model=EventTrackingResponse)
+async def track_event(request: EventTrackingRequest):
+    """Event tracking endpoint with priority support and metadata."""
     try:
         async with get_async_session() as db:
             service = AnalyticsEventsService(db)
-            event = await service.track_enhanced_event(
+            event = await service.track_event(
                 event_type=request.event_type,
                 event_category=request.event_category,
                 priority=request.priority,
@@ -64,12 +45,12 @@ async def track_enhanced_event(request: EnhancedEventTrackingRequest):
                 event_id=event.id, status="tracked", priority=request.priority, processed_at=event.server_timestamp
             )
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to track enhanced event: {exc}")
+        raise HTTPException(status_code=500, detail=f"Failed to track event: {exc}")
 
 
-@router.post("/events/enhanced/batch", response_model=EventBatchTrackingResponse)
-async def track_enhanced_event_batch(request: EnhancedEventBatchRequest, background_tasks: BackgroundTasks):
-    """Enhanced batch event tracking endpoint with priority support."""
+@router.post("/events/batch", response_model=EventBatchTrackingResponse)
+async def track_event_batch(request: EventBatchRequest, background_tasks: BackgroundTasks):
+    """Batch event tracking endpoint with priority support."""
     if not request.events:
         return EventBatchTrackingResponse(events_accepted=0, events_rejected=0, status="accepted")
 
@@ -81,12 +62,11 @@ async def track_enhanced_event_batch(request: EnhancedEventBatchRequest, backgro
     other_events = [e for e in request.events if e.priority != "critical"]
 
     # Process critical events immediately
-    critical_results = []
     if critical_events:
         try:
             async with get_async_session() as db:
                 service = AnalyticsEventsService(db)
-                critical_results = await service.track_enhanced_event_batch([e.dict() for e in critical_events])
+                await service.track_event_batch([e.dict() for e in critical_events])
         except Exception as exc:
             return EventBatchTrackingResponse(
                 events_accepted=0,
@@ -98,57 +78,21 @@ async def track_enhanced_event_batch(request: EnhancedEventBatchRequest, backgro
 
     # Process other events in background
     if other_events:
-        background_tasks.add_task(_process_enhanced_event_batch, [e.dict() for e in other_events], batch_id, request.batch_metadata)
+        background_tasks.add_task(_process_event_batch, [e.dict() for e in other_events], batch_id, request.batch_metadata)
 
     return EventBatchTrackingResponse(events_accepted=len(request.events), events_rejected=0, status="accepted", batch_id=batch_id)
 
 
-# Legacy endpoints for backward compatibility
-@router.post("/events")
-async def track_event(request: EventTrackingRequest):
-    """Universal event tracking endpoint - event storage only."""
+# Batch processing
+async def _process_event_batch(events: List[Dict[str, Any]], batch_id: str, batch_metadata: Optional[Dict[str, Any]] = None):
+    """Process event batch with priority handling."""
     try:
         async with get_async_session() as db:
             service = AnalyticsEventsService(db)
-            event = await service.track_event(
-                event_type=request.event_type,
-                event_category=request.event_category,
-                user_id=request.user_id,
-                session_id=request.session_id,
-                post_id=request.post_id,
-                event_data=request.event_data,
-                client_timestamp=request.client_timestamp,
-            )
-            return {"event_id": event.id, "status": "tracked"}
-    except Exception as exc:  # pragma: no cover - safety net
-        raise HTTPException(status_code=500, detail=f"Failed to track event: {exc}")
-
-
-@router.post("/events/batch")
-async def track_event_batch(request: EventBatchTrackingRequest, background_tasks: BackgroundTasks):
-    """Batch event tracking endpoint - event storage only."""
-    if not request.events:
-        return {"events_queued": 0, "status": "accepted"}
-
-    # Process asynchronously to keep the endpoint snappy
-    background_tasks.add_task(_process_event_batch, [e.dict() for e in request.events])
-    return {"events_queued": len(request.events), "status": "accepted"}
-
-
-# Enhanced batch processing
-async def _process_enhanced_event_batch(events: List[Dict[str, Any]], batch_id: str, batch_metadata: Optional[Dict[str, Any]] = None):
-    """Process enhanced event batch with priority handling."""
-    try:
-        async with get_async_session() as db:
-            service = AnalyticsEventsService(db)
-            await service.track_enhanced_event_batch(events, batch_id, batch_metadata)
+            await service.track_event_batch(events, batch_id, batch_metadata)
     except Exception as exc:
         # Log error but don't raise - background task
-        print(f"Enhanced batch processing failed for batch {batch_id}: {exc}")
+        print(f"Batch processing failed for batch {batch_id}: {exc}")
 
 
-# Legacy batch processing
-async def _process_event_batch(events: List[Dict[str, Any]]):
-    async with get_async_session() as db:
-        service = AnalyticsEventsService(db)
-        await service.track_event_batch(events)
+# No legacy batch processing

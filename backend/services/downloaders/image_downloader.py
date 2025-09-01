@@ -19,6 +19,7 @@ class ImageDownloader(Downloader):
         try:
             # Check registry/DB for existing local file handled by pipeline; here we only download
             import asyncio
+
             from ml.clipbased.impl.utils import download_image_from_url
             from utils.content_deduplication import deduplication_service
 

@@ -1,9 +1,10 @@
 import hashlib
+from typing import Dict, List, Optional
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+
 import aiohttp
-from typing import Optional, Dict, List, Tuple
-from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from utils.logging import get_logger
 

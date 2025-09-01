@@ -11,9 +11,9 @@ from pathlib import Path
 
 # Conditional imports for when dependencies are available
 try:
-    from .preprocessing import VideoPreprocessor
     from .detection import AIVideoDetector
-    from .utils import create_test_video, setup_logging, get_video_stats
+    from .preprocessing import VideoPreprocessor
+    from .utils import create_test_video, get_video_stats, setup_logging
 
     DEPENDENCIES_AVAILABLE = True
 except ImportError as e:

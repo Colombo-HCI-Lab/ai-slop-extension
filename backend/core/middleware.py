@@ -4,6 +4,7 @@ Middleware configuration helpers.
 
 import time
 from typing import Callable
+
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware

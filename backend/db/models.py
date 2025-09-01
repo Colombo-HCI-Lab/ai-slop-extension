@@ -4,8 +4,8 @@ import uuid
 from datetime import datetime
 from typing import Any, List, Optional
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, JSON, String, Text, UniqueConstraint, func
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -105,10 +105,10 @@ class Chat(Base):
 
     __tablename__ = "chat"
 
-    id: Mapped[str] = mapped_column(
-        String(36),
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
         primary_key=True,
-        default=lambda: str(uuid.uuid4()),
+        default=uuid.uuid4,
     )
 
     # Reference to the post table's post_id
@@ -119,7 +119,7 @@ class Chat(Base):
     )
 
     # Reference to user directly for persistent conversations
-    user_id: Mapped[str] = mapped_column(
+    user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("user.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -158,10 +158,10 @@ class UserSession(Base):
 
     __tablename__ = "user_session"
 
-    id: Mapped[str] = mapped_column(
-        String(36),
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
         primary_key=True,
-        default=lambda: str(uuid.uuid4()),
+        default=uuid.uuid4,
     )
 
     # Unique identifier from browser (UUID)
@@ -184,9 +184,10 @@ class PostMedia(Base):
 
     __tablename__ = "post_media"
 
-    id: Mapped[str] = mapped_column(
-        String(64),  # Increased length to accommodate Facebook IDs (fb_xxxxx format)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
         primary_key=True,
+        default=uuid.uuid4,
     )
 
     # Reference to the post table's post_id
@@ -246,10 +247,10 @@ class User(Base):
     __tablename__ = "user"
 
     # Primary key is the user_id from browser extension (UUID)
-    id: Mapped[str] = mapped_column(
-        String(36),
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
         primary_key=True,
-        default=lambda: str(uuid.uuid4()),
+        default=uuid.uuid4,
     )
 
     # Browser and environment information
@@ -300,20 +301,20 @@ class AnalyticsEvent(Base):
 
     __tablename__ = "analytics_event"
 
-    id: Mapped[str] = mapped_column(
-        String(36),
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
         primary_key=True,
-        default=lambda: str(uuid.uuid4()),
+        default=uuid.uuid4,
     )
 
     # Foreign keys (all optional to support various event types)
-    user_id: Mapped[Optional[str]] = mapped_column(
+    user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("user.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
     )
 
-    # Single session identifier (user_id from /analytics/users/initialize)
+    # Single session identifier (generated via /users/session/initialize)
     session_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
 
     post_id: Mapped[Optional[str]] = mapped_column(

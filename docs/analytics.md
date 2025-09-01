@@ -187,8 +187,8 @@ interface AnalyticsEvent {
 
 ## API Endpoints
 
-### POST `/api/v1/analytics/init-user`
-Initialize user analytics profile.
+### POST `/api/v1/users/initialize`
+Initialize user and return backend-generated ID.
 
 **Request:**
 ```json
@@ -208,26 +208,54 @@ Initialize user analytics profile.
 ```json
 {
   "user_id": "usr_abc123def456",
-  "session_id": "sess_789xyz",
   "experiment_groups": ["variant_a", "feature_beta"]
 }
 ```
 
-### POST `/api/v1/analytics/events/batch`
-Submit batch of analytics events.
+### POST `/api/v1/users/session/initialize`
+Initialize a browsing session for an existing user.
 
 **Request:**
 ```json
 {
-  "session_id": "sess_789xyz",
+  "user_id": "usr_abc123def456",
+  "browser_info": { "name": "Chrome" },
+  "timezone": "America/New_York",
+  "locale": "en-US"
+}
+```
+
+**Response:**
+```json
+{ "session_id": "sess_789xyz" }
+```
+
+### POST `/api/v1/analytics/events/batch`
+Submit batch of analytics events (priority + metadata).
+
+**Request:**
+```json
+{
   "events": [
     {
-      "type": "post_view",
-      "category": "interaction",
-      "metadata": {"postId": "fb_123"},
-      "clientTimestamp": "2024-12-08T15:30:45.123Z"
+      "event_type": "post_view",
+      "event_category": "interaction",
+      "priority": "high",
+      "session_id": "sess_789xyz",
+      "post_id": "fb_123",
+      "event_data": { "postId": "fb_123" },
+      "client_timestamp": "2024-12-08T15:30:45.123Z",
+      "user_agent": "Mozilla/5.0 ...",
+      "page_url": "https://www.facebook.com/...",
+      "referrer": "https://www.facebook.com/"
     }
-  ]
+  ],
+  "batch_metadata": {
+    "extension_version": "1.2.3",
+    "platform": "MacIntel",
+    "language": "en-US",
+    "timezone": "America/New_York"
+  }
 }
 ```
 

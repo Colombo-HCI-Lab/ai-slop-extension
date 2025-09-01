@@ -1,5 +1,6 @@
-import pytest
 from pathlib import Path
+
+import pytest
 
 
 def test_clipbased_module_exists():
@@ -17,8 +18,8 @@ def test_clipbased_utils_and_preprocessing(tmp_path):
     pytest.importorskip("torch")
     pytest.importorskip("PIL")
 
-    from ml.clipbased.impl.utils import create_test_image
     from ml.clipbased.impl.preprocessing import ImagePreprocessor
+    from ml.clipbased.impl.utils import create_test_image
 
     img_path = tmp_path / "test_img.jpg"
     create_test_image(str(img_path), (224, 224), pattern="checkerboard")

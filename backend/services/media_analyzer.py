@@ -2,9 +2,9 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
 from enum import Enum
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from utils.logging import get_logger
 

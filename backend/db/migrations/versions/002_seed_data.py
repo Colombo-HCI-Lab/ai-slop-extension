@@ -35,13 +35,14 @@ def _load_sql_file(filename: str) -> str:
 
 def upgrade() -> None:
     """Upgrade schema."""
-    # Load and execute post data
-    post_sql = _load_sql_file("post.sql")
-    op.execute(post_sql)
-
-    # Load and execute post_media data
-    post_media_sql = _load_sql_file("post_media.sql")
-    op.execute(post_media_sql)
+    # # Load and execute post data
+    # post_sql = _load_sql_file("post.sql")
+    # op.execute(post_sql)
+    #
+    # # Load and execute post_media data
+    # post_media_sql = _load_sql_file("post_media.sql")
+    # op.execute(post_media_sql)
+    pass
 
 
 def downgrade() -> None:

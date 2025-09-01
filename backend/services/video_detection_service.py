@@ -13,8 +13,8 @@ from uuid import UUID, uuid4
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from core.config import settings
-from schemas.video_detection import DetectionResult, Prediction, VideoInfo, DetectionResponse
 from ml.slowfast import AIVideoDetector, VideoPreprocessor
+from schemas.video_detection import DetectionResponse, DetectionResult, Prediction, VideoInfo
 from utils.logging import get_logger
 
 logger = get_logger(__name__)

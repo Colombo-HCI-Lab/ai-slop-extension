@@ -5,7 +5,7 @@ ClipBased AI-generated image detection implementation.
 import logging
 import time
 from pathlib import Path
-from typing import Union, List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 import torch

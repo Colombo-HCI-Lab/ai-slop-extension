@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from typing import Iterable, Optional
 
 from sqlalchemy import delete, select
@@ -7,7 +8,6 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import PostMedia
-from utils.media_id_extractor import generate_composite_media_id
 
 
 class MediaRepo:
@@ -24,7 +24,12 @@ class MediaRepo:
         gemini_file_uri: Optional[str],
         db: AsyncSession,
     ) -> None:
-        media_id = generate_composite_media_id(post_id, media_url, media_type)
+        # Check if media already exists
+        existing = await self.get_existing(post_id=post_id, media_url=media_url, db=db)
+
+        # Use existing ID or generate new UUID
+        media_id = existing.id if existing else uuid.uuid4()
+
         stmt = insert(PostMedia).values(
             id=media_id,
             post_id=post_id,

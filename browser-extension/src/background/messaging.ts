@@ -1,4 +1,4 @@
-import { normalizeApiResponse, requestAiSlop, sendChat, getChatHistory, sendAnalyticsEventsBatch, initializeUser as initializeUserApi } from './api';
+import { normalizeApiResponse, requestAiSlop, sendChat, getChatHistory, sendAnalyticsEventsBatch, initializeUser as initializeUserApi, initializeSession as initializeSessionApi } from './api';
 import { clearInFlight, getInFlight, makePostKey, setInFlight } from './state';
 import { MessageType, AnyMessage } from '@/shared/messages';
 import { createLogger } from '@/shared/logger';
@@ -67,15 +67,26 @@ export function setupBackgroundMessaging(): void {
       return true;
     }
 
-    if (message.type === MessageType.AnalyticsUserInit) {
-      logger.log('ANALYTICS_USER_INIT received', {
-        init: true,
-      });
+    if (message.type === MessageType.UserInit) {
+      logger.log('USER_INIT received');
       initializeUserApi({
         timezone: message.timezone,
         locale: message.locale,
         browser_info: message.browserInfo,
         client_ip: null,
+      })
+        .then(sendResponse)
+        .catch(err => sendResponse({ error: String(err?.message || err) }));
+      return true;
+    }
+
+    if (message.type === MessageType.SessionInit) {
+      logger.log('SESSION_INIT received');
+      initializeSessionApi({
+        user_id: message.userId,
+        browser_info: message.browserInfo,
+        timezone: message.timezone,
+        locale: message.locale,
       })
         .then(sendResponse)
         .catch(err => sendResponse({ error: String(err?.message || err) }));

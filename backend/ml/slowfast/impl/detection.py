@@ -4,7 +4,7 @@ SlowFast model wrapper for AI-generated vs real video classification.
 
 import logging
 from pathlib import Path
-from typing import Dict, List, Union, Optional
+from typing import Dict, List, Optional, Union
 
 import torch
 import torch.nn.functional as F

@@ -5,12 +5,10 @@ Video processing utilities for handling file uploads and management.
 import tempfile
 from pathlib import Path
 from typing import Dict
-from urllib.parse import urlparse
 
 import aiofiles
-import aiohttp
 import magic
-from fastapi import UploadFile, HTTPException, status
+from fastapi import HTTPException, UploadFile, status
 
 from core.config import settings
 from utils.logging import get_logger

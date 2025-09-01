@@ -2,7 +2,7 @@
 
 import re
 from typing import Optional
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import parse_qs, urlparse
 
 from utils.logging import get_logger
 

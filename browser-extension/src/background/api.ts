@@ -111,14 +111,14 @@ export async function sendChat(body: {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     },
-    { timeoutMs: 35000, retries: 2, backoffBaseMs: 400 }
+    { timeoutMs: 35000, retries: 2, backoffBaseMs: 400, enableUserReset: true }
   );
 }
 
 export async function getChatHistory(postId: string, userId: string): Promise<ChatHistoryResponse> {
   const url = `${API_BASE_URL}/chat/history/${encodeURIComponent(postId)}?user_id=${encodeURIComponent(userId)}`;
   logger.log('GET', url);
-  return fetchJsonWithRetry<ChatHistoryResponse>(url, { method: 'GET' });
+  return fetchJsonWithRetry<ChatHistoryResponse>(url, { method: 'GET' }, { enableUserReset: true });
 }
 
 // Legacy metrics batch removed – use sendAnalyticsEventsBatch
@@ -127,28 +127,69 @@ export async function getChatHistory(postId: string, userId: string): Promise<Ch
 export async function sendAnalyticsEventsBatch(body: {
   events: Array<{
     event_type: string;
-    event_category: 'session' | 'post' | 'chat' | 'interaction' | 'performance';
+    event_category:
+      | 'session'
+      | 'post'
+      | 'chat'
+      | 'interaction'
+      | 'performance'
+      | 'behavior'
+      | 'trust'
+      | 'ui'
+      | 'content'
+      | 'learning';
+    event_priority?: 'critical' | 'high' | 'medium' | 'low';
     user_id?: string;
     post_id?: string;
     session_id?: string;
     event_data: Record<string, unknown>;
     client_timestamp?: string;
   }>;
-}): Promise<{ status: string; events_queued: number }> {
+}): Promise<{ status: 'accepted' | 'partial' | 'rejected'; events_accepted: number; events_rejected: number; batch_id?: string; errors?: string[] }> {
   const url = `${API_BASE_URL}/analytics/events/batch`;
   logger.log('POST', url, { eventCount: body.events.length, analytics: true });
+
+  // Map UnifiedAnalyticsEvent -> server analytics request
+  type SystemMetadata = { user_agent?: string; url?: string; referrer?: string };
+  const enhancedBody = {
+    events: body.events.map(e => {
+      const systemContainer = e.event_data as { system_metadata?: SystemMetadata };
+      const sys: SystemMetadata = systemContainer?.system_metadata ?? {};
+      return {
+        event_type: e.event_type,
+        event_category: e.event_category,
+        priority: e.event_priority || 'medium',
+        user_id: e.user_id,
+        session_id: e.session_id,
+        post_id: e.post_id,
+        event_data: e.event_data,
+        client_timestamp: e.client_timestamp,
+        // Top-level metadata for enhanced API
+        user_agent: sys.user_agent,
+        page_url: sys.url,
+        referrer: sys.referrer,
+      };
+    }),
+    batch_metadata: {
+      extension_version: chrome.runtime.getManifest?.().version,
+      platform: navigator.platform,
+      language: navigator.language,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    },
+  };
+
   return fetchJsonWithRetry(
     url,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify(enhancedBody),
     },
-    { retries: 3, backoffBaseMs: 500 }
+    { retries: 3, backoffBaseMs: 500, enableUserReset: true }
   );
 }
 
-// --- Additional Analytics endpoints ---
+// --- Users endpoints ---
 
 export async function initializeUser(body: {
   browser_info: Record<string, unknown>;
@@ -156,7 +197,7 @@ export async function initializeUser(body: {
   locale: string;
   client_ip?: string | null;
 }): Promise<{ user_id: string; experiment_groups: string[] }> {
-  const url = `${API_BASE_URL}/analytics/users/initialize`;
+  const url = `${API_BASE_URL}/users/initialize`;
   logger.log('POST', url, { init: true });
   return fetchJsonWithRetry(
     url,
@@ -165,9 +206,27 @@ export async function initializeUser(body: {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     },
-    { retries: 3, backoffBaseMs: 500 }
+    { retries: 3, backoffBaseMs: 500, enableUserReset: false }
+  );
+}
+
+export async function initializeSession(body: {
+  user_id: string;
+  browser_info?: Record<string, unknown>;
+  timezone?: string;
+  locale?: string;
+}): Promise<{ session_id: string }> {
+  const url = `${API_BASE_URL}/users/session/initialize`;
+  logger.log('POST', url, { init: true });
+  return fetchJsonWithRetry(
+    url,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+    { retries: 2, backoffBaseMs: 400, enableUserReset: false }
   );
 }
 
 // Session start/end endpoints removed – analytics events cover session lifecycle
-// Legacy interaction/performance/chat metrics endpoints removed – consolidated via analytics events

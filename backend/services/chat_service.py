@@ -9,12 +9,12 @@ from typing import List, Optional, Tuple
 import google.generativeai as genai
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from tenacity import AsyncRetrying, stop_after_attempt, wait_exponential
 
 from core.config import settings
-from db.models import Chat, Post, PostMedia, User, UserSession
+from db.models import Chat, Post, PostMedia, User
 from schemas.chat import ChatRequest, ChatResponse, Message
 from services.gemini_on_demand_service import gemini_on_demand_service
-from tenacity import AsyncRetrying, stop_after_attempt, wait_exponential
 from utils.logging import get_logger
 
 logger = get_logger(__name__)

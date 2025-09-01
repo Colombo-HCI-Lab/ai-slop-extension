@@ -1,15 +1,15 @@
 """Unified media processing service for consistent image and video handling."""
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-from concurrent.futures import ThreadPoolExecutor
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 from core.media_registry import media_registry
-from services.media_analyzer import MediaAnalyzer, MediaAnalyzerFactory, MediaFile, MediaType, AnalysisResult
+from services.media_analyzer import MediaAnalyzer, MediaAnalyzerFactory, MediaFile, MediaType
 from utils.logging import get_logger
 
 logger = get_logger(__name__)

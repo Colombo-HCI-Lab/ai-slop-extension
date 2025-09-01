@@ -10,10 +10,11 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from api.v1.router import api_router
-from core.config import Settings, settings as default_settings
+from core.config import Settings
+from core.config import settings as default_settings
 from core.errors import register_exception_handlers
 from core.middleware import configure_middleware
-from utils.logging import setup_logging, get_logger
+from utils.logging import get_logger, setup_logging
 
 
 @asynccontextmanager

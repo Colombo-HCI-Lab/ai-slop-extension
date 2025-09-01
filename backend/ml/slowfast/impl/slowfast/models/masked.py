@@ -4,16 +4,16 @@
 import math
 from functools import partial
 
-import slowfast.utils.logging as logging
-import slowfast.utils.misc as misc
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.init import trunc_normal_
+
+import slowfast.utils.logging as logging
+import slowfast.utils.misc as misc
 from slowfast.models import head_helper
-from slowfast.models.attention import attention_pool
 from slowfast.models.utils import calc_mvit_feature_geometry
 from slowfast.models.video_model_builder import MViT
-from torch.nn.init import trunc_normal_
 
 from . import head_helper, operators, resnet_helper, stem_helper  # noqa
 from .build import MODEL_REGISTRY

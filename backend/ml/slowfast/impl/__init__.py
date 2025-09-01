@@ -12,8 +12,8 @@ __version__ = "0.1.0"
 def _import_with_fallback():
     """Import main classes with graceful fallback."""
     try:
-        from .preprocessing import VideoPreprocessor
         from .detection import AIVideoDetector
+        from .preprocessing import VideoPreprocessor
         from .utils import create_test_video
 
         return VideoPreprocessor, AIVideoDetector, create_test_video

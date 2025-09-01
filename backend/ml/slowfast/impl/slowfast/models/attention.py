@@ -6,9 +6,9 @@ import numpy
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.init import trunc_normal_
 
 from slowfast.models.common import DropPath, Mlp
-from torch.nn.init import trunc_normal_
 
 
 def attention_pool(tensor, pool, thw_shape, has_cls_embed=True, norm=None):

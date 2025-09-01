@@ -1,15 +1,13 @@
 """Service for managing post media storage and Gemini uploads (unified pipeline)."""
 
-from typing import Any, Dict, List
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Post
 from schemas.content_detection import ContentDetectionRequest, ContentDetectionResponse
-from services.media_pipeline import MediaPipeline, MediaItem
+from services.media_pipeline import MediaItem, MediaPipeline
 from utils.logging import get_logger
-
 
 logger = get_logger(__name__)
 

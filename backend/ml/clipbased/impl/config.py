@@ -4,7 +4,7 @@ Configuration settings for ClipBased detection.
 
 import os
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any, Dict
 
 # Default model configurations
 DEFAULT_MODELS = {

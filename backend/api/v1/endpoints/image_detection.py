@@ -6,13 +6,13 @@ import os
 import tempfile
 from typing import List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile, status, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
 
 from core.config import settings
+from core.dependencies import get_image_detection_service
 from schemas.image_detection import ImageDetectionResponse
 from services.detections.interfaces import ImageDetectionServiceProtocol
-from core.dependencies import get_image_detection_service
 from utils.logging import get_logger
 
 

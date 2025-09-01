@@ -5,7 +5,6 @@ FastAPI application entrypoint; uses the app factory for instantiation.
 from app import create_app
 from core.config import settings
 
-
 # Keep the global `app` for tests and WSGI servers
 app = create_app(settings)
 

@@ -15,6 +15,8 @@ from services.detections.interfaces import (
 )
 from services.detections.registry import (
     get_image_detection_service as _resolve_image_service,
+)
+from services.detections.registry import (
     get_video_detection_service as _resolve_video_service,
 )
 

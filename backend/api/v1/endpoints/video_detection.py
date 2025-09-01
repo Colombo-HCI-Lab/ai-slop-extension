@@ -9,9 +9,8 @@ from pydantic import BaseModel, Field
 
 from core.config import settings
 from core.dependencies import get_detection_service
-from services.detections.interfaces import VideoDetectionServiceProtocol
 from schemas.video_detection import DetectionResponse
-from services.video_detection_service import DetectionService
+from services.detections.interfaces import VideoDetectionServiceProtocol
 from services.video_processor import VideoProcessor
 from utils.logging import get_logger
 

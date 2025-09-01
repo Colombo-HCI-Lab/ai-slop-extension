@@ -24,9 +24,7 @@ ClipBasedImageDetector, create_detector = _import_with_fallback()
 
 # Core exports for image detection
 try:
-    from . import models
-    from . import utils
-    from . import weights
+    from . import models, utils, weights
 except ImportError as e:
     import warnings
 
