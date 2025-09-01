@@ -598,7 +598,7 @@ Keep responses informative but concise (2-4 sentences typically)."""
                 conversation_summary = "\n\nCONVERSATION HISTORY: No previous conversation"
 
             # Create system instruction for generating suggestions
-            system_instruction = f"""You are an AI assistant helping generate intelligent follow-up questions for users who want to understand AI content detection results.
+            system_instruction = f"""You are an AI assistant helping generate intelligent follow-up questions for users who want to understand AI content detection results and learn about AI slop harms.
 
 POST CONTENT:
 "{post.content}"
@@ -614,17 +614,27 @@ EXPLANATION: {post.explanation or "No detailed explanation provided"}
 {conversation_summary}
 
 Generate 3 short, concise follow-up questions that:
-1. Haven't been asked before in the conversation history
-2. Help the user better understand the detection results
-3. Explore different aspects of AI detection (patterns, confidence, methodology, implications)
+1. Build naturally on the conversation without repeating previously discussed topics
+2. Help the user better understand the detection results AND the broader implications of AI slop
+3. Encourage awareness of AI slop harms such as attention drain, misinformation spillover, trust erosion, cultural distortion, or algorithmic pollution
 4. Are specific to this post's content and analysis results
 5. Are conversational and engaging
 6. Keep each question under 8 words when possible
 7. Use simple, direct language
 
-Consider including these important questions when relevant:
-- "Why should I avoid these posts?" - When answering this, focus on AI slop harms like: misinformation spread, time-wasting clickbait, degraded information quality, manipulation tactics, and how AI-generated content can kill productive engagement
-- "How can I avoid having these in my Facebook?" - When answering this, provide actionable advice like: clicking "Not Interested" on similar posts, unfollowing or blocking sources that frequently post AI slop, adjusting Facebook preferences, engaging less with low-quality content, and being more selective about what they interact with
+PRIORITIZE these harm-awareness questions when relevant and not yet explored:
+- "Why should I avoid these posts?" - Focus on AI slop harms: attention drain, misinformation spillover, trust erosion, cultural distortion, algorithmic pollution, time-wasting clickbait, and degraded information quality
+- "How can I avoid having these in my Facebook?" - Provide actionable advice: clicking "Not Interested", unfollowing AI slop sources, adjusting feed preferences, reducing engagement with low-quality content
+- "What harm does AI slop cause?" - Explain broader impacts on society, information quality, and user well-being
+- "How does this affect my feed quality?" - Discuss algorithmic pollution and degraded user experience
+- "Why is this spreading so much?" - Address cultural distortion and economic incentives behind AI slop
+
+For AI-generated content, also consider:
+- "What makes this feel manipulative?"
+- "How does this waste my time?"
+- "What's the real agenda here?"
+
+Do not ask questions which have been asked before in the conversation history.
 
 Return ONLY the 3 questions, each on a separate line, without numbers or bullet points."""
 
@@ -674,27 +684,46 @@ Return ONLY the 3 questions, each on a separate line, without numbers or bullet 
             return self._generate_fallback_suggestions(post, chat_history)
 
     def _generate_fallback_suggestions(self, post: Post, chat_history: List[Chat]) -> List[str]:
-        """Generate fallback suggestions when Gemini fails."""
-        questions = [
+        """Generate fallback suggestions when Gemini fails, focusing on AI slop harms awareness."""
+        # Prioritize harm-awareness questions
+        harm_awareness_questions = [
+            "Why should I avoid these posts?",
+            "How can I avoid having these in my Facebook?",
+            "What harm does AI slop cause?",
+            "How does this affect my feed quality?",
+            "Why is this spreading so much?",
+        ]
+
+        # Technical analysis questions
+        technical_questions = [
             "What patterns suggest AI generation?",
             "How confident is this analysis?",
             "Could this be wrong?",
             "What are the key indicators?",
-            "Why should I avoid these posts?",
-            "How can I avoid having these in my Facebook?",
         ]
 
+        # Context-specific questions for AI slop
         if post.verdict == "ai_slop":
-            questions.append("How is this different from human writing?")
+            ai_specific_questions = [
+                "What makes this feel manipulative?",
+                "How does this waste my time?",
+                "What's the real agenda here?",
+                "How is this different from human writing?",
+            ]
         else:
-            questions.append("Why is this human-written?")
+            ai_specific_questions = [
+                "Why is this human-written?",
+                "What makes authentic content different?",
+            ]
 
-        # Filter out questions that have already been asked
-        asked_questions = {chat.message.lower() for chat in chat_history if chat.role == "user"}
-        available_questions = [q for q in questions if q.lower() not in asked_questions]
+        # Combine all questions, prioritizing harm awareness
+        questions = harm_awareness_questions + ai_specific_questions + technical_questions
 
         # Return top 3 questions
-        return available_questions[:3]
+        # Note: For fallback suggestions, we don't filter by conversation history
+        # since the main Gemini-based suggestion generation handles conversation
+        # awareness more effectively. This fallback is only used when Gemini fails.
+        return questions[:3]
 
     def _generate_suggested_questions(self, post: Post, chat_history: List[Chat]) -> List[str]:
         """Generate suggested follow-up questions (legacy method, kept for compatibility)."""
