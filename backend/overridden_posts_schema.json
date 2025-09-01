@@ -1,0 +1,15 @@
+{
+  "fixed_posts": {
+    "example_post_all_overrides": {
+      "verdict": "uncertain/ai_slop/human_content",
+      "confidence": 0.75,
+      "text_ai_probability": 0.5,
+      "text_confidence": 0.85,
+      "image_ai_probability": 0.6,
+      "image_confidence": 0.8,
+      "video_ai_probability": 0.45,
+      "video_confidence": 0.9,
+      "explanation": "Complete override example - all detection values predefined for testing"
+    }
+  }
+}
