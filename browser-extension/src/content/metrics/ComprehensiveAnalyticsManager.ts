@@ -205,16 +205,18 @@ export class ComprehensiveAnalyticsManager {
       // Send to event batcher
       this.eventBatcher.addEvent(enrichedEvent);
 
-      // Also send to Mixpanel for real-time dashboards
-      try {
-        analytics.track(enrichedEvent.event_type, {
-          category: enrichedEvent.event_category,
-          priority: enrichedEvent.event_priority,
-          ...enrichedEvent.event_data
-        });
-      } catch (mixpanelError) {
-        // Non-critical error, log and continue
-        logger.warn('Failed to send event to Mixpanel:', mixpanelError);
+      // Only send critical and high priority events to Mixpanel for real-time dashboards
+      if (enrichedEvent.event_priority === 'critical' || enrichedEvent.event_priority === 'high') {
+        try {
+          analytics.track(enrichedEvent.event_type, {
+            category: enrichedEvent.event_category,
+            priority: enrichedEvent.event_priority,
+            ...enrichedEvent.event_data
+          });
+        } catch (mixpanelError) {
+          // Non-critical error, log and continue
+          logger.warn('Failed to send event to Mixpanel:', mixpanelError);
+        }
       }
 
       // Update tracker activity

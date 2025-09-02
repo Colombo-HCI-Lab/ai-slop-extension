@@ -497,7 +497,8 @@ export class UIPerformanceTracker {
   }
 
   // Helper methods
-  private isTooltipTrigger(element: Element): boolean {
+  private isTooltipTrigger(element: Element | null): boolean {
+    if (!element || !element.hasAttribute) return false;
     return element.hasAttribute('data-tooltip') ||
            element.classList.contains('tooltip-trigger') ||
            element.querySelector('.tooltip') !== null;
