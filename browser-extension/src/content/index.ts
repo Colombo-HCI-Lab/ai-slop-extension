@@ -7,6 +7,7 @@ import { initializeGlobalGate, protectedExecute } from '@/shared/InitializationG
 import { createNavigationWatcher } from './utils/NavigationWatcher';
 import { isInAllowedGroupNow } from '@/content/utils/group';
 import { log, error } from '@/shared/logger';
+import { metricsManager } from './metrics/MetricsManager';
 
 declare const __DEV__: boolean;
 if (!__DEV__) {
@@ -29,6 +30,10 @@ async function initializeExtensionFeatures(): Promise<void> {
   try {
     await protectedExecute(async () => {
       log('Initializing extension features');
+      
+      // Initialize MetricsManager first (uses existing validated session)
+      await metricsManager.initialize();
+      log('MetricsManager initialized');
       
       // Create post observer (but don't start processing yet)
       postObserver = new FacebookPostObserver();
@@ -88,6 +93,11 @@ function cleanupExtension(): void {
     // FloatingChatWindow doesn't have destroy method yet - will add in next update  
     chatWindow = null;
   }
+  
+  // Clean up MetricsManager
+  metricsManager.destroy().catch(err => {
+    error('Failed to destroy MetricsManager:', err);
+  });
   
   analytics.setEnabled(false);
   log('Extension resources cleaned up');

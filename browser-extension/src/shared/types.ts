@@ -61,7 +61,8 @@ export type EventCategory =
   | 'trust'
   | 'ui'
   | 'content'
-  | 'learning';
+  | 'learning'
+  | 'error';
 
 export type EventPriority = 'critical' | 'high' | 'medium' | 'low';
 

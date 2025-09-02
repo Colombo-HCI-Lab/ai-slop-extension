@@ -5,11 +5,11 @@
 import { log, error } from '../../shared/logger';
 import { AnalyticsEventCollector } from './AnalyticsEventCollector';
 import { ComprehensiveAnalyticsManager } from './ComprehensiveAnalyticsManager';
-import { MetricsConfig, UserSession } from '../../shared/types';
-import { verifyAndInitializeUserSession } from '../utils/initialization';
+import { MetricsConfig, UserSession, EventCategory } from '../../shared/types';
 import { analytics } from '@/shared/analytics';
 import { getSessionHiddenTimeoutMs } from '@/shared/env';
 import { isInAllowedGroupNow } from '@/content/utils/group';
+import { requireGlobalInitialization, protectedExecute } from '@/shared/InitializationGate';
 
 export class MetricsManager {
   private rawCollector: AnalyticsEventCollector | null = null;
@@ -29,20 +29,17 @@ export class MetricsManager {
     if (this.isInitialized) return;
 
     try {
-      // CRITICAL: Verify and initialize user/session BEFORE any analytics or post processing
-      const { userId: backendUserId, sessionId: backendSessionId, isNewUser, isNewSession } = 
-        await verifyAndInitializeUserSession();
+      // Get session data from centralized SessionManager via InitializationGate
+      const sessionData = requireGlobalInitialization();
       
-      log('User/Session verified and initialized', { 
-        userId: backendUserId, 
-        sessionId: backendSessionId,
-        isNewUser,
-        isNewSession 
+      log('Using existing validated session for MetricsManager', { 
+        userId: sessionData.userId, 
+        sessionId: sessionData.sessionId
       });
 
       this.session = {
-        userId: backendUserId,
-        sessionId: backendSessionId,
+        userId: sessionData.userId,
+        sessionId: sessionData.sessionId,
         startTime: Date.now(),
         lastActivity: Date.now(),
       };
@@ -56,15 +53,15 @@ export class MetricsManager {
 
       // Initialize analytics event collector (legacy support)
       this.rawCollector = new AnalyticsEventCollector(config);
-      this.rawCollector.setSession(backendUserId, backendSessionId);
+      this.rawCollector.setSession(sessionData.userId, sessionData.sessionId);
 
       // Initialize comprehensive analytics system
-      this.comprehensiveAnalytics = new ComprehensiveAnalyticsManager(backendUserId, backendSessionId);
+      this.comprehensiveAnalytics = new ComprehensiveAnalyticsManager(sessionData.userId, sessionData.sessionId);
 
       // Hook Mixpanel identity and super props
-      analytics.identify(backendUserId);
+      analytics.identify(sessionData.userId);
       analytics.registerSuper({
-        session_id: backendSessionId,
+        session_id: sessionData.sessionId,
         platform: 'chrome_extension',
         environment: process.env.NODE_ENV || 'production',
       });
@@ -104,7 +101,7 @@ export class MetricsManager {
       this.setupPageLifecycle();
 
       this.isInitialized = true;
-      log('MetricsManager initialized', { userId: backendUserId, sessionId: backendSessionId });
+      log('MetricsManager initialized', { userId: sessionData.userId, sessionId: sessionData.sessionId });
     } catch (err) {
       error('Failed to initialize MetricsManager:', err);
     }
@@ -117,23 +114,29 @@ export class MetricsManager {
     label?: string;
     metadata?: Record<string, unknown>;
   }): void {
-    if (!this.session || !this.rawCollector) {
-      log('MetricsManager not initialized, skipping event:', event.type);
-      return;
-    }
+    // Use protectedExecute to ensure tracking only happens with valid session
+    protectedExecute(async () => {
+      if (!this.session || !this.rawCollector) {
+        log('MetricsManager not initialized, skipping event:', event.type);
+        return;
+      }
 
-    this.updateLastActivity();
-    // Route to unified analytics event collector
-    const data: Record<string, unknown> = {
-      ...(event.metadata || {}),
-    };
-    if (typeof event.value !== 'undefined') data.value = event.value;
-    if (typeof event.label !== 'undefined') data.label = event.label;
-    this.rawCollector.trackEvent(
-      event.type,
-      event.category as 'session' | 'post' | 'chat' | 'interaction' | 'performance',
-      data,
-    );
+      this.updateLastActivity();
+      // Route to unified analytics event collector
+      const data: Record<string, unknown> = {
+        ...(event.metadata || {}),
+      };
+      if (typeof event.value !== 'undefined') data.value = event.value;
+      if (typeof event.label !== 'undefined') data.label = event.label;
+      this.rawCollector.trackEvent(
+        event.type,
+        event.category as EventCategory,
+        data,
+      );
+    }, `trackEvent:${event.type}`).catch(err => {
+      // Non-blocking: metrics tracking failure shouldn't break the app
+      log('Failed to track event:', event.type, err);
+    });
   }
 
   public trackPostView(postId: string, postElement: Element): void {

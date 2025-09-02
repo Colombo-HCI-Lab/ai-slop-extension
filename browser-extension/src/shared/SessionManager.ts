@@ -5,7 +5,7 @@
 
 import { STORAGE_KEYS } from './constants';
 import { log, error } from './logger';
-import { UserSessionInfo } from '../content/utils/initialization';
+import type { UserSessionInfo } from '../content/utils/initialization';
 
 export interface SessionManagerConfig {
   requireValidSession: boolean;
